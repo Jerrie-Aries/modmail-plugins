@@ -13,8 +13,7 @@ from core import checks
 from core.models import PermissionLevel, getLogger
 from core.paginator import EmbedPaginatorSession, MessagePaginatorSession
 
-from cogs.utils.chat_formatting import bold, code_block, normalize_smartquotes, plural
-
+from .utils.chat_formatting import bold, code_block, normalize_smartquotes, plural
 from .utils.checks import trivia_stop_check
 
 
