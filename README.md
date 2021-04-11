@@ -13,5 +13,6 @@ Type `?plugin add Jerrie-Aries/modmail-plugins/trivia` to add the trivia plugin.
 | Name | Description |
 | --- | --- |
 | Trivia | Play trivia with friends on your server. This is a modified version of `cogs trivia` of [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot). I just made it compatible with Modmail bot. Any credits must go to original developer. You can find the source [here](https://github.com/Cog-Creators/Red-DiscordBot/tree/V3/develop/redbot/cogs/trivia). |
+| Invites | Checks which invite is used when someone joins the server, and the log embed will be posted in the designated channel. |
 
 
