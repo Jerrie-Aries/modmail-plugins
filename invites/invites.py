@@ -475,9 +475,10 @@ class Invites(commands.Cog):
         embed.add_field(name="Expires at:", value=invite_expires)
         try:
             await invite.delete()
-            await ctx.send(embed=embed)
         except discord.Forbidden:
-            await ctx.send("I don't have permissions to revoke invites.")
+            return await ctx.send("I don't have permissions to revoke invites.")
+
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_invite_create(self, invite):
