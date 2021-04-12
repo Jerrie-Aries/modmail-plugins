@@ -102,16 +102,16 @@ class Invites(commands.Cog):
         new_invite_cache = {i for i in await guild.invites()}
         predicted_invites = []
         found = False
-        # Starting the check/loop.
-        for i in self.invite_cache[guild.id]:
+
+        for _inv in self.invite_cache[guild.id]:
             # 1. Check if invite doesn't exist anymore.
-            if i not in new_invite_cache:
-                predicted_invites.append(i)
+            if _inv not in new_invite_cache:
+                predicted_invites.append(_inv)
                 continue
 
             # 2. Check invite uses.
             used_inv = next(
-                (inv for inv in new_invite_cache if inv.id == i.id and inv.uses > i.uses), None
+                (inv for inv in new_invite_cache if inv.id == _inv.id and inv.uses > _inv.uses), None
             )
             if used_inv is not None:
                 # We found the used invite, the `for loop` will stop here and the value will be returned.
@@ -353,6 +353,12 @@ class Invites(commands.Cog):
     async def invites_refresh(self, ctx: commands.Context):
         """
         Manually fetch the invites and store them in cache.
+
+        **Note:**
+        Invites are automatically fetched and stored in cache everytime:
+         - A new member joining the server.
+         - An invite being created.
+        There is no need to manually fetch the invites using this command to store them in cache.
         """
         await self.populate_invite_cache()
         embed = discord.Embed(
@@ -476,7 +482,7 @@ class Invites(commands.Cog):
         try:
             await invite.delete()
         except discord.Forbidden:
-            return await ctx.send("I don't have permissions to revoke invites.")
+            raise commands.BadArgument("I don't have permissions to revoke invites.")
 
         await ctx.send(embed=embed)
 
