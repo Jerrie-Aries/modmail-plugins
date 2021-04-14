@@ -497,7 +497,7 @@ class Invites(commands.Cog):
         if not config["enabled"]:
             return
 
-        cached_invites = self.invite_cache.get(str(invite.guild.id))
+        cached_invites = self.invite_cache.get(invite.guild.id)
         if cached_invites is None:
             cached_invites = {inv for inv in await invite.guild.invites()}
         else:
