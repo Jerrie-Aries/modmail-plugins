@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 from datetime import datetime
-import asyncio
 from typing import List, Optional
 
 from core import checks
@@ -43,28 +42,43 @@ class Invites(commands.Cog):
         self.bot = bot
         self.db = bot.plugin_db.get_partition(self)
         self.invite_cache = {}
-        bot.loop.create_task(self.populate_invite_cache())
         self._config_cache = {}
-        asyncio.create_task(self.populate_config_cache())
+
+        self.bot.loop.create_task(self.initialize())
+
+    async def initialize(self):
+        """
+        Initial tasks when loading the cog.
+        """
+        await self.populate_config_cache()
+        await self.populate_invite_cache()
 
     async def populate_config_cache(self):
         """
         Populates the config cache with data from database.
         """
-        config = await self.db.find_one({"_id": self._id})
-        if config is None:
-            config = {}  # empty dict, so we can use `.get` method without error
+        db_config = await self.db.find_one({"_id": self._id})
+        if db_config is None:
+            db_config = {}  # empty dict, so we can use `.get` method without error
 
         to_update = False
         for guild in self.bot.guilds:
-            gconfig = config.get(str(guild.id))
-            if gconfig is None:
-                gconfig = {k: v for k, v in self.default_config.items()}
+            config = db_config.get(str(guild.id))
+            if config is None:
+                config = {k: v for k, v in self.default_config.items()}
                 to_update = True
-            self._config_cache[str(guild.id)] = gconfig
+            self._config_cache[str(guild.id)] = config
 
         if to_update:
             await self.config_update()
+
+    def guild_config(self, guild_id: str):
+        config = self._config_cache.get(guild_id)
+        if config is None:
+            config = {k: v for k, v in self.default_config.items()}
+            self._config_cache[guild_id] = config
+
+        return config
 
     async def config_update(self):
         """
@@ -80,8 +94,14 @@ class Invites(commands.Cog):
 
     async def populate_invite_cache(self):
         await self.bot.wait_until_ready()
-        for g in self.bot.guilds:
-            self.invite_cache[g.id] = {i for i in await g.invites()}
+
+        for guild in self.bot.guilds:
+            config = self.guild_config(str(guild.id))
+            if not config["enabled"]:
+                continue
+
+            logger.debug("Caching invites for guild (%s).", guild.name)
+            self.invite_cache[guild.id] = {inv for inv in await guild.invites()}
 
     async def get_used_invite(self, member) -> List[Optional[discord.Invite]]:
         """
@@ -111,7 +131,8 @@ class Invites(commands.Cog):
 
             # 2. Check invite uses.
             used_inv = next(
-                (inv for inv in new_invite_cache if inv.id == _inv.id and inv.uses > _inv.uses), None
+                (inv for inv in new_invite_cache if inv.id == _inv.id and inv.uses > _inv.uses),
+                None,
             )
             if used_inv is not None:
                 # We found the used invite, the `for loop` will stop here and the value will be returned.
@@ -198,11 +219,6 @@ class Invites(commands.Cog):
         """
         await ctx.send_help(ctx.command)
 
-        config = self._config_cache.get(str(ctx.guild.id))
-        if config is None:
-            self._config_cache[str(ctx.guild.id)] = {k: v for k, v in self.default_config.items()}
-            await self.config_update()
-
     @invites.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def invites_config(self, ctx: commands.Context):
@@ -229,10 +245,7 @@ class Invites(commands.Cog):
 
         `<channel>` may be a channel ID, mention, or name.
         """
-        config = self._config_cache.get(str(ctx.guild.id))
-        if config is None:
-            config = {k: v for k, v in self.default_config.items()}
-            self._config_cache[str(ctx.guild.id)] = config
+        config = self.guild_config(str(ctx.guild.id))
 
         new_config = dict(channel=str(channel.id))
         config.update(new_config)
@@ -254,10 +267,7 @@ class Invites(commands.Cog):
         - `{prefix}invite config set enable True`
         - `{prefix}invite config set enable False`
         """
-        config = self._config_cache.get(str(ctx.guild.id))
-        if config is None:
-            config = {k: v for k, v in self.default_config.items()}
-            self._config_cache[str(ctx.guild.id)] = config
+        config = self.guild_config(str(ctx.guild.id))
 
         new_config = dict(enabled=mode)
         config.update(new_config)
@@ -271,7 +281,7 @@ class Invites(commands.Cog):
         await ctx.send(embed=embed)
 
         if mode:
-            self.invite_cache[ctx.guild.id] = {i for i in await ctx.guild.invites()}
+            self.invite_cache[ctx.guild.id] = {inv for inv in await ctx.guild.invites()}
 
     @invites_config.command(name="get")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -285,12 +295,7 @@ class Invites(commands.Cog):
         - `{prefix}invite config get channel`
         - `{prefix}invite config get enabled`
         """
-        try:
-            config = self._config_cache[str(ctx.guild.id)]
-        except KeyError:
-            config = {k: v for k, v in self.default_config.items()}
-            self._config_cache[str(ctx.guild.id)] = config
-            await self.config_update()
+        config = self.guild_config(str(ctx.guild.id))
 
         if key:
             keys = [k for k in self.default_config]
@@ -488,18 +493,24 @@ class Invites(commands.Cog):
 
     @commands.Cog.listener()
     async def on_invite_create(self, invite):
-        self.invite_cache[invite.guild.id] = {i for i in await invite.guild.invites()}
-        logger.debug("Invite created. Updating invite cache for (%s).", invite.guild)
+        config = self.guild_config(str(invite.guild.id))
+        if not config["enabled"]:
+            return
+
+        cached_invites = self.invite_cache.get(str(invite.guild.id))
+        if cached_invites is None:
+            cached_invites = {inv for inv in await invite.guild.invites()}
+        else:
+            cached_invites.update({invite})
+        self.invite_cache[invite.guild.id] = cached_invites
+        logger.debug("Invite created. Updating invite cache for guild (%s).", invite.guild)
 
     @commands.Cog.listener()
     async def on_member_join(self, member) -> None:
         if member.bot:
             return
 
-        try:
-            config = self._config_cache[str(member.guild.id)]
-        except KeyError:
-            return
+        config = self.guild_config(str(member.guild.id))
 
         if not config["enabled"]:
             return
@@ -559,10 +570,7 @@ class Invites(commands.Cog):
         if member.bot:
             return
 
-        try:
-            config = self._config_cache[str(member.guild.id)]
-        except KeyError:
-            return
+        config = self.guild_config(str(member.guild.id))
 
         if not config["enabled"]:
             return
