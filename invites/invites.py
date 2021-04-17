@@ -82,7 +82,7 @@ class Invites(commands.Cog):
 
     async def config_update(self):
         """
-        Updates the database with new data and refresh the config cache.
+        Updates the database with the data from config cache.
 
         This will update the database from the cache globally (not guild specific).
         """
@@ -557,10 +557,10 @@ class Invites(commands.Cog):
                 embed.add_field(name="Invite uses:", value=f"{invite.uses}")
 
             elif len(predicted_invites) > 1:
-                embed.description += "\n⚠️ *More than 1 used invites are predicted.*\n"
+                embed.description += "\n\N{WARNING SIGN}  *More than 1 used invites are predicted.*\n"
 
         elif not predicted_invites:
-            embed.description += "\n⚠️ *Something went wrong, could not get invite info.*\n"
+            embed.description += "\n\N{WARNING SIGN}  *Something went wrong, could not get invite info.*\n"
 
         await channel.send(embed=embed)
         await self.save_user_data(member, predicted_invites)
@@ -609,7 +609,7 @@ class Invites(commands.Cog):
             embed.description += "\n**Roles:**\n" + (" ".join(role_list)) + "\n"
 
         if user_db and user_db.get("multi"):
-            embed.description += "\n⚠️ *More than 1 used invites were retrieved.*\n"
+            embed.description += "\n\N{WARNING SIGN}  *More than 1 used invites were retrieved.*\n"
 
         await channel.send(embed=embed)
         await self.remove_user_data(member)
