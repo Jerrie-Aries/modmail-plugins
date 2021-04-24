@@ -1,5 +1,4 @@
 import re
-from io import BytesIO
 from typing import Iterator, List, Optional, Sequence, Union
 
 import discord
@@ -103,36 +102,6 @@ def escape(text: str, *, mass_mentions: bool = False, formatting: bool = False) 
     if formatting:
         text = escape_markdown(text)
     return text
-
-
-def text_to_file(
-    text: str, filename: str = "file.txt", *, spoiler: bool = False, encoding: str = "utf-8"
-):
-    """
-    Prepares text to be sent as a file on Discord, without character limit.
-
-    This writes text into a bytes object that can be used for the ``file`` or ``files`` parameters
-    of :meth:`discord.abc.Messageable.send`.
-
-    Parameters
-    ----------
-    text: str
-        The text to put in your file.
-    filename: str
-        The name of the file sent. Defaults to ``file.txt``.
-    spoiler: bool
-        Whether the attachment is a spoiler. Defaults to ``False``.
-    encoding: str
-        Encoding style. Defaults to ``utf-8``.
-
-    Returns
-    -------
-    discord.File
-        The file containing your text.
-
-    """
-    file = BytesIO(text.encode(encoding))
-    return discord.File(file, filename, spoiler=spoiler)
 
 
 def paginate(

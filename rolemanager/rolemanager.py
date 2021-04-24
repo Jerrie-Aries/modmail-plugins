@@ -20,7 +20,6 @@ from .utils import (
     human_join,
     humanize_roles,
     paginate,
-    text_to_file,
 )
 
 logger = getLogger(__name__)
@@ -112,7 +111,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             upsert=True,
         )
 
-    async def get_info(self, role: discord.Role) -> discord.Embed:
+    async def get_role_info(self, role: discord.Role) -> discord.Embed:
         if guild_roughly_chunked(role.guild) is False and self.bot.intents.members:
             await role.guild.chunk()
         description = [
@@ -125,14 +124,17 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if role.managed:
             description.append(f"Managed: {role.managed}")
 
-        e = discord.Embed(
+        embed = discord.Embed(
             color=role.color,
             title=role.name,
             description="\n".join(description),
             timestamp=role.created_at,
         )
-        e.set_footer(text=role.id)
-        return e
+
+        rolecolor = str(role.color).upper()
+        embed.set_thumbnail(url=f"https://placehold.it/100/{str(rolecolor)[1:]}?text=+")
+        embed.set_footer(text=f"Role ID: {role.id}")
+        return embed
 
     @staticmethod
     def get_hsv(role: discord.Role):
@@ -152,7 +154,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         """
         Get information about a role.
         """
-        await ctx.send(embed=await self.get_info(role))
+        await ctx.send(embed=await self.get_role_info(role))
 
     @role_.command(name="members", aliases=["dump"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -160,15 +162,46 @@ class RoleManager(commands.Cog, name="Role Manager"):
         """
         Sends a list of members in a role.
         """
-        if guild_roughly_chunked(ctx.guild) is False and self.bot.intents.members:
-            await ctx.guild.chunk()
-        if not role.members:
-            return await ctx.send(f"**{role}** has no members.")
-        members = "\n".join(f"{member} - {member.id}" for member in role.members)
-        if len(members) > 2000:
-            await ctx.send(file=text_to_file(members, f"members.txt"))
+        if guild_roughly_chunked(role.guild) is False and self.bot.intents.members:
+            await role.guild.chunk()
+
+        member_list = role.members.copy()
+
+        def base_embed(continued=False, description=None):
+            embed = discord.Embed(
+                description=description if description is not None else "", color=role.color
+            )
+
+            embed.title = f"Members in {discord.utils.escape_markdown(role.name)}"
+            if continued:
+                embed.title += " (Continued)"
+
+            embed.set_thumbnail(url=f"https://placehold.it/100/{str(role.color)[1:]}?text=+")
+
+            footer_text = f"Found {len(member_list)} " + ("member" if len(member_list) == 1 else "members")
+            embed.set_footer(text=footer_text)
+            return embed
+
+        embeds = [base_embed()]
+        entries = 0
+
+        if member_list:
+            embed = embeds[0]
+
+            for member in sorted(member_list, key=lambda m: m.name.lower()):
+                line = f"{member} - {member.id}\n"
+                if entries == 25:
+                    embed = base_embed(continued=True, description=line)
+                    embeds.append(embed)
+                    entries = 1
+                else:
+                    embed.description += line
+                    entries += 1
         else:
-            await ctx.send(members)
+            embeds[0].description = f"Role **{role}** has no members."
+
+        session = EmbedPaginatorSession(ctx, *embeds)
+        await session.run()
 
     @role_.command(name="colors")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -217,7 +250,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             return await ctx.send("This server has reached the maximum role limit (250).")
 
         role = await ctx.guild.create_role(name=name, colour=color, hoist=hoist)
-        await ctx.send(f"**{role}** created!", embed=await self.get_info(role))
+        await ctx.send(f"**{role}** created!", embed=await self.get_role_info(role))
 
     @role_.command(name="color")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -229,7 +262,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             raise commands.BadArgument(f"I am not higher than `{role}` in hierarchy.")
         await role.edit(color=color)
         await ctx.send(
-            f"**{role}** color changed to **{color}**.", embed=await self.get_info(role)
+            f"**{role}** color changed to **{color}**.", embed=await self.get_role_info(role)
         )
 
     @role_.command(name="name")
@@ -242,7 +275,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             raise commands.BadArgument(f"I am not higher than `{role}` in hierarchy.")
         old_name = role.name
         await role.edit(name=name)
-        await ctx.send(f"Changed **{old_name}** to **{name}**.", embed=await self.get_info(role))
+        await ctx.send(f"Changed **{old_name}** to **{name}**.", embed=await self.get_role_info(role))
 
     @role_.command(name="add")
     @checks.has_permissions(PermissionLevel.MODERATOR)
