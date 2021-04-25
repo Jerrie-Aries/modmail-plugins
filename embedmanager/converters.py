@@ -59,7 +59,8 @@ class StringToEmbed(Converter):
     ) -> Dict[str, Union[discord.Embed, str]]:
         content = self.get_content(data, content=content)
 
-        if timestamp := data.get("timestamp"):
+        timestamp = data.get("timestamp")
+        if timestamp:
             data["timestamp"] = timestamp.strip("Z")
         try:
             e = discord.Embed.from_dict(data)
