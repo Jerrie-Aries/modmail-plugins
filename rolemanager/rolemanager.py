@@ -1917,7 +1917,8 @@ class RoleManager(commands.Cog, name="Role Manager"):
         desc = (
             "`--format` - How to display results.  At the moment, defaults to `menu` for showing the results in Discord.\n"
             "\n"
-            "If at any time you need to include quotes at the beginning or ending of something (such as a nickname or a role), include a slash (\\) right before it."
+            "If at any time you need to include quotes at the beginning or ending of something (such as a nickname or a role), "
+            "include a slash `\\` right before it."
         )
         special.description = desc
         special.set_footer(text="Target Arguments - Special Notes")
