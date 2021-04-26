@@ -1147,7 +1147,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         rules = rules_resp.content.upper()
         if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
             raise commands.BadArgument(
-                f'"{rules}" is not an available option for reaction role rules.'
+                f"`{rules}` is not an available option for reaction role rules."
             )
 
         if name is None:
@@ -1246,7 +1246,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             if reaction.emoji == NO_EMOJI:
                 raise commands.BadArgument("Bind cancelled.")
 
-        rules = message_config["emoji_role_groups"].get("rules", ReactRules.NORMAL)
+        rules = message_config.get("rules", ReactRules.NORMAL)
         message_config["emoji_role_groups"][self.emoji_id(emoji)] = role.id
         message_config["channel"] = message.channel.id
         message_config["rules"] = rules
@@ -1265,7 +1265,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
     async def reactrole_setrule(
         self,
         ctx: commands.Context,
-        message: Union[discord.Message, ObjectConverter],
+        message: Union[discord.Message, ObjectConverter, int],
         rules: str.upper = None,
     ):
         """
@@ -1279,7 +1279,12 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         Leave the `rules` empty to get the current set configuration.
         """
-        message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
+        if isinstance(message, int):
+            message_id = message
+        else:
+            message_id = message.id
+
+        message_config = self.config["reactroles"]["message_cache"].get(str(message_id))
         if message_config is None or not message_config.get("emoji_role_groups"):
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
@@ -1313,12 +1318,19 @@ class RoleManager(commands.Cog, name="Role Manager"):
     async def reactrole_delete(
         self,
         ctx: commands.Context,
-        message: Union[discord.Message, ObjectConverter],
+        message: Union[discord.Message, ObjectConverter, int],
     ):
         """
         Delete an entire reaction role for a message.
+
+        `message` may be a message ID or message link.
         """
-        message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
+        if isinstance(message, int):
+            message_id = message
+        else:
+            message_id = message.id
+
+        message_config = self.config["reactroles"]["message_cache"].get(str(message_id))
         if message_config is None or not message_config.get("emoji_role_groups"):
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
@@ -1355,13 +1367,20 @@ class RoleManager(commands.Cog, name="Role Manager"):
     async def delete_bind(
         self,
         ctx: commands.Context,
-        message: Union[discord.Message, ObjectConverter],
+        message: Union[discord.Message, ObjectConverter, int],
         emoji: Union[UnionEmoji, ObjectConverter],
     ):
         """
         Delete an emoji-role bind for a reaction role.
+
+        `message` may be a message ID or message link.
         """
-        message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
+        if isinstance(message, int):
+            message_id = message
+        else:
+            message_id = message.id
+
+        message_config = self.config["reactroles"]["message_cache"].get(str(message_id))
         if message_config is None:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
@@ -1448,7 +1467,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_clear(self, ctx: commands.Context):
         """
-        Clear all ReactRole data.
+        Clear all Reaction Role data.
         """
         confirm = await ctx.send(
             embed=discord.Embed(
