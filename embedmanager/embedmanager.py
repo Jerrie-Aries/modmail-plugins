@@ -181,8 +181,8 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         """
         channel = channel or ctx.channel
         color = color or self.bot.main_color
-        e = discord.Embed(color=color, title=title, description=description)
-        await channel.send(embed=e)
+        embed = discord.Embed(color=color, title=title, description=description)
+        await channel.send(embed=embed)
 
     @_embed.command(name="json", aliases=["fromjson", "fromdata"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -262,14 +262,14 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
 
         Use command `{prefix}embed store list` to get the list of stored embeds.
         """
-        e = discord.Embed(
+        embed = discord.Embed(
             title=f"`{name['name']}` Info",
             description=(
                 f"Author: <@!{name['author']}>\n"
-                f"Length: {len(name['embed'])}"
+                f"Length: {len(discord.Embed.from_dict(name['embed']))}"
             ),
         )
-        await ctx.send(embed=e)
+        await ctx.send(embed=embed)
 
     @_embed.group(name="edit", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -288,8 +288,8 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         `message` may be a message ID or message link of the bot's embed.
         """
         color = color or self.bot.main_color
-        e = discord.Embed(color=color, title=title, description=description)
-        await message.edit(embed=e)
+        embed = discord.Embed(color=color, title=title, description=description)
+        await message.edit(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
@@ -314,8 +314,8 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         `message` may be a message ID or message link of the bot's embed.
         """
         data = await self.get_file_from_message(ctx, file_types=("json", "txt"))
-        e = await JSON_CONVERTER.convert(ctx, data)
-        await message.edit(embed=e)
+        embed = await JSON_CONVERTER.convert(ctx, data)
+        await message.edit(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="message", aliases=["frommsg", "frommessage"])
@@ -366,9 +366,9 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         """
         if not color:
             color = self.bot.main_color
-        e = discord.Embed(color=color, title=title, description=description)
-        await ctx.send(embed=e)
-        await self.store_embed(ctx, name, e)
+        embed = discord.Embed(color=color, title=title, description=description)
+        await ctx.send(embed=embed)
+        await self.store_embed(ctx, name, embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_store.command(name="json", aliases=["fromjson", "fromdata"])
@@ -387,8 +387,8 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         Store an embed from a valid JSON file.
         """
         data = await self.get_file_from_message(ctx, file_types=("json", "txt"))
-        e = await JSON_CONVERTER.convert(ctx, data)
-        await self.store_embed(ctx, name, e)
+        embed = await JSON_CONVERTER.convert(ctx, data)
+        await self.store_embed(ctx, name, embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_store.command(name="message", aliases=["frommsg", "frommessage"])
@@ -403,8 +403,8 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
         """
         embed = await self.get_embed_from_message(message, index)
-        await ctx.send(embed=embed)
         await self.store_embed(ctx, name, embed)
+        await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_store.command(name="remove", aliases=["delete", "rm", "del"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -420,7 +420,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
             await ctx.send("This is not a stored embed.")
         else:
             await self.update_db(db_config)
-            await ctx.send("Embed deleted.")
+            await ctx.send(f"Embed `{name}` is now deleted.")
 
     @embed_store.command(name="download")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -447,20 +447,20 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         description = "\n".join(description)
 
         color = self.bot.main_color
-        e = discord.Embed(color=color, title=f"Stored Embeds")
+        em = discord.Embed(color=color, title=f"Stored Embeds")
 
         if len(description) > 2048:
             embeds = []
             pages = list(paginate(description, page_length=1024))
             for page in pages:
-                embed = e.copy()
+                embed = em.copy()
                 embed.description = page
                 embeds.append(embed)
             session = EmbedPaginatorSession(ctx, *embeds)
             await session.run()
         else:
-            e.description = description
-            await ctx.send(embed=e)
+            em.description = description
+            await ctx.send(embed=em)
 
     async def store_embed(self, ctx: commands.Context, name: str, embed: discord.Embed):
         embed = embed.to_dict()
@@ -468,7 +468,10 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embeds = db_config.get("embeds", {})
         embeds[name] = {"author": ctx.author.id, "embed": embed, "name": name}
         await self.update_db(db_config)
-        await ctx.send(f"Embed stored under the name `{name}`.")
+        await ctx.send(
+            f"Embed stored under the name `{name}`. To post this embed, use command:\n"
+            f"`{self.bot.prefix}embed post {name}`"
+        )
 
     async def get_stored_embed(self, ctx: commands.Context, name: str):
         db_config = await self.db_config()
