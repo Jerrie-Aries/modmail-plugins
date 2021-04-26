@@ -31,10 +31,9 @@ def get_audit_reason(moderator: discord.Member):
 
 
 class ReactRules:
-    NORMAL = "NORMAL"
-    UNIQUE = "UNIQUE"
-    VERIFY = "VERIFY"
-    DROP = "DROP"
+    NORMAL = "NORMAL"  # Allow multiple.
+    UNIQUE = "UNIQUE"  # Remove existing role when assigning another role in group.
+    VERIFY = "VERIFY"  # Not Implemented yet.
 
 
 YES_EMOJI = "✅"
@@ -75,7 +74,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         "message": int(),
         "channel": int(),
         "emoji_role_groups": {},  # "emoji_id": "role_id"
-        "rules": str(None),
+        "rules": ReactRules.NORMAL,
     }
 
     def __init__(self, bot) -> None:
@@ -190,6 +189,10 @@ class RoleManager(commands.Cog, name="Role Manager"):
     @staticmethod
     def get_hsv(role: discord.Role):
         return rgb_to_hsv(*role.color.to_rgb())
+
+    def base_embed(self, description: str):
+        embed = discord.Embed(color=self.bot.main_color, description=description)
+        return embed
 
     @commands.group(name="roleutil", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -794,13 +797,17 @@ class RoleManager(commands.Cog, name="Role Manager"):
     @commands.group(name="autorole", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def _autorole(self, ctx: commands.Context):
-        """Manage autoroles."""
+        """
+        Manage autoroles.
+        """
         await ctx.send_help(ctx.command)
 
     @_autorole.command(name="add")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_add(self, ctx: commands.Context, *, role: AssignableRole):
-        """Add a role to be added to all new members on join."""
+        """
+        Add a role to be added to all new members on join.
+        """
         autorole_config = self.config["autorole"]
         roles = autorole_config.get("roles", [])
         if role.id in roles:
@@ -817,24 +824,37 @@ class RoleManager(commands.Cog, name="Role Manager"):
     @_autorole.command(name="remove", aliases=["delete"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_remove(self, ctx: commands.Context, *, role: Union[AssignableRole, int]):
-        """Remove an autorole."""
+        """
+        Remove an autorole.
+        """
         autorole_config = self.config["autorole"]
         roles = autorole_config.get("roles", [])
-        if role.id not in roles:
+
+        if isinstance(role, discord.Role):
+            role_id = role.id
+        else:
+            role_id = role  # to support removing id of role that already got deleted from server
+
+        if role_id not in roles:
             raise commands.BadArgument(f'Role "{role}" is not in autorole list.')
 
-        roles.remove(role.id)
+        roles.remove(role_id)
         await self.update_db()
+
         embed = discord.Embed(
             color=self.bot.main_color,
-            description=f"Successfully removed role {role.mention} from autorole list.",
+            description=f'Successfully removed role "{role}" from autorole list.',
         )
         await ctx.send(embed=embed)
 
     @_autorole.command(name="enable")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_enable(self, ctx: commands.Context, mode: bool = None):
-        """Enable the autorole on member join."""
+        """
+        Enable the autorole on member join.
+
+        Run this command without argument to get the current set configuration.
+        """
         autorole_config = self.config["autorole"]
         enabled = autorole_config.get("enabled", False)
         if mode is None:
@@ -858,7 +878,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
     @_autorole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def autorole_list(self, ctx: commands.Context):
-        """List of roles set for the autorole on this server."""
+        """
+        List of roles set for the autorole on this server.
+        """
         autorole_config = self.config["autorole"]
         roles = autorole_config.get("roles", [])
         if not roles:
@@ -868,14 +890,17 @@ class RoleManager(commands.Cog, name="Role Manager"):
         for role_id in roles:
             role = ctx.guild.get_role(role_id)
             if role is None:
+                autorole_roles.append(
+                    role_id
+                )  # show anyway in case the role already got deleted from server
                 continue
-            autorole_roles.append(role)
+            autorole_roles.append(role.mention)
         if not autorole_roles:
             raise commands.BadArgument("There are no roles set for the autorole on this server.")
 
         embed = discord.Embed(title="Autorole", color=self.bot.main_color, description="")
-        for i, role in enumerate(autorole_roles, start=1):
-            embed.description += f"{i}. {role.mention}\n"
+        for i, role_fmt in enumerate(autorole_roles, start=1):
+            embed.description += f"{i}. {role_fmt}\n"
 
         embed.set_footer(
             text=f"Total: {len(autorole_roles)}"
@@ -886,7 +911,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
     @_autorole.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_clear(self, ctx: commands.Context):
-        """Clear the autorole data."""
+        """
+        Clear the autorole data.
+        """
 
         confirm = await ctx.send(
             embed=discord.Embed(
@@ -912,7 +939,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 await confirm.clear_reactions()
             except (discord.Forbidden, discord.HTTPException):
                 pass
-            return await ctx.send("Time out. Action cancelled.")
+            raise commands.BadArgument("Time out. Action cancelled.")
 
         if reaction.emoji == YES_EMOJI:
             autorole_config = self.config["autorole"]
@@ -958,7 +985,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             return
 
     # ###################### #
-    #     REACTION ROLES     #  TODO: Rules converter/parser
+    #     REACTION ROLES     #
     # ###################### #
 
     def _check_payload_to_cache(self, payload):
@@ -1021,6 +1048,8 @@ class RoleManager(commands.Cog, name="Role Manager"):
     async def reactrole_enable(self, ctx: commands.Context, mode: bool = None):
         """
         Toggle reaction roles on or off.
+
+        Run this command without argument to get the current set configuration.
         """
         reactroles_config = self.config.get("reactroles")
         enabled = reactroles_config.get("enabled", False)
@@ -1079,7 +1108,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             raise commands.BadArgument("Failed to parse emoji and role groups.")
         channel = channel or ctx.channel
         if not channel.permissions_for(ctx.me).send_messages:
-            return await ctx.send(
+            raise commands.BadArgument(
                 f"I do not have permission to send messages in {channel.mention}."
             )
         if color is None:
@@ -1095,31 +1124,59 @@ class RoleManager(commands.Cog, name="Role Manager"):
         def cancel_check(msg: discord.Message):
             return msg.content == "cancel" or msg.content == f"{ctx.prefix}cancel"
 
+        rules_msg = await ctx.send(
+            embed=self.base_embed(
+                "What is the rules for this reaction role you want to set?\n\n"
+                "Available options:\n"
+                "`Normal` - Allow users to have multiple roles in group.\n"
+                "`Unique` - Remove existing role when assigning another role in group.\n"
+            )
+        )
+
+        try:
+            rules_resp = await self.bot.wait_for("message", check=check, timeout=60)
+        except asyncio.TimeoutError:
+            await delete_quietly(rules_msg)
+            raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
+        else:
+            await delete_quietly(rules_resp)
+            await delete_quietly(rules_msg)
+            if cancel_check(rules_resp) is True:
+                raise commands.BadArgument("Reaction Role creation cancelled.")
+
+        rules = rules_resp.content.upper()
+        if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
+            raise commands.BadArgument(
+                f'"{rules}" is not an available option for reaction role rules.'
+            )
+
         if name is None:
-            m = await ctx.send("What would you like the reaction role menu name to be?")
+            m = await ctx.send(
+                embed=self.base_embed("What would you like the reaction role menu name to be?")
+            )
             try:
                 msg = await self.bot.wait_for("message", check=check, timeout=60)
             except asyncio.TimeoutError:
                 await delete_quietly(m)
-                return await ctx.send("Reaction Role creation cancelled.")
+                raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
             else:
                 await delete_quietly(msg)
                 await delete_quietly(m)
                 if cancel_check(msg) is True:
-                    return await ctx.send("Reaction Role creation cancelled.")
+                    raise commands.BadArgument("Reaction Role creation cancelled.")
                 name = msg.content
 
         description = f"React to the following emoji to receive the corresponding role:\n"
         for (emoji, role) in emoji_role_groups:
             description += f"{emoji} - {role.mention}\n"
-        e = discord.Embed(title=name[:256], color=color, description=description)
-        message = await channel.send(embed=e)
+        embed = discord.Embed(title=name[:256], color=color, description=description)
+        message = await channel.send(embed=embed)
 
         duplicates = {}
         message_config = deepcopy(self.reactroles_default_config)
         message_config["message"] = message.id
         message_config["channel"] = message.channel.id
-        message_config["rules"] = ReactRules.NORMAL
+        message_config["rules"] = rules
         binds = {}
         for (emoji, role) in emoji_role_groups:
             emoji_id = self.emoji_id(emoji)
@@ -1133,7 +1190,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             dupes = "The following groups were duplicates and weren't added:\n"
             for emoji, role in duplicates.items():
                 dupes += f"{emoji};{role}\n"
-            await ctx.send(dupes)
+            await ctx.send(embed=self.base_embed(dupes))
 
         await ctx.message.add_reaction(YES_EMOJI)
 
@@ -1152,9 +1209,11 @@ class RoleManager(commands.Cog, name="Role Manager"):
         """
         Bind a reaction role to an emoji on a message that already exists.
 
-        This also could be used if you want to create a reaction roles menu on a pre-existing message.
+        `message` may be a message ID or message link.
+
+        __**Note:**__
+        - This could be used if you want to create a reaction roles menu on a pre-existing message.
         """
-        rules = ReactRules.NORMAL
         emoji_id = self.emoji_id(emoji)
         message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
         if message_config is None:
@@ -1163,8 +1222,10 @@ class RoleManager(commands.Cog, name="Role Manager"):
         old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_id))
         if old_role:
             msg = await ctx.send(
-                f"`{old_role}` is already binded to {emoji} on {message.jump_url}\n"
-                "Would you like to override it?"
+                embed=self.base_embed(
+                    f"`{old_role}` is already binded to {emoji} on {message.jump_url}\n"
+                    "Would you like to override it?"
+                )
             )
             self.add_multiple_reactions(msg, [YES_EMOJI, NO_EMOJI])
 
@@ -1180,22 +1241,72 @@ class RoleManager(commands.Cog, name="Role Manager"):
                     "reaction_add", check=reaction_check, timeout=60
                 )
             except asyncio.TimeoutError:
-                return await ctx.send("Timeout. Bind cancelled.")
+                raise commands.BadArgument("Time out. Bind cancelled.")
 
             if reaction.emoji == NO_EMOJI:
-                return await ctx.send("Bind cancelled.")
-            rules = message_config["emoji_role_groups"].get("rules", ReactRules.NORMAL)
+                raise commands.BadArgument("Bind cancelled.")
 
+        rules = message_config["emoji_role_groups"].get("rules", ReactRules.NORMAL)
         message_config["emoji_role_groups"][self.emoji_id(emoji)] = role.id
         message_config["channel"] = message.channel.id
         message_config["rules"] = rules
 
         if str(emoji) not in [str(emoji) for emoji in message.reactions]:
             await message.add_reaction(emoji)
-        await ctx.send(f"`{role}` has been binded to {emoji} on {message.jump_url}")
+        await ctx.send(
+            embed=self.base_embed(f"`{role}` has been binded to {emoji} on {message.jump_url}")
+        )
 
         self._udpate_reactrole_cache(message.id, config=message_config)
         await self.update_db()
+
+    @reactrole.command(name="setrule")
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def reactrole_setrule(
+        self,
+        ctx: commands.Context,
+        message: Union[discord.Message, ObjectConverter],
+        rules: str.upper = None,
+    ):
+        """
+        Set a new rules for existing reaction role message.
+
+        `message` may be a message ID or message link.
+
+        Available options for `rules`:
+        `Normal` - Allow users to have multiple roles in group.
+        `Unique` - Remove existing role when assigning another role in group.
+
+        Leave the `rules` empty to get the current set configuration.
+        """
+        message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
+        if message_config is None or not message_config.get("emoji_role_groups"):
+            raise commands.BadArgument("There are no reaction roles set up for that message.")
+
+        old_rules = message_config["rules"]
+        if rules is None:
+            return await ctx.send(
+                embed=self.base_embed(
+                    f"Reaction role rules for that message is currently set to `{old_rules}`."
+                )
+            )
+
+        if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
+            raise commands.BadArgument(
+                f"`{rules}` is not a valid option for reaction role rules."
+            )
+
+        old_rules = message_config["rules"]
+        if rules == old_rules:
+            raise commands.BadArgument(
+                f"Reaction role rules for that message is already set to `{old_rules}`."
+            )
+
+        message_config["rules"] = rules
+        await self.update_db()
+        await ctx.send(
+            embed=self.base_embed(f"Reaction role rules for that message is now set to `{rules}`.")
+        )
 
     @reactrole.group(name="delete", aliases=["remove"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -1212,7 +1323,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         msg = await ctx.send(
-            "Are you sure you want to remove all reaction roles for that message?"
+            embed=self.base_embed(
+                "Are you sure you want to remove all reaction roles for that message?"
+            )
         )
         self.add_multiple_reactions(msg, [YES_EMOJI, NO_EMOJI])
 
@@ -1228,14 +1341,14 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 "reaction_add", check=reaction_check, timeout=60
             )
         except asyncio.TimeoutError:
-            return await ctx.send("Action cancelled.")
+            raise commands.BadArgument("Time out. Action cancelled.")
 
         if reaction.emoji == YES_EMOJI:
             self._udpate_reactrole_cache(message.id, remove=True)
             await self.update_db()
-            await ctx.send("Reaction roles cleared for that message.")
+            await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
         else:
-            await ctx.send("Action cancelled.")
+            raise commands.BadArgument("Action cancelled.")
 
     @reactrole_delete.command(name="bind")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -1258,7 +1371,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         except KeyError:
             raise commands.BadArgument("That wasn't a valid emoji for that message.")
         await self.update_db()
-        await ctx.send(f"That emoji role bind was deleted.")
+        await ctx.send(embed=self.base_embed(f"That emoji role bind was deleted."))
 
     @reactrole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -1291,8 +1404,8 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 link = ""
 
             to_delete_emoji_ids = []
-
-            reactions = [f"[Reaction Role #{index}]({link})"]
+            rules = message_data["rules"]
+            reactions = [f"[Reaction Role #{index}]({link}) - `{rules}`"]
             for emoji, role in message_data["emoji_role_groups"].items():
                 role = ctx.guild.get_role(role)
                 if role:
@@ -1319,9 +1432,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
         base_embed = discord.Embed(color=color)
         base_embed.set_author(name="Reaction Roles", icon_url=ctx.guild.icon_url)
         for page in pages:
-            e = base_embed.copy()
-            e.description = page
-            embeds.append(e)
+            embed = base_embed.copy()
+            embed.description = page
+            embeds.append(embed)
 
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
@@ -1337,13 +1450,18 @@ class RoleManager(commands.Cog, name="Role Manager"):
         """
         Clear all ReactRole data.
         """
-        msg = await ctx.send("Are you sure you want to clear all reaction role data?")
-        self.add_multiple_reactions(msg, [YES_EMOJI, NO_EMOJI])
+        confirm = await ctx.send(
+            embed=discord.Embed(
+                color=self.bot.main_color,
+                description="Are you sure you want to clear all reaction role data?",
+            ).set_footer(text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel")
+        )
+        self.add_multiple_reactions(confirm, [YES_EMOJI, NO_EMOJI])
 
         def reaction_check(reaction, user):
             return (
                 user.id == ctx.author.id
-                and reaction.message.id == msg.id
+                and reaction.message.id == confirm.id
                 and reaction.emoji in [YES_EMOJI, NO_EMOJI]
             )
 
@@ -1352,14 +1470,14 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 "reaction_add", check=reaction_check, timeout=60
             )
         except asyncio.TimeoutError:
-            return await ctx.send("Action cancelled.")
+            raise commands.BadArgument("Time out. Action cancelled.")
 
         if reaction.emoji == YES_EMOJI:
             self.config["reactroles"]["message_cache"].clear()
-            await ctx.send("Data cleared.")
+            await ctx.send(embed=self.base_embed("Data cleared."))
             await self.update_db()
         else:
-            await ctx.send("Action cancelled.")
+            raise commands.BadArgument("Action cancelled.")
 
     @commands.Cog.listener("on_raw_reaction_add")
     @commands.Cog.listener("on_raw_reaction_remove")
@@ -1397,22 +1515,39 @@ class RoleManager(commands.Cog, name="Role Manager"):
         reacts = message_config.get("emoji_role_groups")
         if emoji_fmt not in reacts:
             return
+
         role_id = reacts.get(emoji_fmt)
         if not role_id:
             logger.debug("No matched role id.")
             return
+
         role = guild.get_role(role_id)
         if not role:
             logger.debug("Role was deleted.")
             await self.bulk_delete_set_roles(discord.Object(payload.message_id), [emoji_fmt])
             await self.update_db()
+            return
+
         if not my_role_hierarchy(guild, role):
             logger.debug("Role outranks me.")
             return
 
+        rules = message_config.get("rules", ReactRules.NORMAL)
         if payload.event_type == "REACTION_ADD":
             if role not in member.roles:
                 await member.add_roles(role, reason="Reaction role.")
+            if rules == ReactRules.UNIQUE:
+                to_remove = []
+                for _, _id in reacts.items():
+                    if _id == role_id:
+                        continue
+                    _role = guild.get_role(_id)
+                    if _role is not None:
+                        to_remove.append(_role)
+                to_remove = [r for r in to_remove if r in member.roles]
+                if not to_remove:
+                    return
+                await member.remove_roles(*to_remove, reason="Reaction role.")
         else:
             if role in member.roles:
                 await member.remove_roles(role, reason="Reaction role.")
