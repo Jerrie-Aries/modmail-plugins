@@ -1915,7 +1915,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             title="Target Arguments - Special Notes", color=self.bot.main_color
         )
         desc = (
-            "`--format` - How to display results.  At the moment, must be `page` for posting on a website, or `menu` for showing the results in Discord.\n"
+            "`--format` - How to display results.  At the moment, defaults to `menu` for showing the results in Discord.\n"
             "\n"
             "If at any time you need to include quotes at the beginning or ending of something (such as a nickname or a role), include a slash (\\) right before it."
         )
