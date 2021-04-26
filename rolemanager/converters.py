@@ -230,7 +230,7 @@ class Args(commands.Converter):
                 "Invalid status.  Must be either `online`, `dnd`, `idle` or `offline`."
             )
 
-        # Useeeeeeeeeeeeeeeeeeeernames (and Stuff)
+        # Usernames (and Stuff)
         if vals["disc"]:
             new = []
             for disc in vals["disc"]:
@@ -253,7 +253,7 @@ class Args(commands.Converter):
                     raise commands.BadArgument("Discriminators must be valid integers")
             vals["ndisc"] = new
 
-        # Rooooooooooooooooles
+        # Roles
 
         rc = commands.RoleConverter()
         new = []
@@ -288,7 +288,7 @@ class Args(commands.Converter):
             new.append(r)
         vals["not-any-role"] = new
 
-        # Daaaaaaaaaaaaaaaaaates
+        # Dates
 
         if vals["joined-on"]:
             try:
@@ -326,7 +326,7 @@ class Args(commands.Converter):
             except:
                 raise commands.BadArgument("Failed to parse --created-af argument")
 
-        # Actiiiiiiiiiiiiiiiiivities
+        # Activities
         if vals["device"]:
             if not all(d in ["desktop", "mobile", "web"] for d in vals["device"]):
                 raise commands.BadArgument("Bad device.  Must be `desktop`, `mobile` or `web`.")
@@ -389,9 +389,9 @@ class Args(commands.Converter):
         vals["not-any-perm"] = new
 
         if vals["format"]:
-            if not vals["format"][0].lower() in ["page", "menu"]:
+            if not vals["format"][0].lower() in ["menu"]:
                 raise commands.BadArgument(
-                    "Invalid format.  Must be `page` for in a bin or `menu` for in an embed."
+                    "Invalid format.  Must be `menu` for in an embed."
                 )
             vals["format"] = vals["format"][0].lower()
         self = cls()
@@ -400,13 +400,3 @@ class Args(commands.Converter):
 
     def __getitem__(self, item):
         return self.vals[item]
-
-
-# class TargeterArgs(commands.Converter):
-#     async def convert(self, ctx: commands.Context, argument: str) -> List[discord.Member]:
-#         members = await ctx.bot.get_cog("RoleManager").args_to_list(ctx, argument)
-#         if not members:
-#             raise commands.BadArgument(
-#                 f"No one was found with the given args.\nCheck out `{ctx.bot.prefix}target help` for an explanation."
-#             )
-#         return members
