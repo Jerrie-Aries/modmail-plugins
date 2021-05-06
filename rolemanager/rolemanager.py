@@ -1086,7 +1086,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         name: str = None,
     ):
         """
-        Create a reaction role.
+        Create a new reaction role menu.
 
         Emoji and role groups should be seperated by a `;` and have no space.
 
@@ -1126,7 +1126,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         rules_msg = await ctx.send(
             embed=self.base_embed(
-                "What is the rules for this reaction role you want to set?\n\n"
+                "What is the rule for this reaction role you want to set?\n\n"
                 "Available options:\n"
                 "`Normal` - Allow users to have multiple roles in group.\n"
                 "`Unique` - Remove existing role when assigning another role in group.\n"
@@ -1147,7 +1147,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         rules = rules_resp.content.upper()
         if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
             raise commands.BadArgument(
-                f"`{rules}` is not an available option for reaction role rules."
+                f"`{rules}` is not a valid option. Reaction Role creation cancelled."
             )
 
         if name is None:
@@ -1197,7 +1197,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         self._udpate_reactrole_cache(message.id, config=message_config)
         await self.update_db()
 
-    @reactrole.command(name="add", aliases=["bind"])
+    @reactrole.command(name="add", aliases=["bind", "link"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def reactrole_add(
         self,
@@ -1214,16 +1214,22 @@ class RoleManager(commands.Cog, name="Role Manager"):
         __**Note:**__
         - This could be used if you want to create a reaction roles menu on a pre-existing message.
         """
-        emoji_id = self.emoji_id(emoji)
         message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
         if message_config is None:
             message_config = deepcopy(self.reactroles_default_config)
 
+        for emo_id, role_id in message_config["emoji_role_groups"].items():
+            if role.id == role_id:
+                raise commands.BadArgument(
+                    f"Role {role.mention} is already binded to emoji {emo_id} on that message."
+                )
+
+        emoji_id = self.emoji_id(emoji)
         old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_id))
         if old_role:
             msg = await ctx.send(
                 embed=self.base_embed(
-                    f"`{old_role}` is already binded to {emoji} on {message.jump_url}\n"
+                    f"Emoji {emoji} is already binded to role {old_role.mention} on that message.\n"
                     "Would you like to override it?"
                 )
             )
@@ -1247,37 +1253,39 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 raise commands.BadArgument("Bind cancelled.")
 
         rules = message_config.get("rules", ReactRules.NORMAL)
-        message_config["emoji_role_groups"][self.emoji_id(emoji)] = role.id
+        message_config["emoji_role_groups"][emoji_id] = role.id
         message_config["channel"] = message.channel.id
         message_config["rules"] = rules
 
         if str(emoji) not in [str(emoji) for emoji in message.reactions]:
             await message.add_reaction(emoji)
         await ctx.send(
-            embed=self.base_embed(f"`{role}` has been binded to {emoji} on {message.jump_url}")
+            embed=self.base_embed(
+                f"Role {role.mention} has been binded to emoji {emoji} on [this message]({message.jump_url})."
+            )
         )
 
         self._udpate_reactrole_cache(message.id, config=message_config)
         await self.update_db()
 
-    @reactrole.command(name="setrule")
+    @reactrole.command(name="rule")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def reactrole_setrule(
+    async def reactrole_rule(
         self,
         ctx: commands.Context,
         message: Union[discord.Message, ObjectConverter, int],
         rules: str.upper = None,
     ):
         """
-        Set a new rules for existing reaction role message.
+        Set rule for an existing reaction role message.
 
         `message` may be a message ID or message link.
 
-        Available options for `rules`:
+        Available options for `rule`:
         `Normal` - Allow users to have multiple roles in group.
         `Unique` - Remove existing role when assigning another role in group.
 
-        Leave the `rules` empty to get the current set configuration.
+        Leave the `rule` empty to get the current set configuration.
         """
         if isinstance(message, int):
             message_id = message
@@ -1298,19 +1306,21 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
             raise commands.BadArgument(
-                f"`{rules}` is not a valid option for reaction role rules."
+                f"`{rules}` is not a valid option for reaction role's rule."
             )
 
         old_rules = message_config["rules"]
         if rules == old_rules:
             raise commands.BadArgument(
-                f"Reaction role rules for that message is already set to `{old_rules}`."
+                f"Reaction role's rule for that message is already set to `{old_rules}`."
             )
 
         message_config["rules"] = rules
         await self.update_db()
         await ctx.send(
-            embed=self.base_embed(f"Reaction role rules for that message is now set to `{rules}`.")
+            embed=self.base_embed(
+                f"Reaction role's rule for that message is now set to `{rules}`."
+            )
         )
 
     @reactrole.group(name="delete", aliases=["remove"], invoke_without_command=True)
@@ -1362,7 +1372,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         else:
             raise commands.BadArgument("Action cancelled.")
 
-    @reactrole_delete.command(name="bind")
+    @reactrole_delete.command(name="bind", aliases=["link"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def delete_bind(
         self,
