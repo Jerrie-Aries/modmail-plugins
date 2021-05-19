@@ -94,7 +94,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
             The Modmail bot.
         """
         self.bot = bot
-        self.db = bot.plugin_db.get_partition(self)
+        self.db = bot.api.get_plugin_partition(self)
 
     async def db_config(self) -> Dict:
         # No need to store in cache when initializing the plugin.

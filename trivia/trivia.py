@@ -365,7 +365,7 @@ class Trivia(commands.Cog):
         """
         self.bot = bot
         self.trivia_sessions = []
-        self.db = bot.plugin_db.get_partition(self)
+        self.db = bot.api.get_plugin_partition(self)
         self._config_cache = {}
 
         asyncio.create_task(self.populate_config_cache())

@@ -85,7 +85,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             The Modmail bot.
         """
         self.bot = bot
-        self.db = bot.plugin_db.get_partition(self)
+        self.db = bot.api.get_plugin_partition(self)
         self.config_cache = {}
         self.method = "build"
 

@@ -40,7 +40,7 @@ class Invites(commands.Cog):
             The Modmail bot.
         """
         self.bot = bot
-        self.db = bot.plugin_db.get_partition(self)
+        self.db = bot.api.get_plugin_partition(self)
         self.invite_cache = {}
         self._config_cache = {}
 
