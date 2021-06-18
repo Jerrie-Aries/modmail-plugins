@@ -37,8 +37,7 @@ class UnionEmoji(discord.Emoji):
 
 class EmojiRoleGroup(commands.Converter):
     """
-    A custom converter to convert arguments to :class:`UnionEmoji`
-    and :class:`ManageableRole` that is inherited from discord :class:`Role`.
+    A custom converter to convert arguments to :class:`UnionEmoji` and :class:`AssignableRole`.
 
     Returns
     --------
