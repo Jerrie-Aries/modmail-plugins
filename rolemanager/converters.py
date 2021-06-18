@@ -43,7 +43,7 @@ class EmojiRoleGroup(commands.Converter):
     Returns
     --------
     Tuple
-        A tuple of :class:`Emoji` and :class:`ManageableRole`.
+        A tuple of :class:`Emoji` and :class:`AssignableRole`.
     """
     async def convert(self, ctx: commands.Context, argument: str) -> Tuple[Union[discord.Emoji, str], discord.Role]:
         split = argument.split(";")
