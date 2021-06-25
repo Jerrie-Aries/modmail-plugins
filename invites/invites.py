@@ -41,9 +41,9 @@ class Invites(commands.Cog):
         """
         self.bot = bot
         self.db = bot.api.get_plugin_partition(self)
-        self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self._config_cache: Dict[str, Any] = {}
-        self.vanity_invite: Optional[discord.Invite] = None
+        self.invite_cache: Dict[int, Set[discord.Invite]] = {}
+        self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
 
         self.bot.loop.create_task(self.initialize())
 
@@ -105,7 +105,7 @@ class Invites(commands.Cog):
             self.invite_cache[guild.id] = {inv for inv in await guild.invites()}
 
             if "VANITY_URL" in guild.features:
-                self.vanity_invite = await guild.vanity_invite()
+                self.vanity_invites[guild.id] = await guild.vanity_invite()
 
     async def get_used_invite(self, member: discord.Member) -> List[Optional[discord.Invite]]:
         """
@@ -149,10 +149,11 @@ class Invites(commands.Cog):
             # still not found and this guild has vanity url enabled in guild.features
             # so we check if it's incremented
             vanity_invite = await guild.vanity_invite()
-            if self.vanity_invite is not None and vanity_invite.uses > self.vanity_invite.uses:
+            _vanity_inv = self.vanity_invites.get(guild.id)
+            if _vanity_inv is not None and vanity_invite.uses > _vanity_inv.uses:
                 predicted_invites = [vanity_invite]
                 found = True
-            self.vanity_invite = vanity_invite
+            self.vanity_invites[guild.id] = vanity_invite
 
         # In case no invite found from check #2 and #3, there are possibly deleted or expired invites in the list
         # of 'predicted_invites'.
@@ -567,8 +568,9 @@ class Invites(commands.Cog):
 
             if len(predicted_invites) == 1:
                 invite = predicted_invites[0]
+                vanity_invite = self.vanity_invites.get(member.guild.id)
                 is_vanity = (
-                    self.vanity_invite is not None and invite.code == self.vanity_invite.code
+                    vanity_invite is not None and invite.code == vanity_invite.code
                 )
                 if is_vanity:
                     embed.add_field(name="Vanity:", value=f"{is_vanity}")
