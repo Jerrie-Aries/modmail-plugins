@@ -554,12 +554,17 @@ class Invites(commands.Cog):
 
         predicted_invites = await self.get_used_invite(member)
         if predicted_invites:
+            vanity_inv = self.vanity_invites.get(member.guild.id)  # could be None
             embed.add_field(
                 name="Inviter:",
                 value="\n".join(getattr(i.inviter, "mention", "None") for i in predicted_invites),
             )
             embed.add_field(
-                name="Invite code:", value="\n".join(i.code for i in predicted_invites)
+                name="Invite code:",
+                value="\n".join(
+                    i.code if i != vanity_inv else "Vanity URL"
+                    for i in predicted_invites
+                ),
             )
             embed.add_field(
                 name="Invite channel:",
@@ -568,24 +573,20 @@ class Invites(commands.Cog):
 
             if len(predicted_invites) == 1:
                 invite = predicted_invites[0]
-                vanity_invite = self.vanity_invites.get(member.guild.id)
-                is_vanity = (
-                    vanity_invite is not None and invite.code == vanity_invite.code
-                )
-                if is_vanity:
-                    embed.add_field(name="Vanity:", value=f"{is_vanity}")
+                if invite == vanity_inv:
+                    embed.add_field(name="Vanity:", value="True")
                 else:
-                    # only do this if invite is not vanity
-                    created = dt_formatter.time(invite.created_at)
-                    if int(invite.max_age):
-                        tstamp_expires = datetime.timestamp(invite.created_at) + int(
-                            invite.max_age
-                        )
-                        expires = dt_formatter.time(datetime.fromtimestamp(tstamp_expires))
-                    else:
-                        expires = "Never"
-                    embed.add_field(name="Invite created:", value=f"{created}")
-                    embed.add_field(name="Invite expires:", value=f"{expires}")
+                    embed.add_field(
+                        name="Invite created:", value=f"{dt_formatter.time(invite.created_at)}"
+                    )
+
+                if invite.max_age:
+                    tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
+                    expires = dt_formatter.time(datetime.fromtimestamp(tstamp_exp))
+                else:
+                    expires = "Never"
+
+                embed.add_field(name="Invite expires:", value=f"{expires}")
                 embed.add_field(name="Invite uses:", value=f"{invite.uses}")
 
             else:
