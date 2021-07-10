@@ -1257,7 +1257,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         message_config["channel"] = message.channel.id
         message_config["rules"] = rules
 
-        if str(emoji) not in [str(emoji) for emoji in message.reactions]:
+        if str(emoji) not in [str(e) for e in message.reactions]:
             await message.add_reaction(emoji)
         await ctx.send(
             embed=self.base_embed(
