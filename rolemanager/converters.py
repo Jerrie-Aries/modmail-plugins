@@ -2,6 +2,7 @@ import argparse
 from typing import Tuple, Union
 
 import discord
+import emoji as emojilib
 from dateutil.parser import parse
 from discord.ext import commands
 
@@ -17,7 +18,9 @@ class AssignableRole(discord.Role):
         except commands.BadArgument:
             raise commands.BadArgument(f'Role "{argument}" not found.')
         if role.managed:
-            raise commands.BadArgument(f"`{role}` is an integrated role and cannot be assigned.")
+            raise commands.BadArgument(
+                f"`{role}` is an integrated role and cannot be assigned."
+            )
         allowed = my_role_hierarchy(ctx.guild, role)
         if not allowed:
             raise commands.BadArgument(f"I am not higher than `{role}` in hierarchy.")
@@ -26,12 +29,21 @@ class AssignableRole(discord.Role):
 
 class UnionEmoji(discord.Emoji):
     @classmethod
-    async def convert(cls, ctx: commands.Context, argument: str) -> Union[discord.Emoji, str]:
+    async def convert(
+        cls, ctx: commands.Context, argument: str
+    ) -> Union[discord.Emoji, str]:
+        converter = commands.EmojiConverter()
         try:
-            emoji = await ctx.bot.convert_emoji(argument)  # method in `bot.py`
+            emoji = await converter.convert(ctx, argument)
         except commands.BadArgument:
-            raise commands.EmojiNotFound(argument)
-
+            # sometimes there are whitespace (probably) issues with unicode emojis
+            # and `str.strip()` wouldn't get rid of it
+            # I could only figure these methods to solve it
+            argument = emojilib.emojize(emojilib.demojize(argument))
+            try:
+                emoji = await ctx.bot.convert_emoji(argument)  # method in `bot.py`
+            except commands.BadArgument:
+                raise commands.EmojiNotFound(argument)
         return emoji
 
 
@@ -44,7 +56,10 @@ class EmojiRoleGroup(commands.Converter):
     Tuple
         A tuple of :class:`Emoji` and :class:`AssignableRole`.
     """
-    async def convert(self, ctx: commands.Context, argument: str) -> Tuple[Union[discord.Emoji, str], discord.Role]:
+
+    async def convert(
+        self, ctx: commands.Context, argument: str
+    ) -> Tuple[Union[discord.Emoji, str], discord.Role]:
         split = argument.split(";")
         if len(split) < 2:
             raise commands.BadArgument
@@ -132,7 +147,9 @@ class Args(commands.Converter):
         parser.add_argument("--any-role", nargs="*", dest="any-role", default=[])
 
         parser.add_argument("--not-roles", nargs="*", dest="not-roles", default=[])
-        parser.add_argument("--not-any-role", nargs="*", dest="not-any-role", default=[])
+        parser.add_argument(
+            "--not-any-role", nargs="*", dest="not-any-role", default=[]
+        )
 
         single = parser.add_mutually_exclusive_group()
         single.add_argument("--a-role", dest="a-role", action="store_true")
@@ -169,7 +186,9 @@ class Args(commands.Converter):
         parser.add_argument("--any-perm", nargs="*", dest="any-perm", default=[])
 
         parser.add_argument("--not-perms", nargs="*", dest="not-perms", default=[])
-        parser.add_argument("--not-any-perm", nargs="*", dest="not-any-perm", default=[])
+        parser.add_argument(
+            "--not-any-perm", nargs="*", dest="not-any-perm", default=[]
+        )
 
         # Extra
         parser.add_argument("--format", nargs="*", dest="format", default=["menu"])
@@ -186,7 +205,11 @@ class Args(commands.Converter):
                     word_list = []
                     tmp = ""
                     for word in split_words:
-                        if not word.startswith('"') and not word.endswith('"') and not tmp:
+                        if (
+                            not word.startswith('"')
+                            and not word.endswith('"')
+                            and not tmp
+                        ):
                             if word.startswith(r"\""):
                                 word = word[1:]
                             word_list.append(word)
@@ -201,7 +224,11 @@ class Args(commands.Converter):
                                 word = word[1:]
                                 schanged = True
                             if word.startswith('"') and not schanged:
-                                if word.startswith('"') and word.endswith('"') and len(word) > 1:
+                                if (
+                                    word.startswith('"')
+                                    and word.endswith('"')
+                                    and len(word) > 1
+                                ):
                                     word_list.append(word)
                                 else:
                                     if tmp.endswith(" "):
@@ -219,12 +246,18 @@ class Args(commands.Converter):
                                     continue
                                 tmp += word + " "
                     if tmp:
-                        raise commands.BadArgument("A quote was started but never finished.")
+                        raise commands.BadArgument(
+                            "A quote was started but never finished."
+                        )
                     vals[key] = word_list
         except Exception as e:
             raise commands.BadArgument(str(e))
 
-        if any(s for s in vals["status"] if not s.lower() in ["online", "dnd", "idle", "offline"]):
+        if any(
+            s
+            for s in vals["status"]
+            if not s.lower() in ["online", "dnd", "idle", "offline"]
+        ):
             raise commands.BadArgument(
                 "Invalid status.  Must be either `online`, `dnd`, `idle` or `offline`."
             )
@@ -234,7 +267,9 @@ class Args(commands.Converter):
             new = []
             for disc in vals["disc"]:
                 if len(disc) != 4:
-                    raise commands.BadArgument("Discriminators must have the length of 4")
+                    raise commands.BadArgument(
+                        "Discriminators must have the length of 4"
+                    )
                 try:
                     new.append(int(disc))
                 except ValueError:
@@ -245,7 +280,9 @@ class Args(commands.Converter):
             new = []
             for disc in vals["ndisc"]:
                 if len(disc) != 4:
-                    raise commands.BadArgument("Discriminators must have the length of 4")
+                    raise commands.BadArgument(
+                        "Discriminators must have the length of 4"
+                    )
                 try:
                     new.append(int(disc))
                 except ValueError:
@@ -328,7 +365,9 @@ class Args(commands.Converter):
         # Activities
         if vals["device"]:
             if not all(d in ["desktop", "mobile", "web"] for d in vals["device"]):
-                raise commands.BadArgument("Bad device.  Must be `desktop`, `mobile` or `web`.")
+                raise commands.BadArgument(
+                    "Bad device.  Must be `desktop`, `mobile` or `web`."
+                )
 
         if vals["at"]:
             at = discord.ActivityType
@@ -338,7 +377,7 @@ class Args(commands.Converter):
                 "streaming": at.streaming,
                 "listening": at.listening,
                 "watching": at.watching,
-                "competing": at.competing
+                "competing": at.competing,
             }
             if not all([a.lower() in switcher for a in vals["at"]]):
                 raise commands.BadArgument(
