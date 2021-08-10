@@ -73,7 +73,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
     reactroles_default_config = {
         "message": int(),
         "channel": int(),
-        "emoji_role_groups": {},  # "emoji_id": "role_id"
+        "emoji_role_groups": {},  # "emoji_string": "role_id"
         "rules": ReactRules.NORMAL,
     }
 
@@ -1006,7 +1006,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
     async def bulk_delete_set_roles(
         self,
         message: Union[discord.Message, discord.Object],
-        emoji_ids: List[str],
+        emoji_list: List[str],
     ):
         message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
         if message_config is None:
@@ -1016,18 +1016,23 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if not react_to_role_config:
             self._udpate_reactrole_cache(message.id, remove=True)
             return
-        for emoji_id in emoji_ids:
-            converted_id = self.emoji_id(emoji_id)
-            if converted_id in react_to_role_config:
-                del react_to_role_config[converted_id]
+        for emoji_str in emoji_list:
+            if emoji_str in react_to_role_config:
+                del react_to_role_config[emoji_str]
 
     @staticmethod
-    def emoji_id(emoji: Union[discord.Emoji, str]) -> str:
+    def emoji_string(emoji: Union[discord.Emoji, discord.PartialEmoji, str]) -> str:
         """
-        Returns a formatted string of emoji name, or id.
+        Returns a formatted string of an emoji.
         """
-        if isinstance(emoji, discord.Emoji):
-            if emoji.animated:
+        if isinstance(emoji, (discord.Emoji, discord.PartialEmoji)):
+            # actually if the instance is only PartialEmoji, we can just call the
+            # method `is_unicode_emoji()`
+            # however since this instance could be Emoji and it has no `is_unicode_emoji` attribute
+            # we just check if the ID exists
+            if emoji.id is None:
+                emoji_fmt = emoji.name
+            elif emoji.animated:
                 emoji_fmt = f"<a:{emoji.name}:{emoji.id}>"
             else:
                 emoji_fmt = f"<:{emoji.name}:{emoji.id}>"
@@ -1179,11 +1184,11 @@ class RoleManager(commands.Cog, name="Role Manager"):
         message_config["rules"] = rules
         binds = {}
         for (emoji, role) in emoji_role_groups:
-            emoji_id = self.emoji_id(emoji)
-            if emoji_id in binds or role.id in binds.values():
+            emoji_str = self.emoji_string(emoji)
+            if emoji_str in binds or role.id in binds.values():
                 duplicates[emoji] = role
             else:
-                binds[emoji_id] = role.id
+                binds[emoji_str] = role.id
                 await message.add_reaction(emoji)
         message_config["emoji_role_groups"] = binds
         if duplicates:
@@ -1224,8 +1229,8 @@ class RoleManager(commands.Cog, name="Role Manager"):
                     f"Role {role.mention} is already binded to emoji {emo_id} on that message."
                 )
 
-        emoji_id = self.emoji_id(emoji)
-        old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_id))
+        emoji_str = self.emoji_string(emoji)
+        old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_str))
         if old_role:
             msg = await ctx.send(
                 embed=self.base_embed(
@@ -1253,7 +1258,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 raise commands.BadArgument("Bind cancelled.")
 
         rules = message_config.get("rules", ReactRules.NORMAL)
-        message_config["emoji_role_groups"][emoji_id] = role.id
+        message_config["emoji_role_groups"][emoji_str] = role.id
         message_config["channel"] = message.channel.id
         message_config["rules"] = rules
 
@@ -1394,9 +1399,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if message_config is None:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
-        emoji_id = self.emoji_id(emoji)
+        emoji_str = self.emoji_string(emoji)
         try:
-            del message_config["emoji_role_groups"][emoji_id]
+            del message_config["emoji_role_groups"][emoji_str]
         except KeyError:
             raise commands.BadArgument("That wasn't a valid emoji for that message.")
         await self.update_db()
@@ -1413,7 +1418,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             raise commands.BadArgument("There are no reaction roles set up here!")
 
         guild: discord.Guild = ctx.guild
-        to_delete_message_emoji_ids = {}
+        to_delete_message_emojis = {}
         react_roles = []
         for index, (message_id, message_data) in enumerate(data.items(), start=1):
             channel: discord.TextChannel = guild.get_channel(message_data["channel"])
@@ -1432,23 +1437,17 @@ class RoleManager(commands.Cog, name="Role Manager"):
             else:
                 link = ""
 
-            to_delete_emoji_ids = []
+            to_delete_emojis = []
             rules = message_data["rules"]
             reactions = [f"[Reaction Role #{index}]({link}) - `{rules}`"]
-            for emoji, role in message_data["emoji_role_groups"].items():
+            for emoji_str, role in message_data["emoji_role_groups"].items():
                 role = ctx.guild.get_role(role)
                 if role:
-                    try:
-                        emoji = int(emoji)
-                    except ValueError:
-                        pass
-                    else:
-                        emoji = self.bot.get_emoji(emoji) or emoji
-                    reactions.append(f"{emoji}: {role.mention}")
+                    reactions.append(f"{emoji_str}: {role.mention}")
                 else:
-                    to_delete_emoji_ids.append(emoji)
-            if to_delete_emoji_ids:
-                to_delete_message_emoji_ids[message_id] = to_delete_emoji_ids
+                    to_delete_emojis.append(emoji_str)
+            if to_delete_emojis:
+                to_delete_message_emojis[message_id] = to_delete_emojis
             if len(reactions) > 1:
                 react_roles.append("\n".join(reactions))
         if not react_roles:
@@ -1468,9 +1467,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
 
-        if to_delete_message_emoji_ids:
-            for message_id, ids in to_delete_message_emoji_ids.items():
-                await self.bulk_delete_set_roles(discord.Object(message_id), ids)
+        if to_delete_message_emojis:
+            for message_id, emojis in to_delete_message_emojis.items():
+                await self.bulk_delete_set_roles(discord.Object(message_id), emojis)
             await self.update_db()
 
     @reactrole.command(name="clear")
@@ -1534,18 +1533,13 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if not message_config:
             return
 
-        if payload.emoji.is_unicode_emoji():
-            emoji_fmt = payload.emoji.name
-        elif payload.emoji.animated:
-            emoji_fmt = f"<a:{payload.emoji.name}:{payload.emoji.id}>"
-        else:
-            emoji_fmt = f"<:{payload.emoji.name}:{payload.emoji.id}>"
+        emoji_str = self.emoji_string(payload.emoji)
 
         reacts = message_config.get("emoji_role_groups")
-        if emoji_fmt not in reacts:
+        if emoji_str not in reacts:
             return
 
-        role_id = reacts.get(emoji_fmt)
+        role_id = reacts.get(emoji_str)
         if not role_id:
             logger.debug("No matched role id.")
             return
@@ -1553,7 +1547,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         role = guild.get_role(role_id)
         if not role:
             logger.debug("Role was deleted.")
-            await self.bulk_delete_set_roles(discord.Object(payload.message_id), [emoji_fmt])
+            await self.bulk_delete_set_roles(discord.Object(payload.message_id), [emoji_str])
             await self.update_db()
             return
 
