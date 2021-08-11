@@ -1,8 +1,8 @@
 import argparse
+import re
 from typing import Tuple, Union
 
 import discord
-import emoji as emojilib
 from dateutil.parser import parse
 from discord.ext import commands
 
@@ -32,18 +32,11 @@ class UnionEmoji(discord.Emoji):
     async def convert(
         cls, ctx: commands.Context, argument: str
     ) -> Union[discord.Emoji, str]:
-        converter = commands.EmojiConverter()
+        argument = re.sub("\ufe0f", "", argument)  # remove trailing whitespace
         try:
-            emoji = await converter.convert(ctx, argument)
+            emoji = await ctx.bot.convert_emoji(argument)  # method in `bot.py`
         except commands.BadArgument:
-            # sometimes there are whitespace (probably) issues with unicode emojis
-            # and `str.strip()` wouldn't get rid of it
-            # I could only figure these methods to solve it
-            argument = emojilib.emojize(emojilib.demojize(argument))
-            try:
-                emoji = await ctx.bot.convert_emoji(argument)  # method in `bot.py`
-            except commands.BadArgument:
-                raise commands.EmojiNotFound(argument)
+            raise commands.EmojiNotFound(argument)
         return emoji
 
 

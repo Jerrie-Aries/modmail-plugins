@@ -1026,10 +1026,6 @@ class RoleManager(commands.Cog, name="Role Manager"):
         Returns a formatted string of an emoji.
         """
         if isinstance(emoji, (discord.Emoji, discord.PartialEmoji)):
-            # actually if the instance is only PartialEmoji, we can just call the
-            # method `is_unicode_emoji()`
-            # however since this instance could be Emoji and it has no `is_unicode_emoji` attribute
-            # we just check if the ID exists
             if emoji.id is None:
                 emoji_fmt = emoji.name
             elif emoji.animated:
