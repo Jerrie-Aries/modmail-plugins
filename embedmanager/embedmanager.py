@@ -223,7 +223,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_download(self, ctx: commands.Context, message: discord.Message, index: int = 0):
         """
-        Download a JSON file for a message's embed.
+        Download a JSON file from a message's embed.
 
         `message` may be a message ID or message link of the embed.
 
