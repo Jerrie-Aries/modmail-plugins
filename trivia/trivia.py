@@ -394,11 +394,11 @@ class Trivia(commands.Cog):
             New data to be stored in cache and updated in the database.
         """
         await self.db.find_one_and_update({"_id": ctx.guild.id}, {"$set": data}, upsert=True)
-        config = self._config_cache[ctx.guild.id]
+        config = self._config_cache[str(ctx.guild.id)]
         for key, value in data.items():
             config[key] = value
 
-        self._config_cache[ctx.guild.id] = config
+        self._config_cache[str(ctx.guild.id)] = config
 
     def guild_config(self, guild_id: str):
         return self._config_cache[guild_id]
@@ -455,7 +455,7 @@ class Trivia(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def triviaset_stopafter(self, ctx: commands.Context, seconds: int):
         """Set how long until trivia stops due to no response."""
-        settings = self._config_cache[ctx.guild.id]
+        settings = self._config_cache[str(ctx.guild.id)]
         if seconds < settings["delay"]:
             raise commands.BadArgument("Must be larger than the answer time limit.")
         new_settings = {"timeout": seconds}
