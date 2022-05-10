@@ -95,8 +95,10 @@ class RoleManager(commands.Cog, name="Role Manager"):
         self.db = bot.api.get_plugin_partition(self)
         self.config_cache = {}
         self.method = "build"
+        
+        self.bot.loop.create_task(self.populate_cache())
 
-    async def cog_load(self):
+    async def populate_cache(self):
         """
         Initial tasks when loading the cog.
         """
