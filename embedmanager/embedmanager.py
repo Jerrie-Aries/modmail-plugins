@@ -486,5 +486,5 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         return embed, data["author"], data["uses"]
 
 
-def setup(bot):
-    bot.add_cog(EmbedManager(bot))
+async def setup(bot):
+    await bot.add_cog(EmbedManager(bot))
