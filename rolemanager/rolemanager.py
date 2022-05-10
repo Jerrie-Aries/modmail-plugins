@@ -96,9 +96,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         self.config_cache = {}
         self.method = "build"
 
-        self.bot.loop.create_task(self.populate_cache())
-
-    async def populate_cache(self):
+    async def cog_load(self):
         """
         Initial tasks when loading the cog.
         """
@@ -2190,5 +2188,5 @@ class RoleManager(commands.Cog, name="Role Manager"):
         await ctx.send(embed=embed)
 
 
-def setup(bot):
-    bot.add_cog(RoleManager(bot))
+async def setup(bot):
+    await bot.add_cog(RoleManager(bot))
