@@ -869,7 +869,7 @@ class Trivia(commands.Cog):
     def _all_lists(self) -> List[Path]:
         return self.get_core_lists()
 
-    def cog_unload(self):
+    async def cog_unload(self):
         for session in self.trivia_sessions:
             session.force_stop()
 
@@ -880,6 +880,6 @@ class Trivia(commands.Cog):
         return list(core_lists_path.glob("*.yaml"))
 
 
-def setup(bot):
+async def setup(bot):
     """Load Trivia."""
-    bot.add_cog(Trivia(bot))
+    await bot.add_cog(Trivia(bot))
