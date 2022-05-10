@@ -44,8 +44,10 @@ class Invites(commands.Cog):
         self._config_cache: Dict[str, Any] = {}
         self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
+        
+        self.bot.loop.create_task(self.initialize())
 
-    async def cog_load(self):
+    async def initialize(self):
         """
         Initial tasks when loading the cog.
         """
