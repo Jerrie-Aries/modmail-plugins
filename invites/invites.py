@@ -45,9 +45,7 @@ class Invites(commands.Cog):
         self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
 
-        self.bot.loop.create_task(self.initialize())
-
-    async def initialize(self):
+    async def cog_load(self):
         """
         Initial tasks when loading the cog.
         """
@@ -329,7 +327,7 @@ class Invites(commands.Cog):
                     desc = f"`{key}` is set to `{config[key]}`"
 
                 embed = discord.Embed(color=self.bot.main_color, description=desc)
-                embed.set_author(name="Config variable", icon_url=self.bot.user.avatar_url)
+                embed.set_author(name="Config variable", icon_url=self.bot.user.avatar.url)
 
             else:
                 embed = discord.Embed(
@@ -345,7 +343,7 @@ class Invites(commands.Cog):
                 color=self.bot.main_color,
                 description="Here is a list of currently set configurations.",
             )
-            embed.set_author(name="Invite config:", icon_url=self.bot.user.avatar_url)
+            embed.set_author(name="Invite config:", icon_url=self.bot.user.avatar.url)
 
             embed.add_field(
                 name="Channel",
@@ -539,7 +537,7 @@ class Invites(commands.Cog):
             return
 
         embed = discord.Embed(color=discord.Color.green(), timestamp=datetime.utcnow())
-        embed.set_thumbnail(url=member.avatar_url)
+        embed.set_thumbnail(url=member.avatar.url)
         embed.title = f"{member.name}#{member.discriminator} just joined."
         embed.set_footer(text=f"User ID: {member.id}")
 
@@ -612,7 +610,7 @@ class Invites(commands.Cog):
             return
 
         embed = discord.Embed(color=discord.Color.red(), timestamp=datetime.utcnow())
-        embed.set_thumbnail(url=member.avatar_url)
+        embed.set_thumbnail(url=member.avatar.url)
         embed.title = f"{member.name}#{member.discriminator} left."
         embed.set_footer(text=f"User ID: {member.id}")
         desc = f"{member.mention} just left the server."
@@ -648,5 +646,5 @@ class Invites(commands.Cog):
         await self.remove_user_data(member)
 
 
-def setup(bot):
-    bot.add_cog(Invites(bot))
+async def setup(bot):
+    await bot.add_cog(Invites(bot))
