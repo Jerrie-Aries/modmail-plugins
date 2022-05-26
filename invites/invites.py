@@ -44,7 +44,7 @@ class Invites(commands.Cog):
         self._config_cache: Dict[str, Any] = {}
         self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
-        
+
         self.bot.loop.create_task(self.initialize())
 
     async def initialize(self):
@@ -109,7 +109,9 @@ class Invites(commands.Cog):
                 if vanity_inv is not None:
                     self.vanity_invites[guild.id] = vanity_inv
 
-    async def get_used_invite(self, member: discord.Member) -> List[Optional[discord.Invite]]:
+    async def get_used_invite(
+        self, member: discord.Member
+    ) -> List[Optional[discord.Invite]]:
         """
         Checks which invite is used in join via the following strategies:
         1. Check if invite doesn't exist anymore.
@@ -137,7 +139,11 @@ class Invites(commands.Cog):
 
             # 2. Check invite uses.
             used_inv = next(
-                (inv for inv in new_invite_cache if inv.id == _inv.id and inv.uses > _inv.uses),
+                (
+                    inv
+                    for inv in new_invite_cache
+                    if inv.id == _inv.id and inv.uses > _inv.uses
+                ),
                 None,
             )
             if used_inv is not None:
@@ -204,21 +210,26 @@ class Invites(commands.Cog):
             "joined_at": member.joined_at,
             "inviter": {
                 "mention": "\n".join(
-                    getattr(invite.inviter, "mention", "None") for invite in predicted_invites
+                    getattr(invite.inviter, "mention", "None")
+                    for invite in predicted_invites
                 ),
                 "id": "\n".join(
-                    str(getattr(invite.inviter, "id", "None")) for invite in predicted_invites
+                    str(getattr(invite.inviter, "id", "None"))
+                    for invite in predicted_invites
                 ),
             },
             "invite_code": "\n".join(str(invite.code) for invite in predicted_invites),
             "invite_channel": "\n".join(
-                getattr(invite.channel, "mention", "None") for invite in predicted_invites
+                getattr(invite.channel, "mention", "None")
+                for invite in predicted_invites
             ),
             "multi": len(predicted_invites) > 1,
         }
 
         await self.db.find_one_and_update(
-            {"guild_id": member.guild.id, "user_id": member.id}, {"$set": user_data}, upsert=True
+            {"guild_id": member.guild.id, "user_id": member.id},
+            {"$set": user_data},
+            upsert=True,
         )
 
     async def remove_user_data(self, member: discord.Member):
@@ -231,7 +242,9 @@ class Invites(commands.Cog):
         member : discord.Member
             Member object, belongs to member that leaves the guild.
         """
-        await self.db.find_one_and_delete({"guild_id": member.guild.id, "user_id": member.id})
+        await self.db.find_one_and_delete(
+            {"guild_id": member.guild.id, "user_id": member.id}
+        )
 
     @commands.group(aliases=["invite"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -328,14 +341,14 @@ class Invites(commands.Cog):
             if key in keys:
                 if key == "channel":
                     channel = ctx.guild.get_channel(int(config[key]))
-                    desc = (
-                        f"`{key}` is set to {channel.mention if channel is not None else 'None'}"
-                    )
+                    desc = f"`{key}` is set to {channel.mention if channel is not None else 'None'}"
                 else:
                     desc = f"`{key}` is set to `{config[key]}`"
 
                 embed = discord.Embed(color=self.bot.main_color, description=desc)
-                embed.set_author(name="Config variable", icon_url=self.bot.user.avatar.url)
+                embed.set_author(
+                    name="Config variable", icon_url=self.bot.user.avatar.url
+                )
 
             else:
                 embed = discord.Embed(
@@ -368,7 +381,9 @@ class Invites(commands.Cog):
         """
         Reset the configuration settings to default value.
         """
-        self._config_cache[str(ctx.guild.id)] = {k: v for k, v in self.default_config.items()}
+        self._config_cache[str(ctx.guild.id)] = {
+            k: v for k, v in self.default_config.items()
+        }
         await self.config_update()
 
         embed = discord.Embed(
@@ -418,7 +433,9 @@ class Invites(commands.Cog):
         if invites_list:
             embed = embeds[0]
 
-            for invite in reversed(sorted(invites_list, key=lambda invite: invite.uses)):
+            for invite in reversed(
+                sorted(invites_list, key=lambda invite: invite.uses)
+            ):
                 line = f"{invite.uses} - {invite.inviter.name}#{invite.inviter.discriminator} - `{invite.code}`\n"
                 if entries == 25:
                     embed = discord.Embed(
@@ -445,7 +462,9 @@ class Invites(commands.Cog):
         """
         embed = discord.Embed(color=self.bot.main_color, title="__Invite info__")
         embed.set_thumbnail(url=str(invite.guild.icon_url))
-        embed.description = f"**Server:**\n{invite.guild}\n" f"**Invite link:**\n{invite.url}\n"
+        embed.description = (
+            f"**Server:**\n{invite.guild}\n" f"**Invite link:**\n{invite.url}\n"
+        )
 
         fetched_invites = await discord.Guild.invites(ctx.guild)
         try:
@@ -467,8 +486,12 @@ class Invites(commands.Cog):
                     break
             if local:
                 invite_created = dt_formatter.time(invite.created_at)
-                timestamp_expires = datetime.timestamp(invite.created_at) + int(invite.max_age)
-                invite_expires = dt_formatter.time(datetime.fromtimestamp(timestamp_expires))
+                timestamp_expires = datetime.timestamp(invite.created_at) + int(
+                    invite.max_age
+                )
+                invite_expires = dt_formatter.time(
+                    datetime.fromtimestamp(timestamp_expires)
+                )
                 if invite_created == invite_expires:
                     invite_expires = "Never"
                 embed.add_field(name="Uses:", value=invite.uses)
@@ -488,14 +511,17 @@ class Invites(commands.Cog):
         """
         fetched_invites = await ctx.guild.invites()
         if invite not in fetched_invites:
-            raise commands.BadArgument('Invite "{}" is not from this guild.'.format(invite.code))
+            raise commands.BadArgument(
+                'Invite "{}" is not from this guild.'.format(invite.code)
+            )
 
         for inv in fetched_invites:
             if inv.id == invite.id:
                 invite = inv
                 break
         embed = discord.Embed(
-            color=discord.Color.blurple(), description=f"Deleted invite code: `{invite.code}`"
+            color=discord.Color.blurple(),
+            description=f"Deleted invite code: `{invite.code}`",
         )
         embed.add_field(name="Inviter:", value=invite.inviter.mention)
         embed.add_field(name="Channel:", value=invite.channel.mention)
@@ -529,7 +555,9 @@ class Invites(commands.Cog):
         else:
             cached_invites.update({invite})
         self.invite_cache[invite.guild.id] = cached_invites
-        logger.debug("Invite created. Updating invite cache for guild (%s).", invite.guild)
+        logger.debug(
+            "Invite created. Updating invite cache for guild (%s).", invite.guild
+        )
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
@@ -549,21 +577,27 @@ class Invites(commands.Cog):
         embed.title = f"{member.name}#{member.discriminator} just joined."
         embed.set_footer(text=f"User ID: {member.id}")
 
-        join_position = sorted(member.guild.members, key=lambda m: m.joined_at).index(member) + 1
+        join_position = (
+            sorted(member.guild.members, key=lambda m: m.joined_at).index(member) + 1
+        )
         suffix = ["th", "st", "nd", "rd", "th"][min(join_position % 10, 4)]
         if 11 <= (join_position % 100) <= 13:
             suffix = "th"
 
         desc = f"{member.mention} is the {join_position}{suffix} to join."
         embed.description = desc + "\n"
-        embed.add_field(name="Account created:", value=dt_formatter.time_age(member.created_at))
+        embed.add_field(
+            name="Account created:", value=dt_formatter.time_age(member.created_at)
+        )
 
         predicted_invites = await self.get_used_invite(member)
         if predicted_invites:
             vanity_inv = self.vanity_invites.get(member.guild.id)  # could be None
             embed.add_field(
                 name="Inviter:",
-                value="\n".join(getattr(i.inviter, "mention", "None") for i in predicted_invites),
+                value="\n".join(
+                    getattr(i.inviter, "mention", "None") for i in predicted_invites
+                ),
             )
             embed.add_field(
                 name="Invite code:",
@@ -574,7 +608,9 @@ class Invites(commands.Cog):
             )
             embed.add_field(
                 name="Invite channel:",
-                value="\n".join(getattr(i.channel, "mention", "None") for i in predicted_invites),
+                value="\n".join(
+                    getattr(i.channel, "mention", "None") for i in predicted_invites
+                ),
             )
 
             if len(predicted_invites) == 1:
@@ -583,7 +619,8 @@ class Invites(commands.Cog):
                     embed.add_field(name="Vanity:", value="True")
                 else:
                     embed.add_field(
-                        name="Invite created:", value=f"{dt_formatter.time(invite.created_at)}"
+                        name="Invite created:",
+                        value=f"{dt_formatter.time(invite.created_at)}",
                     )
 
                 if invite.max_age:
@@ -599,7 +636,9 @@ class Invites(commands.Cog):
                 embed.description += "\n⚠️ *More than 1 used invites are predicted.*\n"
 
         else:
-            embed.description += "\n⚠️ *Something went wrong, could not get invite info.*\n"
+            embed.description += (
+                "\n⚠️ *Something went wrong, could not get invite info.*\n"
+            )
 
         await channel.send(embed=embed)
         await self.save_user_data(member, predicted_invites)
@@ -624,17 +663,27 @@ class Invites(commands.Cog):
         desc = f"{member.mention} just left the server."
         embed.description = desc + "\n"
 
-        user_db = await self.db.find_one({"guild_id": member.guild.id, "user_id": member.id})
+        user_db = await self.db.find_one(
+            {"guild_id": member.guild.id, "user_id": member.id}
+        )
         if user_db:
-            embed.add_field(name="Joined at:", value=dt_formatter.time(user_db["joined_at"]))
-            embed.add_field(name="Time on server:", value=dt_formatter.age(user_db["joined_at"]))
+            embed.add_field(
+                name="Joined at:", value=dt_formatter.time(user_db["joined_at"])
+            )
+            embed.add_field(
+                name="Time on server:", value=dt_formatter.age(user_db["joined_at"])
+            )
             embed.add_field(name="Inviter:", value=user_db["inviter"]["mention"])
             embed.add_field(name="Invite code:", value=user_db["invite_code"])
             embed.add_field(name="Invite channel:", value=user_db["invite_channel"])
         else:
             embed.description += "\n*No invite info*.\n"
-            embed.add_field(name="Joined at:", value=dt_formatter.time(member.joined_at))
-            embed.add_field(name="Time on server:", value=dt_formatter.age(member.joined_at))
+            embed.add_field(
+                name="Joined at:", value=dt_formatter.time(member.joined_at)
+            )
+            embed.add_field(
+                name="Time on server:", value=dt_formatter.age(member.joined_at)
+            )
 
         if member.nick:
             embed.description += "\n**Nickname:**\n" + member.nick + "\n"

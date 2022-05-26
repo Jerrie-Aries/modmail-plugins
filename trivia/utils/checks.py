@@ -24,7 +24,8 @@ def trivia_stop_check():
                 if level >= permission_level and level.name in level_permissions:
                     # -1 is for @everyone
                     if -1 in level_permissions[level.name] or any(
-                        str(check.id) in level_permissions[level.name] for check in checkables
+                        str(check.id) in level_permissions[level.name]
+                        for check in checkables
                     ):
                         return True
             return False

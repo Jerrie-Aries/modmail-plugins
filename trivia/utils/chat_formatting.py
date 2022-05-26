@@ -116,6 +116,7 @@ class plural:
     - 'plural(len(data)):member'
     - 'plural(len(data)):entry|entries'
     """
+
     def __init__(self, value):
         self.value = value
 

@@ -84,7 +84,9 @@ class DateTimeFormatter:
             e.g. `1 year 6 months`.
         """
         now = datetime.utcnow()
-        delta = (now - date_time).total_seconds()  # could be negative if the `date_time` provided is not from the past
+        delta = (
+            now - date_time
+        ).total_seconds()  # could be negative if the `date_time` provided is not from the past
 
         # add `abs` in case `delta` is negative
         months, remainder = divmod(int(abs(delta)), 2628000)
