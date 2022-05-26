@@ -105,7 +105,9 @@ class Invites(commands.Cog):
             self.invite_cache[guild.id] = {inv for inv in await guild.invites()}
 
             if "VANITY_URL" in guild.features:
-                self.vanity_invites[guild.id] = await guild.vanity_invite()
+                vanity_inv = await guild.vanity_invite()
+                if vanity_inv is not None:
+                    self.vanity_invites[guild.id] = vanity_inv
 
     async def get_used_invite(self, member: discord.Member) -> List[Optional[discord.Invite]]:
         """
@@ -148,12 +150,16 @@ class Invites(commands.Cog):
         if not found and "VANITY_URL" in guild.features:
             # still not found and this guild has vanity url enabled in guild.features
             # so we check if it's incremented
-            vanity_invite = await guild.vanity_invite()
-            _vanity_inv = self.vanity_invites.get(guild.id)
-            if _vanity_inv is not None and vanity_invite.uses > _vanity_inv.uses:
-                predicted_invites = [vanity_invite]
+            vanity_inv = await guild.vanity_invite()
+            cached_vanity_inv = self.vanity_invites.get(guild.id)
+            if (
+                vanity_inv
+                and cached_vanity_inv
+                and vanity_inv.uses > cached_vanity_inv.uses
+            ):
+                predicted_invites = [vanity_inv]
                 found = True
-            self.vanity_invites[guild.id] = vanity_invite
+            self.vanity_invites[guild.id] = vanity_inv
 
         # In case no invite found from check #2 and #3, there are possibly deleted or expired invites in the list
         # of 'predicted_invites'.
