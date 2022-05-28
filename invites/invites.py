@@ -536,10 +536,12 @@ class Invites(commands.Cog):
             if local:
                 if invite.max_age:
                     tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
-                    expires = dt_formatter.format_dt(datetime.fromtimestamp(tstamp_exp))
+                    expires = discord.utils.format_dt(
+                        datetime.fromtimestamp(tstamp_exp), "F"
+                    )
                 else:
                     expires = "Never"
-                created = dt_formatter.format_dt(invite.created_at)
+                created = discord.utils.format_dt(invite.created_at, "F")
                 embed.add_field(name="Uses:", value=invite.uses)
                 embed.add_field(name="Created at:", value=created)
                 embed.add_field(name="Expires at:", value=expires)
@@ -574,11 +576,11 @@ class Invites(commands.Cog):
 
         if invite.max_age:
             tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
-            expires = dt_formatter.format_dt(datetime.fromtimestamp(tstamp_exp))
+            expires = discord.utils.format_dt(datetime.fromtimestamp(tstamp_exp), "F")
         else:
             expires = "Never"
 
-        created = dt_formatter.format_dt(invite.created_at)
+        created = discord.utils.format_dt(invite.created_at, "F")
 
         embed.add_field(name="Uses:", value=invite.uses)
         embed.add_field(name="Created at:", value=created)
@@ -701,12 +703,14 @@ class Invites(commands.Cog):
                 else:
                     embed.add_field(
                         name="Invite created:",
-                        value=f"{dt_formatter.format_dt(invite.created_at)}",
+                        value=f"{discord.utils.format_dt(invite.created_at, 'F')}",
                     )
 
                 if invite.max_age:
                     tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
-                    expires = dt_formatter.format_dt(datetime.fromtimestamp(tstamp_exp))
+                    expires = discord.utils.format_dt(
+                        datetime.fromtimestamp(tstamp_exp), "F"
+                    )
                 else:
                     expires = "Never"
 
@@ -745,7 +749,7 @@ class Invites(commands.Cog):
         embed.description = desc + "\n"
 
         embed.add_field(
-            name="Joined at:", value=dt_formatter.format_dt(member.joined_at)
+            name="Joined at:", value=discord.utils.format_dt(member.joined_at, "F")
         )
         embed.add_field(
             name="Time on server:", value=dt_formatter.age(member.joined_at)
