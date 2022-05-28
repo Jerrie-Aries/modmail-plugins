@@ -1,19 +1,29 @@
+from __future__ import annotations
+
 import discord
 from discord.ext import commands
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
 
 from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
 
-from .utils.timedelta import DateTimeFormatter
+from .utils.timeutils import datetime_formatter
+
+
+if TYPE_CHECKING:
+
+    class GuildConfigData(TypedDict):
+        channel: str
+        webhook: Optional[str]
+        enable: bool
 
 
 logger = getLogger(__name__)
 
 
-dt_formatter = DateTimeFormatter
+dt_formatter = datetime_formatter
 
 
 class Invites(commands.Cog):
@@ -26,10 +36,11 @@ class Invites(commands.Cog):
     - Check invite's uses. If used invite is found with this method, it will overwrite any results from the previous method.
     """
 
-    _id = "config"
-    default_config = {
+    _id: str = "config"
+    default_config: GuildConfigData = {
         "channel": str(int()),
-        "enabled": False,
+        "webhook": None,
+        "enable": False,
     }
 
     def __init__(self, bot):
@@ -41,20 +52,18 @@ class Invites(commands.Cog):
         """
         self.bot = bot
         self.db = bot.api.get_plugin_partition(self)
-        self._config_cache: Dict[str, Any] = {}
+        self._config_cache: Dict[str, GuildConfigData] = {}
         self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
 
-        self.bot.loop.create_task(self.initialize())
-
-    async def initialize(self):
+    async def cog_load(self) -> None:
         """
         Initial tasks when loading the cog.
         """
         await self.populate_config_cache()
-        await self.populate_invite_cache()
+        self.bot.loop.create_task(self.populate_invite_cache())
 
-    async def populate_config_cache(self):
+    async def populate_config_cache(self) -> None:
         """
         Populates the config cache with data from database.
         """
@@ -73,7 +82,7 @@ class Invites(commands.Cog):
         if to_update:
             await self.config_update()
 
-    def guild_config(self, guild_id: str):
+    def guild_config(self, guild_id: str) -> GuildConfigData:
         config = self._config_cache.get(guild_id)
         if config is None:
             config = {k: v for k, v in self.default_config.items()}
@@ -81,7 +90,7 @@ class Invites(commands.Cog):
 
         return config
 
-    async def config_update(self):
+    async def config_update(self) -> None:
         """
         Updates the database with the data from config cache.
 
@@ -93,12 +102,12 @@ class Invites(commands.Cog):
             upsert=True,
         )
 
-    async def populate_invite_cache(self):
+    async def populate_invite_cache(self) -> None:
         await self.bot.wait_until_ready()
 
         for guild in self.bot.guilds:
             config = self.guild_config(str(guild.id))
-            if not config["enabled"]:
+            if not config["enable"]:
                 continue
 
             logger.debug("Caching invites for guild (%s).", guild.name)
@@ -188,9 +197,46 @@ class Invites(commands.Cog):
         self.invite_cache[guild.id] = new_invite_cache
         return predicted_invites
 
+    async def _get_or_create_webhook(
+        self, channel: discord.TextChannel
+    ) -> Optional[discord.Webhook]:
+        """
+        An internal method to retrieve an existing webhook from the channel if any, otherwise a new one
+        will be created.
+
+        Parameters
+        -----------
+        channel : discord.TextChannel
+            The channel to get or create the webhook from.
+        """
+        # check bot permissions first
+        bot_me = channel.guild.get_member(self.bot.user.id)
+        if not bot_me or not channel.permissions_for(bot_me).manage_webhooks:
+            return None
+
+        wh = None
+        webhooks = await channel.webhooks()
+        if webhooks:
+            # find any webhook that has token which means that belongs to the client
+            wh = discord.utils.find(lambda x: x.token is not None, webhooks)
+
+        if not wh:
+            avatar = await self.bot.user.display_avatar.read()
+            try:
+                wh = await channel.create_webhook(
+                    name=self.bot.user.name,
+                    avatar=avatar,
+                    reason="Webhook for invite logs.",
+                )
+            except Exception as e:
+                logger.error(f"{type(e).__name__}: {str(e)}")
+                wh = None
+
+        return wh
+
     async def save_user_data(
         self, member: discord.Member, predicted_invites: List[discord.Invite]
-    ):
+    ) -> None:
         """
         Saves user and invite data into the database.
         This will be used when the bot is on event: `on_member_join`.
@@ -207,7 +253,6 @@ class Invites(commands.Cog):
 
         user_data = {
             "user_name": f"{member.name}#{member.discriminator}",
-            "joined_at": member.joined_at,
             "inviter": {
                 "mention": "\n".join(
                     getattr(invite.inviter, "mention", "None")
@@ -232,7 +277,7 @@ class Invites(commands.Cog):
             upsert=True,
         )
 
-    async def remove_user_data(self, member: discord.Member):
+    async def remove_user_data(self, member: discord.Member) -> None:
         """
         Removes user and invite data from the database.
         This will be used when the bot is on event: `on_member_remove`.
@@ -286,7 +331,7 @@ class Invites(commands.Cog):
         """
         config = self.guild_config(str(ctx.guild.id))
 
-        new_config = dict(channel=str(channel.id))
+        new_config = dict(channel=str(channel.id), webhook=None)
         config.update(new_config)
         await self.config_update()
 
@@ -308,7 +353,7 @@ class Invites(commands.Cog):
         """
         config = self.guild_config(str(ctx.guild.id))
 
-        new_config = dict(enabled=mode)
+        new_config = dict(enable=mode)
         config.update(new_config)
         await self.config_update()
 
@@ -332,22 +377,21 @@ class Invites(commands.Cog):
 
         **Usage:**
         - `{prefix}invite config get channel`
-        - `{prefix}invite config get enabled`
+        - `{prefix}invite config get enable`
         """
         config = self.guild_config(str(ctx.guild.id))
 
         if key:
-            keys = [k for k in self.default_config]
-            if key in keys:
+            if key in self.default_config.keys():
                 if key == "channel":
                     channel = ctx.guild.get_channel(int(config[key]))
-                    desc = f"`{key}` is set to {channel.mention if channel is not None else 'None'}"
+                    desc = f"`{key}` is set to {channel.mention if channel is not None else '`None`'}"
                 else:
                     desc = f"`{key}` is set to `{config[key]}`"
 
                 embed = discord.Embed(color=self.bot.main_color, description=desc)
                 embed.set_author(
-                    name="Config variable", icon_url=self.bot.user.avatar.url
+                    name="Config variable", icon_url=self.bot.user.display_avatar.url
                 )
 
             else:
@@ -358,20 +402,24 @@ class Invites(commands.Cog):
                 )
         else:
             channel = ctx.guild.get_channel(int(config["channel"]))
-            enabled = config["enabled"]
 
             embed = discord.Embed(
                 color=self.bot.main_color,
                 description="Here is a list of currently set configurations.",
             )
-            embed.set_author(name="Invite config:", icon_url=self.bot.user.avatar.url)
+            embed.set_author(
+                name="Invite config:", icon_url=self.bot.user.display_avatar.url
+            )
 
             embed.add_field(
                 name="Channel",
-                value=channel.mention if channel is not None else "None",
+                value=f'{getattr(channel, "mention", "`None`")}',
                 inline=False,
             )
-            embed.add_field(name="Enabled", value=f"`{enabled}`", inline=False)
+            embed.add_field(
+                name="Webhook URL", value=f'`{config["webhook"]}`', inline=False
+            )
+            embed.add_field(name="Enabled", value=f"`{config['enable']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -390,8 +438,9 @@ class Invites(commands.Cog):
             description=f"Configuration settings has been reset to default.",
             color=self.bot.main_color,
         )
-        embed.add_field(name="Channel", value="None", inline=False)
-        embed.add_field(name="Enabled", value="False", inline=False)
+        embed.add_field(name="Channel", value="`None`", inline=False)
+        embed.add_field(name="Webhook URL", value="`None`", inline=False)
+        embed.add_field(name="Enabled", value="`False`", inline=False)
         await ctx.send(embed=embed)
 
     @invites.command(name="refresh")
@@ -485,18 +534,15 @@ class Invites(commands.Cog):
                     local = True
                     break
             if local:
-                invite_created = dt_formatter.time(invite.created_at)
-                timestamp_expires = datetime.timestamp(invite.created_at) + int(
-                    invite.max_age
-                )
-                invite_expires = dt_formatter.time(
-                    datetime.fromtimestamp(timestamp_expires)
-                )
-                if invite_created == invite_expires:
-                    invite_expires = "Never"
+                if invite.max_age:
+                    tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
+                    expires = dt_formatter.format_dt(datetime.fromtimestamp(tstamp_exp))
+                else:
+                    expires = "Never"
+                created = dt_formatter.format_dt(invite.created_at)
                 embed.add_field(name="Uses:", value=invite.uses)
-                embed.add_field(name="Created at:", value=invite_created)
-                embed.add_field(name="Expires at:", value=invite_expires)
+                embed.add_field(name="Created at:", value=created)
+                embed.add_field(name="Expires at:", value=expires)
         else:
             embed.description += f"**Member count:**\n{invite.approximate_member_count}"
         await ctx.send(embed=embed)
@@ -526,16 +572,17 @@ class Invites(commands.Cog):
         embed.add_field(name="Inviter:", value=invite.inviter.mention)
         embed.add_field(name="Channel:", value=invite.channel.mention)
 
-        invite_created = dt_formatter.time(invite.created_at)
-        timestamp_expires = datetime.timestamp(invite.created_at) + int(invite.max_age)
-        invite_expires = dt_formatter.time(datetime.fromtimestamp(timestamp_expires))
+        if invite.max_age:
+            tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
+            expires = dt_formatter.format_dt(datetime.fromtimestamp(tstamp_exp))
+        else:
+            expires = "Never"
 
-        if invite_created == invite_expires:
-            invite_expires = "Never"
+        created = dt_formatter.format_dt(invite.created_at)
 
         embed.add_field(name="Uses:", value=invite.uses)
-        embed.add_field(name="Created at:", value=invite_created)
-        embed.add_field(name="Expires at:", value=invite_expires)
+        embed.add_field(name="Created at:", value=created)
+        embed.add_field(name="Expires at:", value=expires)
         try:
             await invite.delete()
         except discord.Forbidden:
@@ -546,7 +593,7 @@ class Invites(commands.Cog):
     @commands.Cog.listener()
     async def on_invite_create(self, invite: discord.Invite):
         config = self.guild_config(str(invite.guild.id))
-        if not config["enabled"]:
+        if not config["enable"]:
             return
 
         cached_invites = self.invite_cache.get(invite.guild.id)
@@ -559,6 +606,40 @@ class Invites(commands.Cog):
             "Invite created. Updating invite cache for guild (%s).", invite.guild
         )
 
+    async def send_log_embed(
+        self, channel: discord.TextChannel, embed: discord.Embed
+    ) -> None:
+        """
+        Sends the log embed to the designated channel. If a webhook is available, the embed will
+        be sent using the webhook instead.
+
+        Parameters
+        -----------
+        channel : discord.TextChannel
+            The channel to send the embed.
+        embed : discord.Embed
+            The embed object.
+        """
+        config = self.guild_config(str(channel.guild.id))
+        wh_url = config.get("webhook")
+        if wh_url is None:
+            webhook = await self._get_or_create_webhook(channel)
+            if webhook:
+                config["webhook"] = webhook.url
+                await self.config_update()
+        else:
+            webhook = discord.Webhook.from_url(wh_url, session=self.bot.session)
+
+        kwargs = {"embed": embed}
+        if webhook:
+            kwargs["username"] = self.bot.user.name
+            kwargs["avatar_url"] = self.bot.user.display_avatar.url
+            kwargs["wait"] = True
+            send_func = webhook.send
+        else:
+            send_func = channel.send
+        await send_func(**kwargs)
+
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
         if member.bot:
@@ -566,14 +647,14 @@ class Invites(commands.Cog):
 
         config = self.guild_config(str(member.guild.id))
 
-        if not config["enabled"]:
+        if not config["enable"]:
             return
         channel = member.guild.get_channel(int(config["channel"]))
         if channel is None:
             return
 
         embed = discord.Embed(color=discord.Color.green(), timestamp=datetime.utcnow())
-        embed.set_thumbnail(url=member.avatar.url)
+        embed.set_thumbnail(url=member.display_avatar.url)
         embed.title = f"{member.name}#{member.discriminator} just joined."
         embed.set_footer(text=f"User ID: {member.id}")
 
@@ -592,7 +673,7 @@ class Invites(commands.Cog):
 
         predicted_invites = await self.get_used_invite(member)
         if predicted_invites:
-            vanity_inv = self.vanity_invites.get(member.guild.id)  # could be None
+            vanity_inv = self.vanity_invites.get(member.guild.id)
             embed.add_field(
                 name="Inviter:",
                 value="\n".join(
@@ -620,12 +701,12 @@ class Invites(commands.Cog):
                 else:
                     embed.add_field(
                         name="Invite created:",
-                        value=f"{dt_formatter.time(invite.created_at)}",
+                        value=f"{dt_formatter.format_dt(invite.created_at)}",
                     )
 
                 if invite.max_age:
                     tstamp_exp = datetime.timestamp(invite.created_at) + invite.max_age
-                    expires = dt_formatter.time(datetime.fromtimestamp(tstamp_exp))
+                    expires = dt_formatter.format_dt(datetime.fromtimestamp(tstamp_exp))
                 else:
                     expires = "Never"
 
@@ -640,7 +721,7 @@ class Invites(commands.Cog):
                 "\n⚠️ *Something went wrong, could not get invite info.*\n"
             )
 
-        await channel.send(embed=embed)
+        await self.send_log_embed(channel, embed)
         await self.save_user_data(member, predicted_invites)
 
     @commands.Cog.listener()
@@ -650,40 +731,35 @@ class Invites(commands.Cog):
 
         config = self.guild_config(str(member.guild.id))
 
-        if not config["enabled"]:
+        if not config["enable"]:
             return
         channel = member.guild.get_channel(int(config["channel"]))
         if channel is None:
             return
 
         embed = discord.Embed(color=discord.Color.red(), timestamp=datetime.utcnow())
-        embed.set_thumbnail(url=member.avatar.url)
+        embed.set_thumbnail(url=member.display_avatar.url)
         embed.title = f"{member.name}#{member.discriminator} left."
         embed.set_footer(text=f"User ID: {member.id}")
         desc = f"{member.mention} just left the server."
         embed.description = desc + "\n"
 
+        embed.add_field(
+            name="Joined at:", value=dt_formatter.format_dt(member.joined_at)
+        )
+        embed.add_field(
+            name="Time on server:", value=dt_formatter.age(member.joined_at)
+        )
+
         user_db = await self.db.find_one(
             {"guild_id": member.guild.id, "user_id": member.id}
         )
         if user_db:
-            embed.add_field(
-                name="Joined at:", value=dt_formatter.time(user_db["joined_at"])
-            )
-            embed.add_field(
-                name="Time on server:", value=dt_formatter.age(user_db["joined_at"])
-            )
             embed.add_field(name="Inviter:", value=user_db["inviter"]["mention"])
             embed.add_field(name="Invite code:", value=user_db["invite_code"])
             embed.add_field(name="Invite channel:", value=user_db["invite_channel"])
         else:
             embed.description += "\n*No invite info*.\n"
-            embed.add_field(
-                name="Joined at:", value=dt_formatter.time(member.joined_at)
-            )
-            embed.add_field(
-                name="Time on server:", value=dt_formatter.age(member.joined_at)
-            )
 
         if member.nick:
             embed.description += "\n**Nickname:**\n" + member.nick + "\n"
@@ -699,7 +775,7 @@ class Invites(commands.Cog):
         if user_db and user_db.get("multi"):
             embed.description += "\n⚠️ *More than 1 used invites were retrieved.*\n"
 
-        await channel.send(embed=embed)
+        await self.send_log_embed(channel, embed)
         await self.remove_user_data(member)
 
 

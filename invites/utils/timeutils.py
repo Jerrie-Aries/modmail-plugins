@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal, Optional
 
 
 MONTHNAMES = {
@@ -31,13 +32,17 @@ MONTHS_ABBRV = {k: v[:3] for k, v in MONTHNAMES.items()}
 DAYS_ABBRV = {k: v[:3] for k, v in DAYNAMES.items()}
 
 
-class DateTimeFormatter:
+TimestampStyle = Literal["f", "F", "d", "D", "t", "T", "R"]
+
+
+# noinspection PyPep8Naming
+class datetime_formatter:
     """
     Datetime formatter. A class to convert and format datetime object.
     """
 
     @staticmethod
-    def time(date_time: datetime, tzinfo: timezone = timezone.utc) -> str:
+    def time_string(date_time: datetime, tzinfo: timezone = timezone.utc) -> str:
         """
         Converts the datetime object to formatted string with UTC timezone.
 
@@ -53,7 +58,7 @@ class DateTimeFormatter:
         str : str
             A string of formatted value, e.g. `Sun, 02 Sep 2020 12:56 PM UTC`.
         """
-        convert = date_time.replace(tzinfo=tzinfo)  # convert to utc timezone
+        convert = date_time.replace(tzinfo=tzinfo)
         year = convert.strftime("%Y")
         month = MONTHS_ABBRV.get(convert.strftime("%m"))
         day = convert.strftime("%d")  # use "%-d" to get without zero-padded number
@@ -83,13 +88,16 @@ class DateTimeFormatter:
             A string of formatted age or an empty string if there's no output,
             e.g. `1 year 6 months`.
         """
-        now = datetime.utcnow()
-        delta = (
-            now - date_time
-        ).total_seconds()  # could be negative if the `date_time` provided is not from the past
+        if date_time.tzinfo is None:
+            date_time = date_time.replace(tzinfo=timezone.utc)
 
-        # add `abs` in case `delta` is negative
-        months, remainder = divmod(int(abs(delta)), 2628000)
+        now = datetime.now(timezone.utc)
+
+        # use `abs` in case the seconds is negative if the
+        # `date_time` passed in is a future datetime
+        delta = int(abs(now - date_time).total_seconds())
+
+        months, remainder = divmod(delta, 2628000)
         hours, seconds = divmod(remainder, 3600)
         minutes, seconds = divmod(seconds, 60)
         days, hours = divmod(hours, 24)
@@ -126,8 +134,8 @@ class DateTimeFormatter:
         output = [v for v in output if v]
         return " ".join(v for v in output if v)  # this could return an empty string
 
-    @classmethod
-    def time_age(cls, date_time: datetime, tzinfo: timezone = timezone.utc) -> str:
+    @staticmethod
+    def time_age(date_time: datetime) -> str:
         """
         Formats the datetime to time and age combined together from `format_time` and `format_age`.
 
@@ -136,16 +144,75 @@ class DateTimeFormatter:
         date_time : datetime
             A datetime object. Doesn't have to be from the past. This parameter is required
             to intantiate the class.
-        tzinfo : timezone
-            Timezone info. If not provided, defaults to UTC.
 
         Returns
         -------
         str : str
-            A string of formatted value.
+            The formatted string.
         """
-        self = cls()
-        fmt = self.time(date_time, tzinfo)
-        fmt_age = self.age(date_time)
+        fmt = datetime_formatter.format_dt(date_time)
+        fmt_age = datetime_formatter.age(date_time)
         fmt += f"\n{fmt_age if fmt_age else '.....'} ago"
         return fmt
+
+    @staticmethod
+    def format_dt(dt: datetime, style: Optional[TimestampStyle] = "F") -> str:
+        """
+        A helper function to format a :class:`datetime` for presentation within Discord.
+
+        This allows for a locale-independent way of presenting data using Discord specific Markdown.
+
+        +-------------+----------------------------+-----------------+
+        |    Style    |       Example Output       |   Description   |
+        +=============+============================+=================+
+        | t           | 22:57                      | Short Time      |
+        +-------------+----------------------------+-----------------+
+        | T           | 22:57:58                   | Long Time       |
+        +-------------+----------------------------+-----------------+
+        | d           | 17/05/2016                 | Short Date      |
+        +-------------+----------------------------+-----------------+
+        | D           | 17 May 2016                | Long Date       |
+        +-------------+----------------------------+-----------------+
+        | f (default) | 17 May 2016 22:57          | Short Date Time |
+        +-------------+----------------------------+-----------------+
+        | F           | Tuesday, 17 May 2016 22:57 | Long Date Time  |
+        +-------------+----------------------------+-----------------+
+        | R           | 5 years ago                | Relative Time   |
+        +-------------+----------------------------+-----------------+
+
+        Note that the exact output depends on the user's locale setting in the client. The example output
+        presented is using the ``en-GB`` locale.
+
+        Parameters
+        ----------
+        dt : datetime
+            The datetime object.
+        style : Optional[str]
+            The style to be converted to. The value for this should be one of the
+            "f", "F", "d", "D", "t", "T", and "R". Defaults to "F".
+
+        Returns
+        --------
+        :class:`str`
+            The formatted string.
+        """
+        if style is None:
+            return f"<t:{int(dt.timestamp())}>"
+        return f"<t:{int(dt.timestamp())}:{style}>"
+
+    @classmethod
+    def format_relative(cls, dt: datetime) -> str:
+        """
+        Converts datetime object to Unix Timestamp string (relative) for presentation within Discord.
+
+        Parameters
+        ----------
+        dt : datetime
+            The datetime object.
+
+        Returns
+        --------
+        :class:`str`
+            The formatted string.
+        """
+        return cls.format_dt(dt, "R")
