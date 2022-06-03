@@ -9,6 +9,7 @@ from core import checks
 from core.paginator import EmbedPaginatorSession
 from core.models import PermissionLevel
 
+from .builder import EmbedBuilderView
 from .converters import (
     MessageableChannel,
     BotMessage,
@@ -164,6 +165,28 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed = discord.Embed(color=self.bot.main_color, title="JSON Example")
         embed.description = f"```py\n{JSON_EXAMPLE}\n```"
         await ctx.send(embed=embed)
+
+    @_embed.command(name="build")
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def modal(self, ctx: commands.Context):
+        """
+        Build embed in interactive mode using buttons and modal view.
+        """
+        description = "Press the button below to start creating your embed."
+        embed = discord.Embed(
+            title="Embed Builder",
+            description=description,
+            color=self.bot.main_color,
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.set_footer(
+            text="Note: This view will be automatically timed out after 10 minutes."
+        )
+        view = EmbedBuilderView(ctx.author)
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if view.embed:
+            await ctx.send(embed=view.embed)
 
     @_embed.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
