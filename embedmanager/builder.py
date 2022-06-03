@@ -246,7 +246,7 @@ class EmbedBuilderView(View):
         embed = discord.Embed.from_dict(embed_data)
         length = len(embed)
         if not length:
-            raise ValueError("Embed is emp.")
+            raise ValueError("Embed is empty.")
         if length > _max_embed_length:
             raise ValueError(
                 f"Embed length exceeds the maximum length allowed, {length}/{_max_embed_length}."
