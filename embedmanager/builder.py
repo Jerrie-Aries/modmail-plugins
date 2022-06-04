@@ -70,6 +70,14 @@ body_raw = {
         "required": False,
     },
 }
+color_raw = {
+    "value": {
+        "label": "Value",
+        "placeholder": "#ffffff",
+        "max_length": 32,
+        "converter": discord.Color.from_str,
+    }
+}
 footer_raw = {
     "text": {
         "label": "Text",
@@ -100,53 +108,73 @@ add_field_raw = {
 }
 
 
-ret_buttons = {
-    "done": ButtonStyle.green,
-    "preview": ButtonStyle.grey,
-    "cancel": ButtonStyle.red,
-}
+class EmbedBuilderTextInput(TextInput):
+    def __init__(self, name: str, **data):
+        self.name: str = name
+        try:
+            self.convert_value = data.pop("converter")
+        except KeyError:
+            self.convert_value = MISSING
+        super().__init__(**data)
 
 
-class EmbedBuilderViewButton(Button):
+class EmbedBuilderModal(Modal):
+    """
+    Represents modal view for embed builder.
+    """
+
+    children: [EmbedBuilderTextInput]
+
+    def __init__(self, manager: EmbedBuilderView, key: str):
+        super().__init__(title=key.title())
+        self.manager = manager
+        data = self.manager.base_input_map[key]
+        for key, value in data.items():
+            self.add_item(EmbedBuilderTextInput(key, **value))
+
+    async def on_submit(self, interaction: Interaction) -> None:
+        response_data = {}
+        for child in self.children:
+            if child.convert_value is not MISSING:
+                try:
+                    value = child.convert_value(child.value)
+                except ValueError as exc:
+                    await interaction.response.send_message(str(exc), ephemeral=True)
+                    self.stop()
+                    return
+            else:
+                value = child.value
+            response_data[child.name] = value
+
+        title = self.title.lower()
+        if title == "add field":
+            # special case where we actually append the data
+            self.manager.response_map["fields"].append(response_data)
+        else:
+            self.manager.response_map[title] = response_data
+        await interaction.response.defer()
+        self.stop()
+
+
+class EmbedBuilderButton(Button):
     def __init__(
         self,
         label: str,
-        style: ButtonStyle,
         *,
+        style: ButtonStyle = ButtonStyle.blurple,
         row: int = None,
-        data: Dict[str, Any] = MISSING,
+        callback: Any = MISSING,
     ):
         super().__init__(label=label, style=style, row=row)
-
-        # for `ret_buttons` the value for this attribute would
-        # be the default value i.e. `MISSING`
-        self.data: Dict[str, Any] = data
+        self.callback_override: Any = callback
 
     async def callback(self, interaction: Interaction):
         assert self.view is not None
-        label = self.label.lower()
-        if label == "done":
-            try:
-                self.view.embed = self.view.build_embed()
-            except ValueError as exc:
-                await interaction.response.send_message(str(exc), ephemeral=True)
-            else:
-                await self.view.disable_and_stop()
-                await interaction.response.edit_message(view=self.view)
-        elif label == "preview":
-            try:
-                embed = self.view.build_embed()
-            except ValueError as exc:
-                await interaction.response.send_message(str(exc), ephemeral=True)
-            else:
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-        elif label == "cancel":
-            await self.view.disable_and_stop()
-            await interaction.response.edit_message(view=self.view)
-        else:
-            modal = EmbedBuilderModal(self.view, self.label, data=self.data)
-            await interaction.response.send_modal(modal)
-            await modal.wait()
+        key = self.label.lower()
+        params = [interaction]
+        if key in self.view.base_input_map.keys():
+            params.append(key)
+        await self.callback_override(*tuple(params))
 
 
 class EmbedBuilderView(View):
@@ -159,13 +187,31 @@ class EmbedBuilderView(View):
             "author": author_raw,
             "body": body_raw,
             "footer": footer_raw,
+            "color": color_raw,
             "add field": add_field_raw,
+        }
+        self.ret_buttons: Dict[str, Any] = {
+            "done": (ButtonStyle.green, self._action_done),
+            "preview": (ButtonStyle.grey, self._action_preview),
+            "cancel": (ButtonStyle.red, self._action_cancel),
         }
         self.response_map = {
             "fields": [],
         }
 
         self.embed: discord.Embed = MISSING
+
+    def _generate_buttons(self) -> None:
+        for key, data in self.base_input_map.items():
+            self.add_item(EmbedBuilderButton(key.title(), callback=self._create_modal))
+
+        for label, item in self.ret_buttons.items():
+            # `item` is a tuple of (ButtonStyle, callback)
+            self.add_item(
+                EmbedBuilderButton(
+                    label.title(), style=item[0], row=4, callback=item[1]
+                )
+            )
 
     @discord.ui.button(label="Create embed", style=ButtonStyle.grey)
     async def create(self, interaction: Interaction, button: Button):
@@ -183,6 +229,10 @@ class EmbedBuilderView(View):
             "- `Description`: Description of embed.\n- `Thumbnail URL`: URL of thumbnail image (shown at top right).\n- `Image URL`: URL of embed image (shown at bottom).\n\n"
             "**Footer:**\n"
             "- `Text`: The text shown on footer (can be up to 2048 characters).\n- `Icon URL`: URL of footer icon.\n\n"
+            "**Color:**\n"
+            "- `Value`: Color code of the embed.\n"
+            "The following formats are accepted:\n\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`\n"
+            "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n\n"
             "**Add Field:**\n"
             "- `Name`: Name of the field.\n- `Value`: Value of the field, can be up to 1024 characters.\n\n\n"
             "__**Note:**__\n"
@@ -192,14 +242,33 @@ class EmbedBuilderView(View):
         embed.description = description
         await interaction.response.edit_message(embed=embed, view=self)
 
-    def _generate_buttons(self) -> None:
-        for key, data in self.base_input_map.items():
-            self.add_item(
-                EmbedBuilderViewButton(key.title(), ButtonStyle.blurple, data=data)
-            )
+    async def _create_modal(self, interaction: Interaction, key: str):
+        modal = EmbedBuilderModal(self, key)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
 
-        for label, style in ret_buttons.items():
-            self.add_item(EmbedBuilderViewButton(label.title(), style, row=4))
+    async def _action_done(self, interaction: Interaction) -> None:
+        try:
+            self.embed = self.build_embed()
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+        else:
+            await self.disable_and_stop()
+            await interaction.response.edit_message(view=self)
+
+    async def _action_preview(self, interaction: Interaction) -> None:
+        try:
+            embed = self.build_embed()
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def _action_cancel(self, interaction: Interaction) -> None:
+        await self.disable_and_stop()
+        if self.embed:
+            self.embed = MISSING
+        await interaction.response.edit_message(view=self)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
@@ -240,6 +309,9 @@ class EmbedBuilderView(View):
         footer_data = self.response_map.get("footer", {})
         if footer_data:
             embed_data["footer"] = footer_data
+        color_data = self.response_map.get("color", {})
+        if color_data:
+            embed_data["color"] = int(color_data["value"])
         embed_data["fields"] = self.response_map.get("fields", [])
         embed_data["timestamp"] = str(discord.utils.utcnow())
 
@@ -264,37 +336,3 @@ class EmbedBuilderView(View):
         self.disable_and_stop()
         # Edit the message without `interaction.response`
         await self.message.edit(view=self)
-
-
-class EmbedBuilderTextInput(TextInput):
-    def __init__(self, name: str, **data):
-        self.name: str = name
-        super().__init__(**data)
-
-
-class EmbedBuilderModal(Modal):
-    """
-    Represents modal view for embed builder.
-    """
-
-    children: [EmbedBuilderTextInput]
-
-    def __init__(self, manager: EmbedBuilderView, title: str, *, data: Any = MISSING):
-        super().__init__(title=title)
-        self.manager = manager
-        for key, value in data.items():
-            self.add_item(EmbedBuilderTextInput(key, **value))
-
-    async def on_submit(self, interaction: Interaction) -> None:
-        response_data = {}
-        for child in self.children:
-            response_data[child.name] = child.value
-
-        title = self.title.lower()
-        if title == "add field":
-            # special case where we actually append the data
-            self.manager.response_map["fields"].append(response_data)
-        else:
-            self.manager.response_map[title] = response_data
-        await interaction.response.defer()
-        self.stop()
