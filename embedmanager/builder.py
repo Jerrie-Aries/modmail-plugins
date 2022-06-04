@@ -1,11 +1,46 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from distutils.util import strtobool
+from typing import Any, Awaitable, Callable, Dict, List, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, TextStyle
 from discord.ui import Button, Modal, TextInput, View
 from discord.utils import MISSING
+from yarl import URL
+
+
+if TYPE_CHECKING:
+    ButtonCallbackT = Callable[[Union[Interaction, Any]], Awaitable]
+
+
+def _color_converter(value: str) -> int:
+    try:
+        return int(discord.Color.from_str(value))
+    except ValueError:
+        raise ValueError(f"`{value}` is unknown color format.")
+
+
+def _bool_converter(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        return strtobool(value)
+    except ValueError:
+        raise ValueError(f"`{value}` is unknown boolean value.")
+
+
+def _url_checker(value: str) -> str:
+    if not value:
+        return ""
+    url = URL(value)
+    if url.scheme not in ("http", "https"):
+        raise ValueError(
+            "Invalid url schema. URLs must start with either `http` or `https`."
+        )
+    if "." not in url.host:
+        raise ValueError(f"Not a well formed URL, `{value}`.")
+    return str(url)
 
 
 _max_embed_length = 6000
@@ -16,7 +51,7 @@ _max_fields = 25
 _field_name_length = 1024
 _field_value_length = 2048
 
-example_url = "https://discordapp.com/..."
+example_url = "https://example.com/"
 
 title_raw = {
     "title": {
@@ -29,6 +64,7 @@ title_raw = {
         "placeholder": example_url,
         "max_length": _short_length,
         "required": False,
+        "converter": _url_checker,
     },
 }
 author_raw = {
@@ -42,12 +78,14 @@ author_raw = {
         "placeholder": example_url,
         "max_length": _short_length,
         "required": False,
+        "converter": _url_checker,
     },
     "url": {
         "label": "Author URL",
         "placeholder": example_url,
         "max_length": _short_length,
         "required": False,
+        "converter": _url_checker,
     },
 }
 body_raw = {
@@ -62,12 +100,14 @@ body_raw = {
         "placeholder": example_url,
         "max_length": _short_length,
         "required": False,
+        "converter": _url_checker,
     },
     "image": {
         "label": "Image URL",
         "placeholder": example_url,
         "max_length": _short_length,
         "required": False,
+        "converter": _url_checker,
     },
 }
 color_raw = {
@@ -75,7 +115,7 @@ color_raw = {
         "label": "Value",
         "placeholder": "#ffffff",
         "max_length": 32,
-        "converter": discord.Color.from_str,
+        "converter": _color_converter,
     }
 }
 footer_raw = {
@@ -89,6 +129,7 @@ footer_raw = {
         "placeholder": example_url,
         "max_length": _short_length,
         "required": False,
+        "converter": _url_checker,
     },
 }
 add_field_raw = {
@@ -105,17 +146,24 @@ add_field_raw = {
         "style": TextStyle.long,
         "required": False,
     },
+    "inline": {
+        "label": "Inline",
+        "placeholder": "Boolean",
+        "max_length": 5,
+        "required": False,
+        "converter": _bool_converter,
+    },
 }
 
 
 class EmbedBuilderTextInput(TextInput):
-    def __init__(self, name: str, **data):
+    def __init__(self, name: str, **kwargs):
         self.name: str = name
         try:
-            self.convert_value = data.pop("converter")
+            self.convert_value = kwargs.pop("converter")
         except KeyError:
             self.convert_value = MISSING
-        super().__init__(**data)
+        super().__init__(**kwargs)
 
 
 class EmbedBuilderModal(Modal):
@@ -123,7 +171,7 @@ class EmbedBuilderModal(Modal):
     Represents modal view for embed builder.
     """
 
-    children: [EmbedBuilderTextInput]
+    children: List[EmbedBuilderTextInput]
 
     def __init__(self, manager: EmbedBuilderView, key: str):
         super().__init__(title=key.title())
@@ -156,17 +204,17 @@ class EmbedBuilderModal(Modal):
         self.stop()
 
 
-class EmbedBuilderButton(Button):
+class EmbedBuilderButton(Button["EmbedBuilderView"]):
     def __init__(
         self,
         label: str,
         *,
         style: ButtonStyle = ButtonStyle.blurple,
         row: int = None,
-        callback: Any = MISSING,
+        callback: ButtonCallbackT = MISSING,
     ):
         super().__init__(label=label, style=style, row=row)
-        self.callback_override: Any = callback
+        self.callback_override: ButtonCallbackT = callback
 
     async def callback(self, interaction: Interaction):
         assert self.view is not None
@@ -178,10 +226,18 @@ class EmbedBuilderButton(Button):
 
 
 class EmbedBuilderView(View):
-    def __init__(self, user: discord.Member, timeout: float = 600.0):
+    """
+    Main class to handle the view components and responses from interactions.
+    """
+
+    children: List[EmbedBuilderButton]
+
+    def __init__(self, user: discord.Member, *, timeout: float = 600.0):
         super().__init__(timeout=timeout)
         self.user: discord.Member = user
         self.message: discord.Message = MISSING  # should be reassigned
+
+        # button labels and modal titles will be based on these keys
         self.base_input_map: Dict[str, Any] = {
             "title": title_raw,
             "author": author_raw,
@@ -204,6 +260,15 @@ class EmbedBuilderView(View):
     def _generate_buttons(self) -> None:
         for key, data in self.base_input_map.items():
             self.add_item(EmbedBuilderButton(key.title(), callback=self._create_modal))
+
+        # manually add this one
+        self.add_item(
+            EmbedBuilderButton(
+                "Clear Fields",
+                style=ButtonStyle.grey,
+                callback=self._action_clear_fields,
+            )
+        )
 
         for label, item in self.ret_buttons.items():
             # `item` is a tuple of (ButtonStyle, callback)
@@ -234,7 +299,7 @@ class EmbedBuilderView(View):
             "The following formats are accepted:\n\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`\n"
             "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n\n"
             "**Add Field:**\n"
-            "- `Name`: Name of the field.\n- `Value`: Value of the field, can be up to 1024 characters.\n\n\n"
+            "- `Name`: Name of the field.\n- `Value`: Value of the field, can be up to 1024 characters.\n- `Inline`: Whether or not this field should display inline\n\n\n"
             "__**Note:**__\n"
             "- Embed fields can be added up to 25.\n"
             "- The combine sum of characters in embeds in a single message must not exceed 6000 characters."
@@ -242,10 +307,14 @@ class EmbedBuilderView(View):
         embed.description = description
         await interaction.response.edit_message(embed=embed, view=self)
 
-    async def _create_modal(self, interaction: Interaction, key: str):
+    async def _create_modal(self, interaction: Interaction, key: str) -> None:
         modal = EmbedBuilderModal(self, key)
         await interaction.response.send_modal(modal)
         await modal.wait()
+
+    async def _action_clear_fields(self, interaction: Interaction) -> None:
+        self.response_map["fields"] = []
+        await interaction.response.send_message("Cleared all fields.", ephemeral=True)
 
     async def _action_done(self, interaction: Interaction) -> None:
         try:
@@ -262,7 +331,11 @@ class EmbedBuilderView(View):
         except ValueError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
         else:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            try:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            except discord.HTTPException as exc:
+                error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
+                await interaction.response.send_message(error, ephemeral=True)
 
     async def _action_cancel(self, interaction: Interaction) -> None:
         await self.disable_and_stop()
@@ -311,7 +384,7 @@ class EmbedBuilderView(View):
             embed_data["footer"] = footer_data
         color_data = self.response_map.get("color", {})
         if color_data:
-            embed_data["color"] = int(color_data["value"])
+            embed_data["color"] = color_data["value"]
         embed_data["fields"] = self.response_map.get("fields", [])
         embed_data["timestamp"] = str(discord.utils.utcnow())
 
