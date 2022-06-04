@@ -299,7 +299,7 @@ class EmbedBuilderView(View):
             "The following formats are accepted:\n\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`\n"
             "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n\n"
             "**Add Field:**\n"
-            "- `Name`: Name of the field.\n- `Value`: Value of the field, can be up to 1024 characters.\n- `Inline`: Whether or not this field should display inline\n\n\n"
+            "- `Name`: Name of the field.\n- `Value`: Value of the field, can be up to 1024 characters.\n- `Inline`: Whether or not this field should display inline.\n\n\n"
             "__**Note:**__\n"
             "- Embed fields can be added up to 25.\n"
             "- The combine sum of characters in embeds in a single message must not exceed 6000 characters."
