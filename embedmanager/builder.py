@@ -322,7 +322,7 @@ class EmbedBuilderView(View):
         except ValueError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
         else:
-            await self.disable_and_stop()
+            self.disable_and_stop()
             await interaction.response.edit_message(view=self)
 
     async def _action_preview(self, interaction: Interaction) -> None:
@@ -338,7 +338,7 @@ class EmbedBuilderView(View):
                 await interaction.response.send_message(error, ephemeral=True)
 
     async def _action_cancel(self, interaction: Interaction) -> None:
-        await self.disable_and_stop()
+        self.disable_and_stop()
         if self.embed:
             self.embed = MISSING
         await interaction.response.edit_message(view=self)
@@ -399,7 +399,7 @@ class EmbedBuilderView(View):
 
         return embed
 
-    async def disable_and_stop(self) -> None:
+    def disable_and_stop(self) -> None:
         for child in self.children:
             child.disabled = True
         if not self.is_finished():
