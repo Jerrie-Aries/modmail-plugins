@@ -146,7 +146,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
 
     @commands.group(name="embed", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def _embed(self, ctx: commands.Context):
+    async def embed_group(self, ctx: commands.Context):
         """
         Base command for Embed Manager.
 
@@ -156,7 +156,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         """
         await ctx.send_help(ctx.command)
 
-    @_embed.command(name="example")
+    @embed_group.command(name="example")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_example(self, ctx: commands.Context):
         """
@@ -166,11 +166,11 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed.description = f"```py\n{JSON_EXAMPLE}\n```"
         await ctx.send(embed=embed)
 
-    @_embed.command(name="build")
+    @embed_group.command(name="build")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def modal(self, ctx: commands.Context):
+    async def embed_build(self, ctx: commands.Context):
         """
-        Build embed in interactive mode using buttons and modal view.
+        Build embeds in an interactive mode using buttons and modal view.
         """
         description = "Press the button below to start creating your embed."
         embed = discord.Embed(
@@ -188,7 +188,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         if view.embed:
             await ctx.send(embed=view.embed)
 
-    @_embed.command(name="simple")
+    @embed_group.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_simple(
         self,
@@ -209,7 +209,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed = discord.Embed(color=color, title=title, description=description)
         await channel.send(embed=embed)
 
-    @_embed.command(name="json", aliases=["fromjson", "fromdata"])
+    @embed_group.command(name="json", aliases=["fromjson", "fromdata"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_json(self, ctx: commands.Context, *, data: JSON_CONTENT_CONVERTER):
         """
@@ -219,7 +219,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         await ctx.send(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
-    @_embed.command(name="fromfile", aliases=["fromjsonfile", "fromdatafile"])
+    @embed_group.command(name="fromfile", aliases=["fromjsonfile", "fromdatafile"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_fromfile(self, ctx: commands.Context):
         """
@@ -230,7 +230,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         await ctx.send(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
-    @_embed.command(name="message", aliases=["frommsg", "frommessage"])
+    @embed_group.command(name="message", aliases=["frommsg", "frommessage"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_message(
         self, ctx: commands.Context, message: discord.Message, index: int = 0
@@ -246,7 +246,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed = await self.get_embed_from_message(message, index)
         await ctx.send(embed=embed)
 
-    @_embed.command(name="download")
+    @embed_group.command(name="download")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_download(
         self, ctx: commands.Context, message: discord.Message, index: int = 0
@@ -265,7 +265,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         fp = io.BytesIO(bytes(data, "utf-8"))
         await ctx.send(file=discord.File(fp, "embed.json"))
 
-    @_embed.command(
+    @embed_group.command(
         name="post", aliases=["view", "drop", "show"], invoke_without_command=True
     )
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -286,7 +286,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         channel = channel or ctx.channel
         await channel.send(embed=discord.Embed.from_dict(name["embed"]))
 
-    @_embed.command(name="info")
+    @embed_group.command(name="info")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_info(self, ctx: commands.Context, name: StoredEmbedConverter):
         """
@@ -305,7 +305,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         )
         await ctx.send(embed=embed)
 
-    @_embed.group(name="edit", usage="<option>", invoke_without_command=True)
+    @embed_group.group(name="edit", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_edit(
         self,
@@ -374,7 +374,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         await target.edit(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
-    @_embed.group(name="store", usage="<option>", invoke_without_command=True)
+    @embed_group.group(name="store", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_store(self, ctx: commands.Context):
         """
