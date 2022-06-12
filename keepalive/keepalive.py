@@ -57,9 +57,7 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
                 self.uptimerobot_client = UptimeRobotAPIClient(self, api_key=api_key)
                 asyncio.create_task(self.uptimerobot_client.check_monitor())
             else:
-                logger.error(
-                    "UPTIMEROBOT_API_KEY is not set."
-                )
+                logger.error("UPTIMEROBOT_API_KEY is not set.")
 
     async def cog_unload(self) -> None:
         self._shutdown_keep_alive()
@@ -105,7 +103,9 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
         """
         embed = discord.Embed(title="Keep alive status")
         if not self.using_replit:
-            raise commands.BadArgument("Not running since this bot is not hosted on `Replit`.")
+            raise commands.BadArgument(
+                "Not running since this bot is not hosted on `Replit`."
+            )
 
         status = "Running" if self.keep_alive is not None else "Not running"
         embed.color = self.bot.main_color
@@ -126,14 +126,18 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
 
     @uptimerobot_group.command(name="info")
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def uptimerobot_info(self, ctx: commands.Context, option: Optional[str] = None):
+    async def uptimerobot_info(
+        self, ctx: commands.Context, option: Optional[str] = None
+    ):
         """
         Shows the UptimeRobot monitor information.
 
         `option` can be `refresh` or `fetch` of you want to update the information from API.
         """
         if self.uptimerobot_client is None:
-            raise commands.BadArgument("UptimeRobot service is not set due to missing API key.")
+            raise commands.BadArgument(
+                "UptimeRobot service is not set due to missing API key."
+            )
         monitor = self.uptimerobot_client.monitor
         if monitor is None:
             raise commands.BadArgument("UptimeRobot monitor is not set.")
