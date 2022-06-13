@@ -3,14 +3,8 @@ from typing import Tuple
 import discord
 
 
-async def is_allowed_by_hierarchy(
-    bot, mod: discord.Member, member: discord.Member
-) -> bool:
-    return (
-        mod.guild.owner_id == mod.id
-        or mod.top_role >= member.top_role
-        or await bot.is_owner(mod)
-    )
+async def is_allowed_by_hierarchy(bot, mod: discord.Member, member: discord.Member) -> bool:
+    return mod.guild.owner_id == mod.id or mod.top_role >= member.top_role or await bot.is_owner(mod)
 
 
 async def is_allowed_by_role_hierarchy(
@@ -23,9 +17,7 @@ async def is_allowed_by_role_hierarchy(
         return False, f"I am not higher than `{role}` in hierarchy."
     else:
         return (
-            mod.top_role > role
-            or mod.id == mod.guild.owner_id
-            or await bot.is_owner(mod),
+            mod.top_role > role or mod.id == mod.guild.owner_id or await bot.is_owner(mod),
             f"You are not higher than `{role}` in hierarchy.",
         )
 

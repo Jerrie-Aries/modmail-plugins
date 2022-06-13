@@ -141,11 +141,7 @@ class TriviaSession:
             async with self.ctx.typing():
                 await asyncio.sleep(1.5)  # Decreased to 1.5, original was 3.
             self.count += 1
-            msg = (
-                bold("Question number {num}!".format(num=self.count))
-                + "\n\n"
-                + question
-            )
+            msg = bold("Question number {num}!".format(num=self.count)) + "\n\n" + question
             await self.ctx.send(msg)
             continue_ = await self.wait_for_answer(answers, delay, timeout)
             if continue_ is False:
@@ -162,15 +158,12 @@ class TriviaSession:
         for idx, tup in enumerate(self.settings["lists"].items()):
             name, author = tup
             if author:
-                title = "`{trivia_list} (by {author})`".format(
-                    trivia_list=name, author=author
-                )
+                title = "`{trivia_list} (by {author})`".format(trivia_list=name, author=author)
             else:
                 title = f"`{name}`"
             list_names.append(title)
         await self.send_normal_reply(
-            bold("Starting Trivia:")
-            + " {list_names}".format(list_names=", ".join(list_names))
+            bold("Starting Trivia:") + " {list_names}".format(list_names=", ".join(list_names))
         )
 
     def _iter_questions(self):
@@ -211,9 +204,7 @@ class TriviaSession:
             :code:`True` if the session wasn't interrupted.
         """
         try:
-            message = await self.ctx.bot.wait_for(
-                "message", check=self.check_answer(answers), timeout=delay
-            )
+            message = await self.ctx.bot.wait_for("message", check=self.check_answer(answers), timeout=delay)
         except asyncio.TimeoutError:
             if time.time() - self._last_response >= timeout:
                 await self.ctx.send("Guys...? Well, I guess I'll stop then.")
@@ -230,9 +221,7 @@ class TriviaSession:
             await self.ctx.send(reply)
         else:
             self.scores[message.author] += 1
-            reply = "You got it {user}! **+1** to you!".format(
-                user=message.author.display_name
-            )
+            reply = "You got it {user}! **+1** to you!".format(user=message.author.display_name)
             await message.reply(reply)
         return True
 
@@ -299,16 +288,12 @@ class TriviaSession:
         """Cancel whichever tasks this session is running."""
         self._task.cancel()
         channel = self.ctx.channel
-        logger.debug(
-            "Force stopping trivia session; <#%s> in %s", channel.id, channel.guild.id
-        )
+        logger.debug("Force stopping trivia session; <#%s> in %s", channel.id, channel.guild.id)
 
     async def send_normal_reply(self, description):
         perms = self.ctx.channel.permissions_for(self.ctx.me)
         if perms.embed_links:
-            embed = discord.Embed(
-                color=discord.Color.dark_theme(), description=description
-            )
+            embed = discord.Embed(color=discord.Color.dark_theme(), description=description)
             await self.ctx.send(embed=embed)
         else:
             await self.ctx.send(description)
@@ -316,9 +301,7 @@ class TriviaSession:
     async def send_error_reply(self, description):
         perms = self.ctx.channel.permissions_for(self.ctx.me)
         if perms.embed_links:
-            embed = discord.Embed(
-                color=self.ctx.bot.error_color, description=description
-            )
+            embed = discord.Embed(color=self.ctx.bot.error_color, description=description)
             await self.ctx.send(embed=embed)
         else:
             await self.ctx.send(description)
@@ -409,9 +392,7 @@ class Trivia(commands.Cog):
         data : dict
             New data to be stored in cache and updated in the database.
         """
-        await self.db.find_one_and_update(
-            {"_id": ctx.guild.id}, {"$set": data}, upsert=True
-        )
+        await self.db.find_one_and_update({"_id": ctx.guild.id}, {"$set": data}, upsert=True)
         config = self._config_cache[str(ctx.guild.id)]
         for key, value in data.items():
             config[key] = value
@@ -440,9 +421,7 @@ class Trivia(commands.Cog):
             "Reveal answer on timeout: `{reveal_answer}`\n"
             "Allow lists to override settings: `{allow_override}`".format(**settings),
         )
-        embed = discord.Embed(
-            color=discord.Color.dark_theme(), title="Current settings", description=desc
-        )
+        embed = discord.Embed(color=discord.Color.dark_theme(), title="Current settings", description=desc)
         await ctx.send(embed=embed)
 
     @triviaset.command(name="maxscore")
@@ -494,10 +473,7 @@ class Trivia(commands.Cog):
         if enabled:
             desc = "Done. Trivia lists can now override the trivia settings for this server."
         else:
-            desc = (
-                "Done. Trivia lists can no longer override the trivia settings for this "
-                "server."
-            )
+            desc = "Done. Trivia lists can no longer override the trivia settings for this " "server."
         embed = discord.Embed(color=discord.Color.dark_theme(), description=desc)
         await ctx.send(embed=embed)
 
@@ -550,9 +526,7 @@ class Trivia(commands.Cog):
         categories = [c.lower() for c in categories]
         session = self._get_trivia_session(ctx.channel)
         if session is not None:
-            raise commands.BadArgument(
-                "There is already an ongoing trivia session in this channel."
-            )
+            raise commands.BadArgument("There is already an ongoing trivia session in this channel.")
         trivia_dict = {}
         authors = []
         for category in reversed(categories):
@@ -596,19 +570,13 @@ class Trivia(commands.Cog):
         """Stop an ongoing trivia session."""
         session = self._get_trivia_session(ctx.channel)
         if session is None:
-            raise commands.BadArgument(
-                "There is no ongoing trivia session in this channel."
-            )
+            raise commands.BadArgument("There is no ongoing trivia session in this channel.")
         await session.end_game()
         session.force_stop()
 
         stop_message = bold("Trivia stopped.")
         if ctx.channel.permissions_for(ctx.me).embed_links:
-            await ctx.send(
-                embed=discord.Embed(
-                    color=discord.Color.dark_theme(), description=stop_message
-                )
-            )
+            await ctx.send(embed=discord.Embed(color=discord.Color.dark_theme(), description=stop_message))
         else:
             await ctx.send(stop_message)
 
@@ -622,9 +590,7 @@ class Trivia(commands.Cog):
             title = "Available trivia categories"
             if continued:
                 title += " (Continued)"
-            embed = discord.Embed(
-                title=title, color=discord.Color.dark_theme(), description=description
-            )
+            embed = discord.Embed(title=title, color=discord.Color.dark_theme(), description=description)
             len_list = len(lists)
             footer_text = f"Found {plural(len_list):trivia category|trivia categories}"
             embed.set_footer(text=footer_text)
@@ -648,13 +614,9 @@ class Trivia(commands.Cog):
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
 
-    @trivia.command(
-        name="leaderboard", aliases=["lboard", "lb"], invoke_without_command=True
-    )
+    @trivia.command(name="leaderboard", aliases=["lboard", "lb"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.REGULAR)
-    async def trivia_leaderboard(
-        self, ctx: commands.Context, sort_by: str = "wins", top: int = 10
-    ):
+    async def trivia_leaderboard(self, ctx: commands.Context, sort_by: str = "wins", top: int = 10):
         """
         Leaderboard for trivia.
 
@@ -699,9 +661,7 @@ class Trivia(commands.Cog):
         elif key in ("total", "score", "answers", "correct"):
             return "total_score"
 
-    async def send_leaderboard(
-        self, ctx: commands.Context, data: dict, key: str, top: int
-    ):
+    async def send_leaderboard(self, ctx: commands.Context, data: dict, key: str, top: int):
         """
         Send the leaderboard from the given data.
 
@@ -876,9 +836,7 @@ class Trivia(commands.Cog):
         try:
             path = next(p for p in self._all_lists() if p.stem == category)
         except StopIteration:
-            raise FileNotFoundError(
-                "Could not find the `{}` category.".format(category)
-            )
+            raise FileNotFoundError("Could not find the `{}` category.".format(category))
 
         with path.open(encoding="utf-8") as file:
             try:
@@ -890,11 +848,7 @@ class Trivia(commands.Cog):
 
     def _get_trivia_session(self, channel: discord.TextChannel) -> TriviaSession:
         return next(
-            (
-                session
-                for session in self.trivia_sessions
-                if session.ctx.channel == channel
-            ),
+            (session for session in self.trivia_sessions if session.ctx.channel == channel),
             None,
         )
 

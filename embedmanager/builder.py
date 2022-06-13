@@ -35,9 +35,7 @@ def _url_checker(value: str) -> str:
         return ""
     url = URL(value)
     if url.scheme not in ("http", "https"):
-        raise ValueError(
-            "Invalid url schema. URLs must start with either `http` or `https`."
-        )
+        raise ValueError("Invalid url schema. URLs must start with either `http` or `https`.")
     if "." not in url.host:
         raise ValueError(f"Not a well formed URL, `{value}`.")
     return str(url)
@@ -272,11 +270,7 @@ class EmbedBuilderView(View):
 
         for label, item in self.ret_buttons.items():
             # `item` is a tuple of (ButtonStyle, callback)
-            self.add_item(
-                EmbedBuilderButton(
-                    label.title(), style=item[0], row=4, callback=item[1]
-                )
-            )
+            self.add_item(EmbedBuilderButton(label.title(), style=item[0], row=4, callback=item[1]))
 
     @discord.ui.button(label="Create embed", style=ButtonStyle.grey)
     async def create(self, interaction: Interaction, button: Button):

@@ -243,13 +243,9 @@ class RoleManager(commands.Cog, name="Role Manager"):
             if continued:
                 embed.title += " (Continued)"
 
-            embed.set_thumbnail(
-                url=f"https://placehold.it/100/{str(role.color)[1:]}?text=+"
-            )
+            embed.set_thumbnail(url=f"https://placehold.it/100/{str(role.color)[1:]}?text=+")
 
-            footer_text = f"Found {len(member_list)} " + (
-                "member" if len(member_list) == 1 else "members"
-            )
+            footer_text = f"Found {len(member_list)} " + ("member" if len(member_list) == 1 else "members")
             embed.set_footer(text=footer_text)
             return embed
 
@@ -285,10 +281,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             roles[str(r.color)].append(r)
         roles = dict(sorted(roles.items(), key=lambda v: self.get_hsv(v[1][0])))
 
-        lines = [
-            f"**{color}**\n{' '.join(r.mention for r in rs)}\n"
-            for color, rs in roles.items()
-        ]
+        lines = [f"**{color}**\n{' '.join(r.mention for r in rs)}\n" for color, rs in roles.items()]
         embeds = [discord.Embed(color=self.bot.main_color)]
         embed = embeds[0]
         embed.description = ""
@@ -331,18 +324,14 @@ class RoleManager(commands.Cog, name="Role Manager"):
         If they're not specified, a role with default name `new role` and gray color will be created.
         """
         if len(ctx.guild.roles) >= 250:
-            return await ctx.send(
-                "This server has reached the maximum role limit (250)."
-            )
+            return await ctx.send("This server has reached the maximum role limit (250).")
 
         role = await ctx.guild.create_role(name=name, colour=color, hoist=hoist)
         await ctx.send(f"**{role}** created!", embed=await self.get_role_info(role))
 
     @role_.command(name="color")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def role_color(
-        self, ctx: commands.Context, role: discord.Role, color: discord.Color
-    ):
+    async def role_color(self, ctx: commands.Context, role: discord.Role, color: discord.Color):
         """
         Change a role's color.
 
@@ -383,9 +372,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @role_.command(name="add")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def role_add(
-        self, ctx: commands.Context, member: discord.Member, *, role: AssignableRole
-    ):
+    async def role_add(self, ctx: commands.Context, member: discord.Member, *, role: AssignableRole):
         """
         Add a role to a member.
 
@@ -393,9 +380,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         `role` may be a role ID, mention, or name.
         """
         if role in member.roles:
-            await ctx.send(
-                f"**{member}** already has the role **{role}**. Maybe try removing it instead."
-            )
+            await ctx.send(f"**{member}** already has the role **{role}**. Maybe try removing it instead.")
             return
         reason = get_audit_reason(ctx.author)
         await member.add_roles(role, reason=reason)
@@ -403,9 +388,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @role_.command(name="remove")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def role_remove(
-        self, ctx: commands.Context, member: discord.Member, *, role: AssignableRole
-    ):
+    async def role_remove(self, ctx: commands.Context, member: discord.Member, *, role: AssignableRole):
         """
         Remove a role from a member.
 
@@ -413,9 +396,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         `role` may be a role ID, mention, or name.
         """
         if role not in member.roles:
-            await ctx.send(
-                f"**{member}** doesn't have the role **{role}**. Maybe try adding it instead."
-            )
+            await ctx.send(f"**{member}** doesn't have the role **{role}**. Maybe try adding it instead.")
             return
         reason = get_audit_reason(ctx.author)
         await member.remove_roles(role, reason=reason)
@@ -423,9 +404,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @role_.command(require_var_positional=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def addmulti(
-        self, ctx: commands.Context, role: AssignableRole, *members: discord.Member
-    ):
+    async def addmulti(self, ctx: commands.Context, role: AssignableRole, *members: discord.Member):
         """
         Add a role to multiple members.
 
@@ -454,9 +433,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @role_.command(require_var_positional=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def removemulti(
-        self, ctx: commands.Context, role: AssignableRole, *members: discord.Member
-    ):
+    async def removemulti(self, ctx: commands.Context, role: AssignableRole, *members: discord.Member):
         """
         Remove a role from multiple members.
 
@@ -493,9 +470,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @multirole.command(name="add", require_var_positional=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def multirole_add(
-        self, ctx: commands.Context, member: discord.Member, *roles: AssignableRole
-    ):
+    async def multirole_add(self, ctx: commands.Context, member: discord.Member, *roles: AssignableRole):
         """
         Add multiple roles to a member.
 
@@ -510,9 +485,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         already_added = []
         to_add = []
         for role in roles:
-            allowed = await is_allowed_by_role_hierarchy(
-                self.bot, ctx.me, ctx.author, role
-            )
+            allowed = await is_allowed_by_role_hierarchy(self.bot, ctx.me, ctx.author, role)
             if not allowed[0]:
                 not_allowed.append(role)
             elif role in member.roles:
@@ -527,16 +500,12 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if already_added:
             msg.append(f"**{member}** already had {humanize_roles(already_added)}.")
         if not_allowed:
-            msg.append(
-                f"You do not have permission to assign the roles {humanize_roles(not_allowed)}."
-            )
+            msg.append(f"You do not have permission to assign the roles {humanize_roles(not_allowed)}.")
         await ctx.send("\n".join(msg))
 
     @multirole.command(name="remove", require_var_positional=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def multirole_remove(
-        self, ctx: commands.Context, member: discord.Member, *roles: AssignableRole
-    ):
+    async def multirole_remove(self, ctx: commands.Context, member: discord.Member, *roles: AssignableRole):
         """
         Remove multiple roles from a member.
 
@@ -551,9 +520,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         not_added = []
         to_rm = []
         for role in roles:
-            allowed = await is_allowed_by_role_hierarchy(
-                self.bot, ctx.me, ctx.author, role
-            )
+            allowed = await is_allowed_by_role_hierarchy(self.bot, ctx.me, ctx.author, role)
             if not allowed[0]:
                 not_allowed.append(role)
             elif role not in member.roles:
@@ -568,9 +535,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if not_added:
             msg.append(f"**{member}** didn't have {humanize_roles(not_added)}.")
         if not_allowed:
-            msg.append(
-                f"You do not have permission to assign the roles {humanize_roles(not_allowed)}."
-            )
+            msg.append(f"You do not have permission to assign the roles {humanize_roles(not_allowed)}.")
         await ctx.send("\n".join(msg))
 
     @role_.command(name="all")
@@ -592,9 +557,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         `role` may be a role ID, mention, or name.
         """
         member_list = self.get_member_list(ctx.guild.members, role, False)
-        await self.super_massrole(
-            ctx, member_list, role, "No one on the server has this role.", False
-        )
+        await self.super_massrole(ctx, member_list, role, "No one on the server has this role.", False)
 
     @role_.command(name="humans")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -713,9 +676,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @role_target.command(name="add")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def target_add(
-        self, ctx: commands.Context, role: AssignableRole, *, args: str
-    ):
+    async def target_add(self, ctx: commands.Context, role: AssignableRole, *, args: str):
         """
         Add a role to members using targeting args.
 
@@ -733,9 +694,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @role_target.command(name="remove")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def target_remove(
-        self, ctx: commands.Context, role: AssignableRole, *, args: str
-    ):
+    async def target_remove(self, ctx: commands.Context, role: AssignableRole, *, args: str):
         """
         Remove a role from members using targeting args.
 
@@ -768,14 +727,12 @@ class RoleManager(commands.Cog, name="Role Manager"):
             return
         verb = "add" if adding else "remove"
         word = "to" if adding else "from"
-        await ctx.send(
-            f"Beginning to {verb} **{role.name}** {word} **{len(member_list)}** members."
-        )
+        await ctx.send(f"Beginning to {verb} **{role.name}** {word} **{len(member_list)}** members.")
         async with ctx.typing():
-            result = await self.massrole(
-                member_list, [role], get_audit_reason(ctx.author), adding
+            result = await self.massrole(member_list, [role], get_audit_reason(ctx.author), adding)
+            result_text = (
+                f"{verb.title()[:5]}ed **{role.name}** {word} **{len(result['completed'])}** members."
             )
-            result_text = f"{verb.title()[:5]}ed **{role.name}** {word} **{len(result['completed'])}** members."
             if result["skipped"]:
                 result_text += f"\nSkipped {verb[:5]}ing roles for **{len(result['skipped'])}** members."
             if result["failed"]:
@@ -815,9 +772,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
                         await member.remove_roles(*to_remove, reason=reason)
                     except Exception as e:
                         failed.append(member)
-                        logger.exception(
-                            f"Failed to remove roles from {member}", exc_info=e
-                        )
+                        logger.exception(f"Failed to remove roles from {member}", exc_info=e)
                     else:
                         completed.append(member)
                 else:
@@ -857,9 +812,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @_autorole.command(name="remove", aliases=["delete"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def autorole_remove(
-        self, ctx: commands.Context, *, role: Union[AssignableRole, int]
-    ):
+    async def autorole_remove(self, ctx: commands.Context, *, role: Union[AssignableRole, int]):
         """
         Remove an autorole.
         """
@@ -901,9 +854,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             return await ctx.send(embed=em)
 
         if mode == enabled:
-            raise commands.BadArgument(
-                f'Autorole is already {"enabled" if mode else "disabled"}.'
-            )
+            raise commands.BadArgument(f'Autorole is already {"enabled" if mode else "disabled"}.')
 
         autorole_config.update({"enabled": mode})
         await self.update_db()
@@ -928,25 +879,18 @@ class RoleManager(commands.Cog, name="Role Manager"):
         for role_id in roles:
             role = ctx.guild.get_role(role_id)
             if role is None:
-                autorole_roles.append(
-                    role_id
-                )  # show anyway in case the role already got deleted from server
+                autorole_roles.append(role_id)  # show anyway in case the role already got deleted from server
                 continue
             autorole_roles.append(role.mention)
         if not autorole_roles:
-            raise commands.BadArgument(
-                "There are no roles set for the autorole on this server."
-            )
+            raise commands.BadArgument("There are no roles set for the autorole on this server.")
 
-        embed = discord.Embed(
-            title="Autorole", color=self.bot.main_color, description=""
-        )
+        embed = discord.Embed(title="Autorole", color=self.bot.main_color, description="")
         for i, role_fmt in enumerate(autorole_roles, start=1):
             embed.description += f"{i}. {role_fmt}\n"
 
         embed.set_footer(
-            text=f"Total: {len(autorole_roles)}"
-            + (" role" if len(autorole_roles) == 1 else "roles")
+            text=f"Total: {len(autorole_roles)}" + (" role" if len(autorole_roles) == 1 else "roles")
         )
         await ctx.send(embed=embed)
 
@@ -961,9 +905,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             embed=discord.Embed(
                 color=self.bot.main_color,
                 description="Are you sure you want to clear all autorole data?",
-            ).set_footer(
-                text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel"
-            )
+            ).set_footer(text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel")
         )
         self.add_multiple_reactions(confirm, [YES_EMOJI, NO_EMOJI])
 
@@ -975,9 +917,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             )
 
         try:
-            reaction, user = await self.bot.wait_for(
-                "reaction_add", check=reaction_check, timeout=60
-            )
+            reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
         except asyncio.TimeoutError:
             try:
                 await confirm.clear_reactions()
@@ -1024,9 +964,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         try:
             await member.add_roles(*to_add, reason="Autorole.")
         except (discord.Forbidden, discord.HTTPException) as exc:
-            logger.error(
-                f"Exception occured when trying to add roles to member {member}."
-            )
+            logger.error(f"Exception occured when trying to add roles to member {member}.")
             logger.error(f"{type(exc).__name__}: {str(exc)}")
             return
 
@@ -1040,9 +978,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         """
         return str(payload.message_id) in self.config["reactroles"]["message_cache"]
 
-    def _udpate_reactrole_cache(
-        self, message_id: int, remove: bool = False, config: dict = None
-    ):
+    def _udpate_reactrole_cache(self, message_id: int, remove: bool = False, config: dict = None):
         """
         Updates config cache.
         """
@@ -1110,9 +1046,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             return await ctx.send(embed=em)
 
         if mode == enabled:
-            raise commands.BadArgument(
-                f'Reaction roles is already {"enabled" if mode else "disabled"}.'
-            )
+            raise commands.BadArgument(f'Reaction roles is already {"enabled" if mode else "disabled"}.')
 
         embed = discord.Embed(
             color=self.bot.main_color,
@@ -1157,18 +1091,12 @@ class RoleManager(commands.Cog, name="Role Manager"):
             raise commands.BadArgument("Failed to parse emoji and role groups.")
         channel = channel or ctx.channel
         if not channel.permissions_for(ctx.me).send_messages:
-            raise commands.BadArgument(
-                f"I do not have permission to send messages in {channel.mention}."
-            )
+            raise commands.BadArgument(f"I do not have permission to send messages in {channel.mention}.")
         if color is None:
             color = self.bot.main_color
 
         def check(msg: discord.Message):
-            return (
-                ctx.author == msg.author
-                and ctx.channel == msg.channel
-                and (len(msg.content) < 2000)
-            )
+            return ctx.author == msg.author and ctx.channel == msg.channel and (len(msg.content) < 2000)
 
         def cancel_check(msg: discord.Message):
             return msg.content == "cancel" or msg.content == f"{ctx.prefix}cancel"
@@ -1195,23 +1123,17 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         rules = rules_resp.content.upper()
         if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
-            raise commands.BadArgument(
-                f"`{rules}` is not a valid option. Reaction Role creation cancelled."
-            )
+            raise commands.BadArgument(f"`{rules}` is not a valid option. Reaction Role creation cancelled.")
 
         if name is None:
             m = await ctx.send(
-                embed=self.base_embed(
-                    "What would you like the reaction role menu name to be?"
-                )
+                embed=self.base_embed("What would you like the reaction role menu name to be?")
             )
             try:
                 msg = await self.bot.wait_for("message", check=check, timeout=60)
             except asyncio.TimeoutError:
                 await delete_quietly(m)
-                raise commands.BadArgument(
-                    "Time out. Reaction Role creation cancelled."
-                )
+                raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
             else:
                 await delete_quietly(msg)
                 await delete_quietly(m)
@@ -1219,9 +1141,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
                     raise commands.BadArgument("Reaction Role creation cancelled.")
                 name = msg.content
 
-        description = (
-            f"React to the following emoji to receive the corresponding role:\n"
-        )
+        description = f"React to the following emoji to receive the corresponding role:\n"
         for (emoji, role) in emoji_role_groups:
             description += f"{emoji} - {role.mention}\n"
         embed = discord.Embed(title=name[:256], color=color, description=description)
@@ -1280,9 +1200,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 )
 
         emoji_str = self.emoji_string(emoji)
-        old_role = ctx.guild.get_role(
-            message_config["emoji_role_groups"].get(emoji_str)
-        )
+        old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_str))
         if old_role:
             msg = await ctx.send(
                 embed=self.base_embed(
@@ -1300,9 +1218,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
                 )
 
             try:
-                reaction, user = await self.bot.wait_for(
-                    "reaction_add", check=reaction_check, timeout=60
-                )
+                reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
             except asyncio.TimeoutError:
                 raise commands.BadArgument("Time out. Bind cancelled.")
 
@@ -1351,9 +1267,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         message_config = self.config["reactroles"]["message_cache"].get(str(message_id))
         if message_config is None or not message_config.get("emoji_role_groups"):
-            raise commands.BadArgument(
-                "There are no reaction roles set up for that message."
-            )
+            raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         old_rules = message_config["rules"]
         if rules is None:
@@ -1364,9 +1278,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             )
 
         if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
-            raise commands.BadArgument(
-                f"`{rules}` is not a valid option for reaction role's rule."
-            )
+            raise commands.BadArgument(f"`{rules}` is not a valid option for reaction role's rule.")
 
         old_rules = message_config["rules"]
         if rules == old_rules:
@@ -1377,9 +1289,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         message_config["rules"] = rules
         await self.update_db()
         await ctx.send(
-            embed=self.base_embed(
-                f"Reaction role's rule for that message is now set to `{rules}`."
-            )
+            embed=self.base_embed(f"Reaction role's rule for that message is now set to `{rules}`.")
         )
 
     @reactrole.group(name="delete", aliases=["remove"], invoke_without_command=True)
@@ -1401,14 +1311,10 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         message_config = self.config["reactroles"]["message_cache"].get(str(message_id))
         if message_config is None or not message_config.get("emoji_role_groups"):
-            raise commands.BadArgument(
-                "There are no reaction roles set up for that message."
-            )
+            raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         msg = await ctx.send(
-            embed=self.base_embed(
-                "Are you sure you want to remove all reaction roles for that message?"
-            )
+            embed=self.base_embed("Are you sure you want to remove all reaction roles for that message?")
         )
         self.add_multiple_reactions(msg, [YES_EMOJI, NO_EMOJI])
 
@@ -1420,18 +1326,14 @@ class RoleManager(commands.Cog, name="Role Manager"):
             )
 
         try:
-            reaction, user = await self.bot.wait_for(
-                "reaction_add", check=reaction_check, timeout=60
-            )
+            reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
         except asyncio.TimeoutError:
             raise commands.BadArgument("Time out. Action cancelled.")
 
         if reaction.emoji == YES_EMOJI:
             self._udpate_reactrole_cache(message.id, remove=True)
             await self.update_db()
-            await ctx.send(
-                embed=self.base_embed("Reaction roles cleared for that message.")
-            )
+            await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
         else:
             raise commands.BadArgument("Action cancelled.")
 
@@ -1455,9 +1357,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
         message_config = self.config["reactroles"]["message_cache"].get(str(message_id))
         if message_config is None:
-            raise commands.BadArgument(
-                "There are no reaction roles set up for that message."
-            )
+            raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         emoji_str = self.emoji_string(emoji)
         try:
@@ -1542,9 +1442,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             embed=discord.Embed(
                 color=self.bot.main_color,
                 description="Are you sure you want to clear all reaction role data?",
-            ).set_footer(
-                text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel"
-            )
+            ).set_footer(text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel")
         )
         self.add_multiple_reactions(confirm, [YES_EMOJI, NO_EMOJI])
 
@@ -1556,9 +1454,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
             )
 
         try:
-            reaction, user = await self.bot.wait_for(
-                "reaction_add", check=reaction_check, timeout=60
-            )
+            reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
         except asyncio.TimeoutError:
             raise commands.BadArgument("Time out. Action cancelled.")
 
@@ -1571,15 +1467,11 @@ class RoleManager(commands.Cog, name="Role Manager"):
 
     @commands.Cog.listener("on_raw_reaction_add")
     @commands.Cog.listener("on_raw_reaction_remove")
-    async def on_raw_reaction_add_or_remove(
-        self, payload: discord.RawReactionActionEvent
-    ):
+    async def on_raw_reaction_add_or_remove(self, payload: discord.RawReactionActionEvent):
         if payload.guild_id is None:
             return
 
-        if not self.config["reactroles"].get(
-            "enabled"
-        ) or not self._check_payload_to_cache(payload):
+        if not self.config["reactroles"].get("enabled") or not self._check_payload_to_cache(payload):
             return
 
         guild = self.bot.get_guild(payload.guild_id)
@@ -1593,9 +1485,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if not guild.me.guild_permissions.manage_roles:
             return
 
-        message_config = self.config["reactroles"]["message_cache"].get(
-            str(payload.message_id)
-        )
+        message_config = self.config["reactroles"]["message_cache"].get(str(payload.message_id))
         if not message_config:
             return
 
@@ -1613,9 +1503,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         role = guild.get_role(role_id)
         if not role:
             logger.debug("Role was deleted.")
-            await self.bulk_delete_set_roles(
-                discord.Object(payload.message_id), [emoji_str]
-            )
+            await self.bulk_delete_set_roles(discord.Object(payload.message_id), [emoji_str])
             await self.update_db()
             return
 
@@ -1655,9 +1543,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         await self.update_db()
 
     @commands.Cog.listener()
-    async def on_raw_bulk_message_delete(
-        self, payload: discord.RawBulkMessageDeleteEvent
-    ):
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
         if payload.guild_id is None:
             return
         update_db = False
@@ -1684,12 +1570,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if args["nick"]:
             matched_here = []
             for user in matched:
-                if any(
-                    [
-                        user.nick and piece.lower() in user.nick.lower()
-                        for piece in args["nick"]
-                    ]
-                ):
+                if any([user.nick and piece.lower() in user.nick.lower() for piece in args["nick"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
@@ -1703,45 +1584,28 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if args["name"]:
             matched_here = []
             for user in matched:
-                if any(
-                    [
-                        piece.lower() in user.display_name.lower()
-                        for piece in args["name"]
-                    ]
-                ):
+                if any([piece.lower() in user.display_name.lower() for piece in args["name"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
         if args["not-nick"]:
             matched_here = []
             for user in matched:
-                if not any(
-                    [
-                        user.nick and piece.lower() in user.nick.lower()
-                        for piece in args["not-nick"]
-                    ]
-                ):
+                if not any([user.nick and piece.lower() in user.nick.lower() for piece in args["not-nick"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
         if args["not-user"]:
             matched_here = []
             for user in matched:
-                if not any(
-                    [piece.lower() in user.name.lower() for piece in args["not-user"]]
-                ):
+                if not any([piece.lower() in user.name.lower() for piece in args["not-user"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
         if args["not-name"]:
             matched_here = []
             for user in matched:
-                if not any(
-                    [
-                        piece.lower() in user.display_name.lower()
-                        for piece in args["not-name"]
-                    ]
-                ):
+                if not any([piece.lower() in user.display_name.lower() for piece in args["not-name"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
@@ -1956,9 +1820,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         if args["a"]:
             matched_here = []
             for user in matched:
-                if user.activity and (
-                    user.activity.name.lower() in [a.lower() for a in args["a"]]
-                ):
+                if user.activity and (user.activity.name.lower() in [a.lower() for a in args["a"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
@@ -2077,9 +1939,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         """
         embed_list = []
 
-        names = discord.Embed(
-            title="Target Arguments - Names", color=self.bot.main_color
-        )
+        names = discord.Embed(title="Target Arguments - Names", color=self.bot.main_color)
         desc = (
             "`--nick <nickone> <nicktwo>` - Users must have one of the passed nicks in their nickname.  If they don't have a nickname, they will instantly be excluded.\n"
             "`--user <userone> <usertwo>` - Users must have one of the passed usernames in their real username.  This will not look at nicknames.\n"
@@ -2096,9 +1956,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         names.set_footer(text="Target Arguments - Names")
         embed_list.append(names)
 
-        roles = discord.Embed(
-            title="Target Arguments - Roles", color=self.bot.main_color
-        )
+        roles = discord.Embed(title="Target Arguments - Roles", color=self.bot.main_color)
         desc = (
             "`--roles <roleone> <roletwo>` - Users must have all of the roles provided.\n"
             "`--any-role <roleone> <roletwo>` - Users must have at least one of the roles provided.\n"
@@ -2112,9 +1970,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         roles.set_footer(text="Target Arguments - Roles")
         embed_list.append(roles)
 
-        status = discord.Embed(
-            title="Target Arguments - Profile", color=self.bot.main_color
-        )
+        status = discord.Embed(title="Target Arguments - Profile", color=self.bot.main_color)
         desc = (
             "`--status <offline> <online> <dnd> <idle>` - Users' status must have at least one of the statuses passed.\n"
             "`--device <mobile> <web> <desktop>` - Filters by their device statuses.  If they are not offline on any of the ones specified, they are included.\n"
@@ -2130,9 +1986,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         status.set_footer(text="Target Arguments - Profile")
         embed_list.append(status)
 
-        dates = discord.Embed(
-            title="Target Arguments - Dates", color=self.bot.main_color
-        )
+        dates = discord.Embed(title="Target Arguments - Dates", color=self.bot.main_color)
         desc = (
             "`--joined-on YYYY MM DD` - Users must have joined on the day specified.\n"
             "`--joined-before YYYY MM DD` - Users must have joined before the day specified.  The day specified is not counted.\n"
@@ -2146,9 +2000,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         dates.set_footer(text="Target Arguments - Dates")
         embed_list.append(dates)
 
-        perms = discord.Embed(
-            title="Target Arguments - Permissions", color=self.bot.main_color
-        )
+        perms = discord.Embed(title="Target Arguments - Permissions", color=self.bot.main_color)
         desc = (
             "`--perms` - Users must have all of the permissions passed.\n"
             "`--any-perm` - Users must have at least one of the permissions passed.\n"
@@ -2162,9 +2014,7 @@ class RoleManager(commands.Cog, name="Role Manager"):
         perms.set_footer(text="Target Arguments - Permissions")
         embed_list.append(perms)
 
-        special = discord.Embed(
-            title="Target Arguments - Special Notes", color=self.bot.main_color
-        )
+        special = discord.Embed(title="Target Arguments - Special Notes", color=self.bot.main_color)
         desc = (
             "`--format` - How to display results.  At the moment, defaults to `menu` for showing the results in Discord.\n"
             "\n"

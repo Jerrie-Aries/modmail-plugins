@@ -66,9 +66,7 @@ class StringToEmbed(Converter):
             e = discord.Embed.from_dict(data)
             length = len(e)
             if length > 6000:
-                raise BadArgument(
-                    f"Embed size exceeds Discord limit of 6000 characters ({length})."
-                )
+                raise BadArgument(f"Embed size exceeds Discord limit of 6000 characters ({length}).")
         except BadArgument:
             raise
         except Exception as error:
@@ -76,9 +74,7 @@ class StringToEmbed(Converter):
         return {"embed": e, "content": content}
 
     @staticmethod
-    async def embed_convert_error(
-        ctx: commands.Context, error_type: str, error: Exception
-    ):
+    async def embed_convert_error(ctx: commands.Context, error_type: str, error: Exception):
         embed = discord.Embed(
             color=ctx.bot.main_color,
             title=f"{error_type}: `{type(error).__name__}`",
@@ -90,9 +86,7 @@ class StringToEmbed(Converter):
 
 
 class ListStringToEmbed(StringToEmbed):
-    async def convert(
-        self, ctx: commands.Context, argument: str
-    ) -> List[discord.Embed]:
+    async def convert(self, ctx: commands.Context, argument: str) -> List[discord.Embed]:
         data = argument.strip("`")
         data = await self.load_from_json(ctx, data, data_type=(dict, list))
 
@@ -155,12 +149,8 @@ class MessageableChannel(discord.TextChannel):
         channel = await converter.convert(ctx, argument)
         my_perms = channel.permissions_for(ctx.me)
         if not (my_perms.send_messages and my_perms.embed_links):
-            raise BadArgument(
-                f"I do not have permissions to send embeds in {channel.mention}."
-            )
+            raise BadArgument(f"I do not have permissions to send embeds in {channel.mention}.")
         author_perms = channel.permissions_for(ctx.author)
         if not (author_perms.send_messages and author_perms.embed_links):
-            raise BadArgument(
-                f"You do not have permissions to send embeds in {channel.mention}."
-            )
+            raise BadArgument(f"You do not have permissions to send embeds in {channel.mention}.")
         return channel

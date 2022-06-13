@@ -19,9 +19,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
     construct it.
     """
 
-    __html_content = (
-        '<div align="center"><img src="https://i.imgur.com/o558Qnq.png" align="center">'
-    )
+    __html_content = '<div align="center"><img src="https://i.imgur.com/o558Qnq.png" align="center">'
 
     def do_GET(self) -> None:
         """Serve a GET request."""
