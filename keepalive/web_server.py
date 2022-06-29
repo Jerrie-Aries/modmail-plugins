@@ -30,10 +30,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         """Serve a HEAD request."""
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-        self.wfile.write(bytes(self.__html_content, "utf8"))
+        self.send_response(200, "OK!")
 
 
 class KeepAliveServer:
@@ -69,6 +66,7 @@ class KeepAliveServer:
         if self.http_server is not None:
             logger.warning(" - Shutting down web server. - ")
             self.http_server.shutdown()
+            self.http_server.server_close()
 
     def run(self) -> HTTPServer:
         """
