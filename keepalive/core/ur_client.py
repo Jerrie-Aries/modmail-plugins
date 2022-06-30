@@ -7,7 +7,7 @@ from core.models import getLogger
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from bot import ModmailBot
-    from .keepalive import KeepAlive
+    from ..keepalive import KeepAlive
 
 
 logger = getLogger(__name__)
