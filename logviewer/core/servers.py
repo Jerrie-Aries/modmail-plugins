@@ -118,9 +118,7 @@ class LogviewerServer:
     def info(self) -> None:
         raise NotImplementedError
 
-    async def process_logs(
-        self, request: AIOHTTPRequest, *, path: str, key: str
-    ) -> AIOHTTPResponse:
+    async def process_logs(self, request: AIOHTTPRequest, *, path: str, key: str) -> AIOHTTPResponse:
         """
         Matches the request path with regex before rendering the logs template to user.
         """

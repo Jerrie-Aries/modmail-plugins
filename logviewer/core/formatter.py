@@ -108,17 +108,13 @@ def format_content_html(content: str, allow_links: bool = False) -> str:
     content = content.replace("@here", '<span class="mention">@here</span>')
 
     # User mentions (<@id> and <@!id>)
-    content = re.sub(
-        r"(&lt;@!?(\d+)&gt;)", r'<span class="mention" title="\2">\1</span>', content
-    )
+    content = re.sub(r"(&lt;@!?(\d+)&gt;)", r'<span class="mention" title="\2">\1</span>', content)
 
     # Channel mentions (<#id>)
     content = re.sub(r"(&lt;#\d+&gt;)", r'<span class="mention">\1</span>', content)
 
     # Role mentions (<@&id>)
-    content = re.sub(
-        r"(&lt;@&amp;(\d+)&gt;)", r'<span class="mention">\1</span>', content
-    )
+    content = re.sub(r"(&lt;@&amp;(\d+)&gt;)", r'<span class="mention">\1</span>', content)
 
     # Custom emojis (<:name:id>)
     is_jumboable = not re.sub(r"&lt;(:.*?:)(\d*)&gt;", "", content)
