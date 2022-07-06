@@ -448,22 +448,6 @@ class Moderation(commands.Cog):
                 color=self.bot.main_color,
             ).add_field(name="Reason", value=reason)
         )
-        after = UserFriendlyTime().do_conversion("1h")
-        if str(member.id) in self.bot.blocked_users:
-            blocked_reason = self.bot.blocked_users.get(str(member.id))
-            if blocked_reason is None:
-                blocked_reason = ""
-            end_time = re.search(r"until ([^`]+?)\.$", blocked_reason)
-            if (
-                end_time is not None
-                and ((datetime.fromisoformat(end_time.group(1)) - after.dt).total_seconds()) > 0
-            ):
-                return
-        reason_msg = (
-            f"Warn Cooldown: Temporarily blocked due to `warn` command. Required to wait until {after.dt}."
-        )
-        self.bot.blocked_users[str(member.id)] = reason_msg
-        await self.bot.config.update()
 
     # Purge commands
     @commands.group(aliases=["clear"], invoke_without_command=True)
