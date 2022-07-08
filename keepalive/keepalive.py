@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import discord
@@ -18,20 +20,26 @@ from .core.web_server import KeepAliveServer
 if TYPE_CHECKING:
     from bot import ModmailBot
 
-__version__ = "1.0.0"
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    info = json.loads(f.read())
+
+__plugin_name__ = info["name"]
+__version__ = info["version"]
+__description__ = ""
+for line in info["description"]:
+    if not __description__:
+        pref = ""
+    else:
+        pref = "\n\n"
+    __description__ += pref + line
+__description__ = __description__.format(info["wiki"], __version__)
+
 logger = getLogger(__name__)
 
 
-class KeepAlive(commands.Cog, name="Keep Alive"):
-    """
-    A tool to help Modmail bot stays alive when hosting on `Replit`.
-
-    This plugin will create a simple HTTP web server on `Replit` to handle HTTP requests.
-
-    __**Note:**__
-    - You must also set up a monitor on [UptimeRobot](https://uptimerobot.com/) to send HTTP request to the web server created by this plugin.
-    Read the [Keep Alive plugin wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki/Keep-Alive-plugin-guide) for more info.
-    """
+class KeepAlive(commands.Cog, name=__plugin_name__):
+    __doc__ = __description__
 
     def __init__(self, bot: ModmailBot):
         """
@@ -162,5 +170,5 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
         await ctx.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(KeepAlive(bot))
