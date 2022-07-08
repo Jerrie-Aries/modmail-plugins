@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import functools
+import json
 from collections import defaultdict
 from colorsys import rgb_to_hsv
 from copy import deepcopy
 from datetime import timezone
-from typing import Iterable, List, Optional, Union
+from pathlib import Path
+from typing import Iterable, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -30,6 +34,17 @@ from .utils import (
     paginate,
 )
 
+if TYPE_CHECKING:
+    from bot import ModmailBot
+
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    info = json.loads(f.read())
+
+__plugin_name__ = info["name"]
+__version__ = info["version"]
+__description__ = "\n\n".join(info["description"]).format(__version__)
+
 logger = getLogger(__name__)
 
 
@@ -47,22 +62,8 @@ YES_EMOJI = "✅"
 NO_EMOJI = "❌"
 
 
-class RoleManager(commands.Cog, name="Role Manager"):
-    """
-    Useful role commands to manage roles on your server.
-
-    This plugin includes Auto Role, Mass Roling, Reaction Roles, and Targeter.
-
-    __**About:**__
-    This plugin is a combination and modified version of:
-    - `roleutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n).
-    Source repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/roleutils).
-    - `targeter` cog made by [NeuroAssassin](https://github.com/NeuroAssassin).
-    Source repository can be found [here](https://github.com/NeuroAssassin/Toxic-Cogs/tree/master/targeter).
-
-    __**Note:**__
-    In order for any of the features in this plugin to work, the bot must have `Manage Roles` permission on your server.
-    """
+class RoleManager(commands.Cog, name=__plugin_name__):
+    __doc__ = __description__
 
     _id = "config"
     default_config = {
@@ -2040,5 +2041,5 @@ class RoleManager(commands.Cog, name="Role Manager"):
         await ctx.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(RoleManager(bot))
