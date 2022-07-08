@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import io
 import json
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, Optional, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -17,6 +20,18 @@ from .converters import (
     StringToEmbed,
 )
 from .utils import inline, human_join, paginate
+
+if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
+    from bot import ModmailBot
+
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    info = json.loads(f.read())
+
+__plugin_name__ = info["name"]
+__version__ = info["version"]
+__description__ = "\n\n".join(info["description"]).format(__version__)
 
 JSON_CONVERTER = StringToEmbed()
 JSON_CONTENT_CONVERTER = StringToEmbed(content=True)
@@ -71,31 +86,21 @@ YES_EMOJI = "✅"
 NO_EMOJI = "❌"
 
 
-class EmbedManager(commands.Cog, name="Embed Manager"):
-    """
-    Create, post, and store embeds.
-
-    __**About:**__
-    This plugin is a modified version of `embedutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n).
-    Original repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/embedutils).
-    Any credits must go to original developer of this cog.
-
-    __**Note:**__
-    The JSON must be in the format expected by this [Discord documentation](https://discord.com/developers/docs/resources/channel#embed-object).
-    """
+class EmbedManager(commands.Cog, name=__plugin_name__):
+    __doc__ = __description__
 
     _id = "config"
     default_config = {"embeds": {}}
 
-    def __init__(self, bot):
+    def __init__(self, bot: ModmailBot):
         """
         Parameters
         ----------
-        bot : bot.ModmailBot
+        bot : ModmailBot
             The Modmail bot.
         """
-        self.bot = bot
-        self.db = bot.api.get_plugin_partition(self)
+        self.bot: ModmailBot = bot
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
 
     async def db_config(self) -> Dict:
         # No need to store in cache when initializing the plugin.
@@ -509,5 +514,5 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         return embed, data["author"], data["uses"]
 
 
-async def setup(bot):
+async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(EmbedManager(bot))

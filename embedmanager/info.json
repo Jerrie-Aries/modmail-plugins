@@ -1,0 +1,13 @@
+{
+    "name": "Embed Manager",
+    "description": [
+        "Create, post, and store embeds.",
+        "This plugin is a modified version of `embedutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n). Original repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/embedutils). Any credits must go to original developer of this cog.",
+        "**Note:**\nThe JSON must be in the format expected by this [Discord documentation](https://discord.com/developers/docs/resources/channel#embed-object).",
+        "**Version:**\n`{0}`"
+    ],
+    "author": "Jerrie-Aries",
+    "version": "1.0.0",
+    "bot_version": "4.0.0",
+    "dpy_version": "2.0.0"
+}
