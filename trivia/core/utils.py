@@ -1,6 +1,4 @@
-import discord
 from discord.utils import escape_markdown
-from io import BytesIO
 import re
 
 
