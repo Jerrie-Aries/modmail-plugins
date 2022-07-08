@@ -27,7 +27,7 @@ with open(info_json, encoding="utf-8") as f:
 
 __plugin_name__ = info["name"]
 __version__ = info["version"]
-__description__ = info["description"].format(info["wiki"], __version__)
+__description__ = "\n".join(info["description"]).format(info["wiki"], __version__)
 
 logger = getLogger(__name__)
 
