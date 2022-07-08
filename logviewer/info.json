@@ -1,0 +1,10 @@
+{
+    "name": "Log Viewer",
+    "description": "Log viewer plugin.\n\nThis plugin is used to run a simple web server to view Modmail logs.\nAlso checkout the [wiki]({0}).\n\n**Version:**\n`{1}`",
+    "author": "Jerrie-Aries",
+    "wiki": "https://github.com/Jerrie-Aries/modmail-plugins/wiki/Log-Viewer-plugin",
+    "version": "1.0.0",
+    "bot_version": "4.0.0",
+    "dpy_version": "2.0.0",
+    "requirements": ["Jinja2"]
+}

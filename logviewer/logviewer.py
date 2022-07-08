@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -19,18 +21,19 @@ from .core.servers import AIOHTTPServer
 if TYPE_CHECKING:
     from bot import ModmailBot
 
-__version__ = "1.0.0"
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    info = json.loads(f.read())
+
+__plugin_name__ = info["name"]
+__version__ = info["version"]
+__description__ = info["description"].format(info["wiki"], __version__)
 
 logger = getLogger(__name__)
 
 
-class Logviewer(commands.Cog, name="Log Viewer"):
-    __doc__ = (
-        "Log viewer plugin.\n\n"
-        "This plugin is used to run a simple web server to view Modmail logs.\n"
-        "Also checkout the [wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki/Log-Viewer-plugin).\n\n"
-        f"**Version:**\n`{__version__}`"
-    )
+class Logviewer(commands.Cog, name=__plugin_name__):
+    __doc__ = __description__
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
