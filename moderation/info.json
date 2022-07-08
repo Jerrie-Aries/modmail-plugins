@@ -1,0 +1,8 @@
+{
+    "name": "Moderation",
+    "description": "Moderation commands.\n\n**Note:**\nYou will need the `MODERATOR` permission level in order to run any of these commands.\n\n**Version:**\n`{0}`",
+    "author": "Jerrie-Aries",
+    "version": "1.0.0",
+    "bot_version": "4.0.0",
+    "dpy_version": "2.0.0"
+}

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import re
 import shlex
 from collections import Counter
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -35,9 +37,13 @@ if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
 
-    ModerationT = TypeVar("ModerationT", bound="Moderation")
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    info = json.loads(f.read())
 
-__version__ = "1.0.0"
+__plugin_name__ = info["name"]
+__version__ = info["version"]
+__description__ = info["description"].format(__version__)
 
 logger = getLogger(__name__)
 
@@ -49,11 +55,7 @@ def can_execute_action(ctx: commands.Context, user: discord.Member, target: disc
 
 # Actual Cog
 class Moderation(commands.Cog):
-    """
-    Moderation commands.
-
-    **NOTE:** You will need the `MODERATOR` permission level in order to run any of these commands.
-    """
+    __doc__ = __description__
 
     def __init__(self, bot: ModmailBot):
         """
