@@ -1,9 +1,8 @@
 [![User](https://img.shields.io/badge/Modmail%20Plugins-by%20Jerrie-black.svg?style=popout&logo=github&logoColor=white)](https://github.com/Jerrie-Aries/)
-[![Made-with-Python](https://img.shields.io/badge/Made%20with-Python%203.9-1f425f.svg?style=popout&logo=python&logoColor=yellow)](https://www.python.org/)
+[![Made-with-Python](https://img.shields.io/badge/Made%20with-Python%203.8%20|%203.9-blue.svg?style=popout&logo=python&logoColor=yellow)](https://www.python.org/)
 [![Database-MongoDB](https://img.shields.io/badge/Database-MongoDB-%234ea94b.svg?style=popout&logo=mongodb&logoColor=white)](https://www.mongodb.com/cloud)
 [![Code-Style](https://img.shields.io/badge/Code%20Style-Black-000000.svg)](https://github.com/python/black)
 [![GitHub-License](https://badgen.net/github/license/Jerrie-Aries/modmail-plugins?label=License)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/LICENSE)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-Yes-green.svg)](https://github.com/Jerrie-Aries/modmail-plugins/graphs/commit-activity)
 
 
 ## Modmail Plugins
