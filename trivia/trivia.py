@@ -23,10 +23,10 @@ if TYPE_CHECKING:
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
-    info = json.loads(f.read())
+    __plugin_info__ = json.loads(f.read())
 
-__version__ = info["version"]
-__description__ = "\n".join(info["description"]).format(__version__)
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
 

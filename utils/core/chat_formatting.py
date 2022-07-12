@@ -1,7 +1,7 @@
 import re
 
 from io import BytesIO
-from typing import Iterator, Optional, Sequence, Union
+from typing import Iterator, List, Optional, Sequence, Union
 
 import discord
 from discord.utils import escape_markdown
@@ -28,38 +28,6 @@ def inline(text: str) -> str:
         return "``{}``".format(text)
     else:
         return "`{}`".format(text)
-
-
-def human_join(sequence: Sequence[str], delim: str = ", ", final: str = "or") -> str:
-    """
-    Get comma-separated list, with the last element joined with *or*.
-
-    Parameters
-    ----------
-    sequence : Sequence[str]
-        The items of the list to join together.
-    delim : str
-        The delimiter to join the sequence with. Defaults to ", ".
-        This will be ignored if the length of `sequence` is or less then 2, otherwise "final" will be used instead.
-    final : str
-        The final delimiter to format the string with. Defaults to "or".
-
-    Returns
-    --------
-    str
-        The formatted string, e.g. "seq_one, seq_two and seq_three".
-    """
-    size = len(sequence)
-    if size == 0:
-        return ""
-
-    if size == 1:
-        return sequence[0]
-
-    if size == 2:
-        return f"{sequence[0]} {final} {sequence[1]}"
-
-    return delim.join(sequence[:-1]) + f" {final} {sequence[-1]}"
 
 
 def days(day: Union[int, str]) -> str:
@@ -146,6 +114,67 @@ def escape(text: str, *, mass_mentions: bool = False, formatting: bool = False) 
     if formatting:
         text = escape_markdown(text)
     return text
+
+MENTION_RE = re.compile(r"@(everyone|here|&[0-9]{17,21})")
+
+
+def escape_mentions(text: str):
+    return MENTION_RE.sub("@\u200b\\1", text)
+
+
+def human_join(sequence: Sequence[str], delim: str = ", ", final: str = "or") -> str:
+    """
+    Get comma-separated list, with the last element joined with *or*.
+
+    Parameters
+    ----------
+    sequence : Sequence[str]
+        The items of the list to join together.
+    delim : str
+        The delimiter to join the sequence with. Defaults to ", ".
+        This will be ignored if the length of `sequence` is or less then 2, otherwise "final" will be used instead.
+    final : str
+        The final delimiter to format the string with. Defaults to "or".
+
+    Returns
+    --------
+    str
+        The formatted string, e.g. "seq_one, seq_two and seq_three".
+    """
+    size = len(sequence)
+    if size == 0:
+        return ""
+
+    if size == 1:
+        return sequence[0]
+
+    if size == 2:
+        return f"{sequence[0]} {final} {sequence[1]}"
+
+    return delim.join(sequence[:-1]) + f" {final} {sequence[-1]}"
+
+
+def humanize_roles(
+    roles: Union[List[discord.Role], List[discord.Member]],
+    *,
+    mention: bool = False,
+    bold: bool = True,
+) -> Optional[str]:
+    if not roles:
+        return None
+    role_strings = []
+    for role in roles:
+        role_name = escape_mentions(role.name)
+        if mention:
+            role_strings.append(role.mention)
+        elif bold:
+            role_strings.append(f"**{role_name}**")
+        else:
+            role_strings.append(role_name)
+    return human_join(role_strings, final="and")
+
+
+humanize_members = humanize_roles
 
 
 def bold(text: str, escape_formatting: bool = True) -> str:

@@ -9,14 +9,13 @@ from colorsys import rgb_to_hsv
 from copy import deepcopy
 from datetime import timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Iterable, List, Optional, Union, TYPE_CHECKING
 
 import discord
-from discord.ext import commands
+
+from discord.utils import MISSING
 
 from core import checks
-from core.models import getLogger, PermissionLevel
-from core.paginator import EmbedPaginatorSession
 from .checks import is_allowed_by_role_hierarchy, my_role_hierarchy
 from .converters import (
     Args,
@@ -29,23 +28,51 @@ from .converters import (
 from .utils import (
     delete_quietly,
     guild_roughly_chunked,
-    human_join,
-    humanize_roles,
-    paginate,
 )
 
+# <!-- Developer -->
+from discord.ext import commands
+from core.models import getLogger, PermissionLevel
+from core.paginator import EmbedPaginatorSession
+
+# <-- ----- -->
+
 if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
-    info = json.loads(f.read())
+    __plugin_info__ = json.loads(f.read())
 
-__plugin_name__ = info["name"]
-__version__ = info["version"]
-__description__ = "\n\n".join(info["description"]).format(__version__)
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
+
+# <!-- Developer -->
+human_join: Any = MISSING
+humanize_roles: Any = MISSING
+human_timedelta: Any = MISSING
+paginate: Any = MISSING
+
+
+def _set_globals(cog: RoleManager) -> None:
+    required = __plugin_info__["cogs_required"][0]
+    utils_cog = cog.bot.get_cog(required)
+    if not utils_cog:
+        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+
+    global human_join, humanize_roles, human_timedelta, paginate
+
+    human_join = utils_cog.chat_formatting["human_join"]
+    humanize_roles = utils_cog.chat_formatting["humanize_roles"]
+    paginate = utils_cog.chat_formatting["paginate"]
+    human_timedelta = utils_cog.timeutils["human_timedelta"]
+
+
+# <!-- ----- -->
 
 
 def get_audit_reason(moderator: discord.Member):
@@ -58,8 +85,8 @@ class ReactRules:
     VERIFY = "VERIFY"  # Not Implemented yet.
 
 
-YES_EMOJI = "✅"
-NO_EMOJI = "❌"
+YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
+NO_EMOJI = "\N{CROSS MARK}"
 
 
 class RoleManager(commands.Cog, name=__plugin_name__):
@@ -85,25 +112,33 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         "rules": ReactRules.NORMAL,
     }
 
-    def __init__(self, bot) -> None:
+    def __init__(self, bot: ModmailBot) -> None:
         """
         Parameters
         ----------
-        bot : bot.ModmailBot
+        bot : ModmailBot
             The Modmail bot.
         """
-        self.bot = bot
-        self.db = bot.api.get_plugin_partition(self)
+        self.bot: ModmailBot = bot
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
         self.config_cache = {}
-        self.method = "build"
+        self.method: str = "build"
 
-        self.bot.loop.create_task(self.populate_cache())
+    async def cog_load(self) -> None:
+        """
+        Initial tasks when loading the cog.
+        """
+        self.bot.loop.create_task(self.initialize())
+
+    async def initialize(self) -> None:
+        await self.bot.wait_for_connected()
+        _set_globals(self)
+        await self.populate_cache()
 
     async def populate_cache(self):
         """
         Initial tasks when loading the cog.
         """
-        await self.bot.wait_for_connected()
 
         config = await self.db.find_one({"_id": self._id})
         if config is None:
