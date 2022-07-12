@@ -41,23 +41,32 @@ __version__ = info["version"]
 __description__ = "\n".join(info["description"]).format(__version__)
 
 
-class Utils(commands.Cog):
+class ExtendedUtils(commands.Cog, name=__plugin_name__):
     __doc__ = __description__
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
-        self.bold = bold
-        self.code_block = code_block
-        self.cleanup_code = cleanup_code
-        self.days = days
-        self.escape = escape
-        self.escape_code_block = escape_code_block
-        self.human_join = human_join
-        self.normalize_smartquotes = normalize_smartquotes
-        self.plural = plural
-        self.text_to_file = text_to_file
-        self.human_timedelta = human_timedelta
-        self.confirmview = ConfirmView
+
+        # store these in dictionaries
+        # TODO: do research about more elegant way to deal with these
+        self.chat_formatting = {
+            "bold": bold,
+            "code_block": code_block,
+            "cleanup_code": cleanup_code,
+            "days": days,
+            "escape": escape,
+            "escape_code_block": escape_code_block,
+            "human_join": human_join,
+            "normalize_smartquotes": normalize_smartquotes,
+            "plural": plural,
+            "text_to_file": text_to_file,
+        }
+        self.timeutils = {
+            "human_timedelta": human_timedelta,
+        }
+        self.views = {
+            "confirmview": ConfirmView,
+        }
 
     async def cog_load(self) -> None:
         pass
@@ -75,4 +84,4 @@ class Utils(commands.Cog):
 
 
 async def setup(bot: ModmailBot) -> None:
-    await bot.add_cog(Utils(bot))
+    await bot.add_cog(ExtendedUtils(bot))
