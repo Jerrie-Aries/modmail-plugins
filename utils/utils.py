@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 import discord
-from discord.ext import commands
 
 from core import checks
-from core.models import PermissionLevel
 
 # <!-- Developer -->
+from discord.ext import commands
+from core.models import PermissionLevel
 from .core.chat_formatting import (
     bold,
     code_block,
@@ -23,7 +23,7 @@ from .core.chat_formatting import (
     plural,
     text_to_file,
 )
-from .core.timeutils import human_timedelta
+from .core.timeutils import datetime_formatter, human_timedelta, humanize_timedelta
 from .core.views import ConfirmView
 
 # <!-- ----- -->
@@ -49,7 +49,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
         # store these in dictionaries
         # TODO: do research about more elegant way to deal with these
-        self.chat_formatting = {
+        self.chat_formatting: Dict[str, Any] = {
             "bold": bold,
             "code_block": code_block,
             "cleanup_code": cleanup_code,
@@ -61,10 +61,12 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             "plural": plural,
             "text_to_file": text_to_file,
         }
-        self.timeutils = {
+        self.timeutils: Dict[str, Any] = {
+            "datetime_formatter": datetime_formatter,
             "human_timedelta": human_timedelta,
+            "humanize_timedelta": humanize_timedelta,
         }
-        self.views = {
+        self.views: Dict[str, Any] = {
             "confirmview": ConfirmView,
         }
 
