@@ -17,18 +17,22 @@ from typing import (
 )
 
 import discord
-from discord.ext import commands
 from discord.utils import MISSING
 
 from core import checks
-from core.models import getLogger, PermissionLevel
-from core.time import UserFriendlyTime
-from core.paginator import EmbedPaginatorSession
 
 from .core.config import ModConfig
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.utils import parse_delete_message_days
+
+# <!-- Developer -->
+from discord.ext import commands
+from core.models import getLogger, PermissionLevel
+from core.time import UserFriendlyTime
+from core.paginator import EmbedPaginatorSession
+
+# <-- ----- -->
 
 
 if TYPE_CHECKING:
@@ -37,11 +41,11 @@ if TYPE_CHECKING:
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
-    info = json.loads(f.read())
+    __plugin_info__ = json.loads(f.read())
 
-__plugin_name__ = info["name"]
-__version__ = info["version"]
-__description__ = "\n".join(info["description"]).format(__version__)
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
 
@@ -51,10 +55,11 @@ human_timedelta = MISSING
 plural = MISSING
 
 
-def _set_globals(bot: ModmailBot) -> None:
-    utils_cog = bot.get_cog("Extended Utils")
+def _set_globals(cog: Moderation) -> None:
+    required = __plugin_info__["cogs_required"][0]
+    utils_cog = cog.bot.get_cog(required)
     if not utils_cog:
-        raise RuntimeError("Extended Utils plugin is required for Moderation plugin to function.")
+        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
 
     global ConfirmView, human_timedelta, plural
 
@@ -146,7 +151,7 @@ class Moderation(commands.Cog):
         Initial tasks when loading the cog.
         """
         await self.bot.wait_for_connected()
-        _set_globals(self.bot)
+        _set_globals(self)
 
         if self.db is MISSING:
             self.db = self.bot.api.get_plugin_partition(self)
