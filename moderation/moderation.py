@@ -14,7 +14,6 @@ from typing import (
     Union,
     List,
     TYPE_CHECKING,
-    TypeVar,
 )
 
 import discord
@@ -29,8 +28,7 @@ from core.paginator import EmbedPaginatorSession
 from .core.config import ModConfig
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
-from .core.utils import human_timedelta, parse_delete_message_days, plural
-from .core.views import ConfirmView
+from .core.utils import parse_delete_message_days
 
 
 if TYPE_CHECKING:
@@ -43,9 +41,29 @@ with open(info_json, encoding="utf-8") as f:
 
 __plugin_name__ = info["name"]
 __version__ = info["version"]
-__description__ = info["description"].format(__version__)
+__description__ = "\n".join(info["description"]).format(__version__)
 
 logger = getLogger(__name__)
+
+# <!-- Developer -->
+ConfirmView = MISSING
+human_timedelta = MISSING
+plural = MISSING
+
+
+def _set_globals(bot: ModmailBot) -> None:
+    utils_cog = bot.get_cog("Utils")
+    if not utils_cog:
+        raise RuntimeError("Utils cog is required for Moderation plugin to function.")
+
+    global ConfirmView, human_timedelta, plural
+
+    ConfirmView = utils_cog.confirmview
+    human_timedelta = utils_cog.human_timedelta
+    plural = utils_cog.plural
+
+
+# <!-- ----- -->
 
 
 # Checks
@@ -128,6 +146,7 @@ class Moderation(commands.Cog):
         Initial tasks when loading the cog.
         """
         await self.bot.wait_for_connected()
+        _set_globals(self.bot)
 
         if self.db is MISSING:
             self.db = self.bot.api.get_plugin_partition(self)
