@@ -115,6 +115,7 @@ def escape(text: str, *, mass_mentions: bool = False, formatting: bool = False) 
         text = escape_markdown(text)
     return text
 
+
 MENTION_RE = re.compile(r"@(everyone|here|&[0-9]{17,21})")
 
 
