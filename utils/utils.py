@@ -19,7 +19,9 @@ from .core.chat_formatting import (
     escape,
     escape_code_block,
     human_join,
+    inline,
     normalize_smartquotes,
+    paginate,
     plural,
     text_to_file,
 )
@@ -34,11 +36,11 @@ if TYPE_CHECKING:
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
-    info = json.loads(f.read())
+    __plugin_info__ = json.loads(f.read())
 
-__plugin_name__ = info["name"]
-__version__ = info["version"]
-__description__ = "\n".join(info["description"]).format(__version__)
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 
 class ExtendedUtils(commands.Cog, name=__plugin_name__):
@@ -57,7 +59,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             "escape": escape,
             "escape_code_block": escape_code_block,
             "human_join": human_join,
+            "inline": inline,
             "normalize_smartquotes": normalize_smartquotes,
+            "paginate": paginate,
             "plural": plural,
             "text_to_file": text_to_file,
         }
