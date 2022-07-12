@@ -8,14 +8,18 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from discord.ext import commands
 from discord.utils import MISSING
 
 from core import checks
-from core.models import getLogger, PermissionLevel
 from core.utils import strtobool
 
 from .core.servers import AIOHTTPServer
+
+# <!-- Developer -->
+from discord.ext import commands
+from core.models import getLogger, PermissionLevel
+
+# <-- ----- -->
 
 
 if TYPE_CHECKING:
@@ -23,11 +27,11 @@ if TYPE_CHECKING:
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
-    info = json.loads(f.read())
+    __plugin_info__ = json.loads(f.read())
 
-__plugin_name__ = info["name"]
-__version__ = info["version"]
-__description__ = "\n".join(info["description"]).format(info["wiki"], __version__)
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__plugin_info__["wiki"], __version__)
 
 logger = getLogger(__name__)
 
