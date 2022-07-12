@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import functools
 import json
 from collections import defaultdict
@@ -9,7 +8,7 @@ from colorsys import rgb_to_hsv
 from copy import deepcopy
 from datetime import timezone
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 
@@ -52,6 +51,7 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 logger = getLogger(__name__)
 
 # <!-- Developer -->
+ConfirmView: Any = MISSING
 human_join: Any = MISSING
 humanize_roles: Any = MISSING
 human_timedelta: Any = MISSING
@@ -64,8 +64,9 @@ def _set_globals(cog: RoleManager) -> None:
     if not utils_cog:
         raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
 
-    global human_join, humanize_roles, human_timedelta, paginate
+    global ConfirmView, human_join, humanize_roles, human_timedelta, paginate
 
+    ConfirmView = utils_cog.views["confirmview"]
     human_join = utils_cog.chat_formatting["human_join"]
     humanize_roles = utils_cog.chat_formatting["humanize_roles"]
     paginate = utils_cog.chat_formatting["paginate"]
@@ -187,54 +188,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         return embed
 
     @staticmethod
-    def add_multiple_reactions(
-        message: discord.Message,
-        emojis: Iterable[Union[discord.Emoji, discord.Reaction, str]],
-    ) -> asyncio.Task:
-        """
-        Add multiple reactions to the message.
-
-        `asyncio.sleep()` is used to prevent the client from being rate limited when
-        adding multiple reactions to the message.
-
-        This is a non-blocking operation - calling this will schedule the
-        reactions being added, but the calling code will continue to
-        execute asynchronously. There is no need to await this function.
-
-        This is particularly useful if you wish to start waiting for a
-        reaction whilst the reactions are still being added.
-
-        Parameters
-        ----------
-        message: discord.Message
-            The message to add reactions to.
-        emojis : Iterable[discord.Emoji or discord.Reaction or  str]
-            Emojis to add.
-
-        Returns
-        -------
-        asyncio.Task
-            The task for the coroutine adding the reactions.
-        """
-
-        async def task():
-            # The task should exit silently if the message is deleted
-            with contextlib.suppress(discord.NotFound):
-                for emoji in emojis:
-                    try:
-                        await message.add_reaction(emoji)
-                    except (discord.HTTPException, discord.InvalidArgument) as e:
-                        logger.warning("Failed to add reaction %s: %s.", emoji, e)
-                        return
-                    await asyncio.sleep(0.2)
-
-        return asyncio.create_task(task())
-
-    @staticmethod
     def get_hsv(role: discord.Role):
         return rgb_to_hsv(*role.color.to_rgb())
 
-    def base_embed(self, description: str):
+    def base_embed(self, description: str) -> discord.Embed:
         embed = discord.Embed(color=self.bot.main_color, description=description)
         return embed
 
@@ -776,7 +733,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send(result_text)
 
     @staticmethod
-    def get_member_list(members: list, role: discord.Role, adding: bool = True):
+    def get_member_list(
+        members: List[discord.Member], role: discord.Role, adding: bool = True
+    ) -> List[discord.Member]:
         if adding:
             members = [member for member in members if role not in member.roles]
         else:
@@ -784,7 +743,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         return members
 
     @staticmethod
-    async def massrole(members: list, roles: list, reason: str, adding: bool = True):
+    async def massrole(
+        members: List[discord.Member],
+        roles: List[discord.Role],
+        reason: str,
+        adding: bool = True,
+    ) -> Dict[str, List[discord.Member]]:
         completed = []
         skipped = []
         failed = []
@@ -936,45 +900,25 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Clear the autorole data.
         """
-
-        confirm = await ctx.send(
-            embed=discord.Embed(
-                color=self.bot.main_color,
-                description="Are you sure you want to clear all autorole data?",
-            ).set_footer(text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel")
+        view = ConfirmView(bot=self.bot, user=ctx.author)
+        view.message = await ctx.send(
+            embed=self.base_embed(description="Are you sure you want to clear all autorole data?"),
+            view=view,
         )
-        self.add_multiple_reactions(confirm, [YES_EMOJI, NO_EMOJI])
 
-        def reaction_check(reaction, user):
-            return (
-                user.id == ctx.author.id
-                and reaction.message.id == confirm.id
-                and reaction.emoji in [YES_EMOJI, NO_EMOJI]
-            )
+        await view.wait()
 
-        try:
-            reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
-        except asyncio.TimeoutError:
-            try:
-                await confirm.clear_reactions()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
-            raise commands.BadArgument("Time out. Action cancelled.")
-
-        if reaction.emoji == YES_EMOJI:
+        if view.value is None:
+            msg = "Time out. Action cancelled."
+        elif view.value:
             autorole_config = self.config["autorole"]
             autorole_config.update({"roles": [], "enabled": False})
             await self.update_db()
-            final_msg = "Data cleared."
+            msg = "Data cleared."
         else:
-            final_msg = "Action cancelled."
+            msg = "Action cancelled."
 
-        try:
-            await confirm.clear_reactions()
-        except (discord.Forbidden, discord.HTTPException):
-            pass
-
-        await ctx.send(final_msg)
+        await ctx.send(msg)
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -1008,7 +952,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     #     REACTION ROLES     #
     # ###################### #
 
-    def _check_payload_to_cache(self, payload):
+    def _check_payload_to_cache(
+        self,
+        payload: Union[discord.RawReactionActionEvent, discord.RawMessageDeleteEvent],
+    ) -> bool:
         """
         Returns `True` if the 'payload.message_id' is in the reaction roles config.
         """
@@ -1041,7 +988,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 del react_to_role_config[emoji_str]
 
     @staticmethod
-    def emoji_string(emoji: Union[discord.Emoji, discord.PartialEmoji, str]) -> str:
+    def emoji_string(emoji: Union[discord.Emoji, discord.PartialEmoji]) -> str:
         """
         Returns a formatted string of an emoji.
         """
@@ -1238,27 +1185,19 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         emoji_str = self.emoji_string(emoji)
         old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_str))
         if old_role:
-            msg = await ctx.send(
+            view = ConfirmView(bot=self.bot, user=ctx.author)
+            view.message = await ctx.send(
                 embed=self.base_embed(
                     f"Emoji {emoji} is already binded to role {old_role.mention} on that message.\n"
                     "Would you like to override it?"
-                )
+                ),
+                view=view,
             )
-            self.add_multiple_reactions(msg, [YES_EMOJI, NO_EMOJI])
 
-            def reaction_check(reaction, user):
-                return (
-                    user.id == ctx.author.id
-                    and reaction.message.id == msg.id
-                    and reaction.emoji in [YES_EMOJI, NO_EMOJI]
-                )
+            await view.wait()
 
-            try:
-                reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
-            except asyncio.TimeoutError:
-                raise commands.BadArgument("Time out. Bind cancelled.")
-
-            if reaction.emoji == NO_EMOJI:
+            if not view.value:
+                # cancelled or timed out
                 raise commands.BadArgument("Bind cancelled.")
 
         rules = message_config.get("rules", ReactRules.NORMAL)
@@ -1349,29 +1288,21 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if message_config is None or not message_config.get("emoji_role_groups"):
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
-        msg = await ctx.send(
-            embed=self.base_embed("Are you sure you want to remove all reaction roles for that message?")
+        view = ConfirmView(bot=self.bot, user=ctx.author)
+        view.message = await ctx.send(
+            embed=self.base_embed("Are you sure you want to remove all reaction roles for that message?"),
+            view=view,
         )
-        self.add_multiple_reactions(msg, [YES_EMOJI, NO_EMOJI])
 
-        def reaction_check(reaction, user):
-            return (
-                user.id == ctx.author.id
-                and reaction.message.id == msg.id
-                and reaction.emoji in [YES_EMOJI, NO_EMOJI]
-            )
+        await view.wait()
 
-        try:
-            reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
-        except asyncio.TimeoutError:
-            raise commands.BadArgument("Time out. Action cancelled.")
-
-        if reaction.emoji == YES_EMOJI:
-            self._udpate_reactrole_cache(message.id, remove=True)
-            await self.update_db()
-            await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
-        else:
+        if not view.value:
+            # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
+
+        self._udpate_reactrole_cache(message.id, remove=True)
+        await self.update_db()
+        await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
 
     @reactrole_delete.command(name="bind", aliases=["link"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -1474,32 +1405,21 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Clear all Reaction Role data.
         """
-        confirm = await ctx.send(
-            embed=discord.Embed(
-                color=self.bot.main_color,
-                description="Are you sure you want to clear all reaction role data?",
-            ).set_footer(text=f"React with {YES_EMOJI} to proceed, {NO_EMOJI} to cancel")
+        view = ConfirmView(bot=self.bot, user=ctx.author)
+        view.message = await ctx.send(
+            embed=self.base_embed("Are you sure you want to clear all reaction role data?"),
+            view=view,
         )
-        self.add_multiple_reactions(confirm, [YES_EMOJI, NO_EMOJI])
 
-        def reaction_check(reaction, user):
-            return (
-                user.id == ctx.author.id
-                and reaction.message.id == confirm.id
-                and reaction.emoji in [YES_EMOJI, NO_EMOJI]
-            )
+        await view.wait()
 
-        try:
-            reaction, user = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=60)
-        except asyncio.TimeoutError:
-            raise commands.BadArgument("Time out. Action cancelled.")
-
-        if reaction.emoji == YES_EMOJI:
-            self.config["reactroles"]["message_cache"].clear()
-            await ctx.send(embed=self.base_embed("Data cleared."))
-            await self.update_db()
-        else:
+        if not view.value:
+            # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
+
+        self.config["reactroles"]["message_cache"].clear()
+        await ctx.send(embed=self.base_embed("Data cleared."))
+        await self.update_db()
 
     @commands.Cog.listener("on_raw_reaction_add")
     @commands.Cog.listener("on_raw_reaction_remove")
@@ -1596,7 +1516,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     # #################### #
 
     @staticmethod
-    def lookup(ctx, args):
+    def lookup(ctx: commands.Context, args: Any):
         matched = ctx.guild.members
         passed = []
         # --- Go through each possible argument ---
@@ -1932,7 +1852,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     @commands.group(usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def target(self, ctx, *, args: Args):
+    async def target(self, ctx: commands.Context, *, args: Args):
         """
         Targets users based on the passed arguments.
 
@@ -1969,7 +1889,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     @target.command(name="help")
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def target_help(self, ctx):
+    async def target_help(self, ctx: commands.Context):
         """
         Returns a menu that has a list of arguments you can pass to `target` command.
         """
@@ -2066,7 +1986,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     @target.command(name="permissions", aliases=["perms"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def target_permissions(self, ctx):
+    async def target_permissions(self, ctx: commands.Context):
         """
         Returns a list of permissions that can be passed to `target` command.
         """
