@@ -52,15 +52,15 @@ plural = MISSING
 
 
 def _set_globals(bot: ModmailBot) -> None:
-    utils_cog = bot.get_cog("Utils")
+    utils_cog = bot.get_cog("Extended Utils")
     if not utils_cog:
-        raise RuntimeError("Utils cog is required for Moderation plugin to function.")
+        raise RuntimeError("Extended Utils plugin is required for Moderation plugin to function.")
 
     global ConfirmView, human_timedelta, plural
 
-    ConfirmView = utils_cog.confirmview
-    human_timedelta = utils_cog.human_timedelta
-    plural = utils_cog.plural
+    ConfirmView = utils_cog.views["confirmview"]
+    human_timedelta = utils_cog.timeutils["human_timedelta"]
+    plural = utils_cog.chat_formatting["plural"]
 
 
 # <!-- ----- -->
