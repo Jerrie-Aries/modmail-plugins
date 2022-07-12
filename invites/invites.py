@@ -1,18 +1,28 @@
 from __future__ import annotations
 
+import json
+
+from pathlib import Path
+
 import discord
-from discord.ext import commands
+
 from datetime import datetime
-from typing import Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
+from discord.utils import MISSING
+from typing import Any, Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
 
 from core import checks
+
+# <!-- Developer -->
+from discord.ext import commands
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
 
-from .utils.timeutils import datetime_formatter
+# <!-- ----- -->
 
 
 if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorCollection
+    from bot import ModmailBot
 
     class GuildConfigData(TypedDict):
         channel: str
@@ -20,21 +30,35 @@ if TYPE_CHECKING:
         enable: bool
 
 
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    __plugin_info__ = json.loads(f.read())
+
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
+
 logger = getLogger(__name__)
 
+# <!-- Developer -->
+dt_formatter: Any = MISSING
 
-dt_formatter = datetime_formatter
+
+def _set_globals(cog: Invites) -> None:
+    required = __plugin_info__["cogs_required"][0]
+    utils_cog = cog.bot.get_cog(required)
+    if not utils_cog:
+        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+
+    global dt_formatter
+
+    dt_formatter = utils_cog.timeutils["datetime_formatter"]
+
+
+# <-- ----- -->
 
 
 class Invites(commands.Cog):
-    """
-    Track invites.
-
-    __**About:**__
-    The bot will check which invite is used when someone joins the server using the following methods:
-    - Check if invite no longer exists.
-    - Check invite's uses. If used invite is found with this method, it will overwrite any results from the previous method.
-    """
+    __doc__ = __description__
 
     _id: str = "config"
     default_config: GuildConfigData = {
@@ -51,7 +75,7 @@ class Invites(commands.Cog):
             The Modmail bot.
         """
         self.bot = bot
-        self.db = bot.api.get_plugin_partition(self)
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
         self._config_cache: Dict[str, GuildConfigData] = {}
         self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
@@ -61,7 +85,13 @@ class Invites(commands.Cog):
         Initial tasks when loading the cog.
         """
         await self.populate_config_cache()
-        self.bot.loop.create_task(self.populate_invite_cache())
+        self.bot.loop.create_task(self.initialize())
+
+    async def initialize(self) -> None:
+        # Ensure everything is ready and all extensions are loaded
+        await self.bot.wait_for_connected()
+        _set_globals(self)
+        await self.populate_invite_cache()
 
     async def populate_config_cache(self) -> None:
         """
@@ -714,5 +744,5 @@ class Invites(commands.Cog):
         await self.remove_user_data(member)
 
 
-async def setup(bot):
+async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(Invites(bot))
