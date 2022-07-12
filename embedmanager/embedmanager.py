@@ -3,14 +3,12 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import discord
-from discord.ext import commands
+from discord.utils import MISSING
 
 from core import checks
-from core.paginator import EmbedPaginatorSession
-from core.models import PermissionLevel
 
 from .builder import EmbedBuilderView
 from .converters import (
@@ -19,7 +17,13 @@ from .converters import (
     StoredEmbedConverter,
     StringToEmbed,
 )
-from .utils import inline, human_join, paginate
+
+# <!-- Developer -->
+from discord.ext import commands
+from core.paginator import EmbedPaginatorSession
+from core.models import PermissionLevel
+
+# <!-- ----- -->
 
 if TYPE_CHECKING:
     from .motor.motor_asyncio import AsyncIOMotorCollection
@@ -27,16 +31,36 @@ if TYPE_CHECKING:
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
-    info = json.loads(f.read())
+    __plugin_info__ = json.loads(f.read())
 
-__plugin_name__ = info["name"]
-__version__ = info["version"]
-__description__ = "\n\n".join(info["description"]).format(__version__)
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
+
+# <!-- Developer -->
+inline: Any = MISSING
+human_join: Any = MISSING
+paginate: Any = MISSING
+
+
+def _set_globals(cog: EmbedManager) -> None:
+    required = __plugin_info__["cogs_required"][0]
+    utils_cog = cog.bot.get_cog(required)
+    if not utils_cog:
+        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+
+    global inline, human_join, paginate
+
+    inline = utils_cog.chat_formatting["inline"]
+    human_join = utils_cog.chat_formatting["human_join"]
+    paginate = utils_cog.chat_formatting["paginate"]
+
+
+# <!-- ----- -->
+
 
 JSON_CONVERTER = StringToEmbed()
 JSON_CONTENT_CONVERTER = StringToEmbed(content=True)
-
-
 JSON_EXAMPLE = """
 {
     "title": "JSON Example",
@@ -82,8 +106,8 @@ JSON_EXAMPLE = """
 """
 
 
-YES_EMOJI = "✅"
-NO_EMOJI = "❌"
+YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
+NO_EMOJI = "\N{CROSS MARK}"
 
 
 class EmbedManager(commands.Cog, name=__plugin_name__):
@@ -101,6 +125,17 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         self.bot: ModmailBot = bot
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
+
+    async def cog_load(self) -> None:
+        """
+        Initial tasks when loading the cog.
+        """
+        self.bot.loop.create_task(self.initialize())
+
+    async def initialize(self) -> None:
+        # Ensure everything is ready and all extensions are loaded
+        await self.bot.wait_for_connected()
+        _set_globals(self)
 
     async def db_config(self) -> Dict:
         # No need to store in cache when initializing the plugin.
