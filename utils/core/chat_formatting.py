@@ -1,7 +1,7 @@
 import re
 
 from io import BytesIO
-from typing import Iterator, Sequence, Union
+from typing import Iterator, Optional, Sequence, Union
 
 import discord
 from discord.utils import escape_markdown
