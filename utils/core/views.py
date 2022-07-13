@@ -126,11 +126,14 @@ class ConfirmView(View):
         self._message = item
 
     async def interaction_check(self, interaction: Interaction) -> bool:
-        return (
+        if (
             self.message is not MISSING
             and self.message.id == interaction.message.id
             and self.user.id == interaction.user.id
-        )
+        ):
+            return True
+        await interaction.response.send_message("These buttons cannot be controlled by you.", ephemeral=True)
+        return False
 
     async def on_timeout(self) -> None:
         self.update_view()
