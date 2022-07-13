@@ -24,7 +24,7 @@ logger = getLogger(__name__)
 
 # <!-- Developer -->
 if TYPE_CHECKING:
-    from ..utils.utils import bold, code_block, normalize_smartquotes
+    from ...utils.utils import bold, code_block, normalize_smartquotes
 else:
     bold = MISSING
     code_block = MISSING
