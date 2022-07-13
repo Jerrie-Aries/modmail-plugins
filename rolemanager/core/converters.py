@@ -19,7 +19,7 @@ __all__ = [
     "Args",
     "AssignableRole",
     "EmojiRoleGroup",
-    "NoExitParser",
+    "ObjectConverter",
     "UnionEmoji",
     "PERMS",
 ]
