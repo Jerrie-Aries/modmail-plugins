@@ -1,25 +1,31 @@
 from __future__ import annotations
 
-import asyncio
-import discord
 import json
 import yaml
 
-from discord.ext import commands
 from pathlib import Path
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+import discord
 
 from core import checks
-from core.models import PermissionLevel, getLogger
-from core.paginator import EmbedPaginatorSession, MessagePaginatorSession
 
 from .core.session import TriviaSession
-from .core.utils import bold, plural
 from .core.checks import trivia_stop_check
+
+# <!-- Developer -->
+from discord.ext import commands
+from discord.utils import MISSING
+from core.models import getLogger, PermissionLevel
+from core.paginator import EmbedPaginatorSession, MessagePaginatorSession
+
+# <-- ----- -->
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
+
+    TriviaDict = Dict[str, List[str]]
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -29,6 +35,36 @@ __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
+
+
+# <!-- Developer -->
+if TYPE_CHECKING:
+    from ..utils.utils import bold, plural
+else:
+    bold = MISSING
+    plural = MISSING
+
+
+def _set_globals(cog: Trivia) -> None:
+    required = __plugin_info__["cogs_required"][0]
+    utils_cog = cog.bot.get_cog(required)
+    if not utils_cog:
+        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+
+    global bold, plural
+    bold = utils_cog.chat_formatting["bold"]
+    plural = utils_cog.chat_formatting["plural"]
+
+    from .core.session import _set_globals as _session_globals
+
+    _session_globals(
+        bold=bold,
+        code_block=utils_cog.chat_formatting["code_block"],
+        normalize_smartquotes=utils_cog.chat_formatting["normalize_smartquotes"],
+    )
+
+
+# <-- ----- -->
 
 
 class InvalidListError(Exception):
@@ -61,11 +97,21 @@ class Trivia(commands.Cog):
         self.bot: ModmailBot = bot
         self.trivia_sessions: List[TriviaSession] = []
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
-        self._config_cache = {}
+        self._config_cache: Dict[str, Any] = {}
 
-        asyncio.create_task(self.populate_config_cache())
+    async def cog_load(self) -> None:
+        self.bot.loop.create_task(self.initialize())
 
-    async def populate_config_cache(self):
+    async def cog_unload(self) -> None:
+        for session in self.trivia_sessions:
+            session.force_stop()
+
+    async def initialize(self) -> None:
+        await self.bot.wait_for_connected()
+        _set_globals(self)
+        await self.populate_config_cache()
+
+    async def populate_config_cache(self) -> None:
         for guild in self.bot.guilds:
             config = await self.db.find_one({"_id": guild.id})
             if config is None:
@@ -77,7 +123,7 @@ class Trivia(commands.Cog):
                 )
             self._config_cache[str(guild.id)] = config
 
-    async def update_config(self, ctx, data: dict) -> None:
+    async def update_config(self, ctx: commands.Context, data: Dict[str, Any]) -> None:
         """
         Updates the database with new data and refresh the config cache.
 
@@ -85,7 +131,7 @@ class Trivia(commands.Cog):
         ----------
         ctx : commands.Context
             Context where the command is executed.
-        data : dict
+        data : Dict[str, Any]
             New data to be stored in cache and updated in the database.
         """
         await self.db.find_one_and_update({"_id": ctx.guild.id}, {"$set": data}, upsert=True)
@@ -196,8 +242,7 @@ class Trivia(commands.Cog):
         """
         Set whether or not the answer is revealed.
 
-        If enabled, the bot will reveal the answer if no one guesses correctly
-        in time.
+        If enabled, the bot will reveal the answer if no one guesses correctly in time.
         """
         new_settings = {"reveal_answer": enabled}
         await self.update_config(ctx, new_settings)
@@ -208,22 +253,22 @@ class Trivia(commands.Cog):
         embed = discord.Embed(color=discord.Color.dark_theme(), description=desc)
         await ctx.send(embed=embed)
 
-    @commands.group(invoke_without_command=True)
+    @commands.group(invoke_without_command=True, extras={"add_slash_option": True})
     @checks.has_permissions(PermissionLevel.REGULAR)
-    async def trivia(self, ctx: commands.Context, *categories: str):
+    async def trivia(self, ctx: commands.Context, categories: str):
         """
         Start trivia session on the specified category.
 
-        You may list multiple categories, in which case the trivia will involve
-        questions from all of them.
+        You may list multiple categories, in which case the trivia will involve questions from all of them.
         """
+        categories = (c for c in categories.split())
         if not categories:
             return await ctx.send_help(ctx.command)
         categories = [c.lower() for c in categories]
         session = self._get_trivia_session(ctx.channel)
         if session is not None:
             raise commands.BadArgument("There is already an ongoing trivia session in this channel.")
-        trivia_dict = {}
+        trivia_dict: TriviaDict = {}  # type: ignore
         authors = []
         for category in reversed(categories):
             # We reverse the categories so that the first list's config takes
@@ -260,7 +305,7 @@ class Trivia(commands.Cog):
         logger.debug("New trivia session; <#%s> in %d", ctx.channel.id, ctx.guild.id)
 
     @trivia_stop_check()
-    @trivia.command(name="stop")
+    @trivia.command(name="stop", aliases=["end"])
     @checks.has_permissions(PermissionLevel.REGULAR)
     async def trivia_stop(self, ctx: commands.Context):
         """Stop an ongoing trivia session."""
@@ -316,8 +361,8 @@ class Trivia(commands.Cog):
         """
         Leaderboard for trivia.
 
-        Defaults to the top 10 of this server, sorted by total wins. Use
-        subcommands for a more customised leaderboard.
+        Defaults to the top 10 of this server, sorted by total wins.
+        Use subcommands for a more customised leaderboard.
 
         `<sort_by>` can be any of the following fields:
          - `wins`  : total wins
@@ -357,7 +402,13 @@ class Trivia(commands.Cog):
         elif key in ("total", "score", "answers", "correct"):
             return "total_score"
 
-    async def send_leaderboard(self, ctx: commands.Context, data: dict, key: str, top: int):
+    async def send_leaderboard(
+        self,
+        ctx: commands.Context,
+        data: Dict[discord.Member, Dict[str, Any]],
+        key: str,
+        top: int,
+    ) -> None:
         """
         Send the leaderboard from the given data.
 
@@ -365,7 +416,7 @@ class Trivia(commands.Cog):
         ----------
         ctx : commands.Context
             The context to send the leaderboard to.
-        data : dict
+        data : Dict[discord.Member, Dict[str, Any]]
             The data for the leaderboard. This must map `discord.Member` ->
             `dict`.
         key : str
@@ -373,11 +424,6 @@ class Trivia(commands.Cog):
             ``games`` or ``average_score``.
         top : int
             The number of members to display on the leaderboard.
-
-        Returns
-        -------
-        `list` of `discord.Message`
-            The sent leaderboard messages.
         """
         if not data:
             raise commands.BadArgument("There are no scores on record!")
@@ -403,14 +449,14 @@ class Trivia(commands.Cog):
         embed = discord.Embed(color=self.bot.main_color)
         footer_text = "Leaderboard"
         if len(ret) > 1:
-            footer_text += " - Navigate using the reactions below."
+            footer_text += " - Navigate using the buttons below."
         embed.set_footer(text=footer_text)
 
         session = MessagePaginatorSession(ctx, *ret, embed=embed)
-        return await session.run()
+        await session.run()
 
     @staticmethod
-    def _get_leaderboard(data: dict, key: str, top: int) -> str:
+    def _get_leaderboard(data: Dict[discord.Member, Dict[str, Any]], key: str, top: int) -> str:
         # Mix in average score
         for member, stats in data.items():
             if stats["games"] != 0:
@@ -464,7 +510,7 @@ class Trivia(commands.Cog):
         return "\n".join(lines)
 
     @commands.Cog.listener()
-    async def on_trivia_end(self, session: TriviaSession):
+    async def on_trivia_end(self, session: TriviaSession) -> None:
         """
         Event for a trivia session ending.
 
@@ -483,7 +529,7 @@ class Trivia(commands.Cog):
         if session.scores:
             await self.update_leaderboard(session)
 
-    async def update_leaderboard(self, session) -> None:
+    async def update_leaderboard(self, session: TriviaSession) -> None:
         """Update the leaderboard with the given scores.
 
         Parameters
@@ -516,7 +562,7 @@ class Trivia(commands.Cog):
             upsert=True,
         )
 
-    def get_trivia_list(self, category: str) -> dict:
+    def get_trivia_list(self, category: str) -> TriviaDict:
         """Get the trivia list corresponding to the given category.
 
         Parameters
@@ -526,7 +572,7 @@ class Trivia(commands.Cog):
 
         Returns
         -------
-        `dict`
+        Dict[str, List[str]]
             A dict mapping questions (`str`) to answers (`list` of `str`).
         """
         try:
@@ -542,7 +588,7 @@ class Trivia(commands.Cog):
             else:
                 return dict_
 
-    def _get_trivia_session(self, channel: discord.TextChannel) -> TriviaSession:
+    def _get_trivia_session(self, channel: discord.TextChannel) -> Optional[TriviaSession]:
         return next(
             (session for session in self.trivia_sessions if session.ctx.channel == channel),
             None,
@@ -550,10 +596,6 @@ class Trivia(commands.Cog):
 
     def _all_lists(self) -> List[Path]:
         return self.get_core_lists()
-
-    async def cog_unload(self):
-        for session in self.trivia_sessions:
-            session.force_stop()
 
     @staticmethod
     def get_core_lists() -> List[Path]:

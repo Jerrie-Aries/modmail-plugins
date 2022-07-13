@@ -1,17 +1,45 @@
+from __future__ import annotations
+
 import asyncio
 import random
 import time
 
+from collections import Counter
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
+
 import discord
 
-from collections import Counter
-
+# <!-- Developer -->
+from discord.utils import MISSING
+from discord.ext import commands
 from core.models import getLogger
 
-from .utils import bold, code_block, normalize_smartquotes
+# <-- ----- -->
 
+if TYPE_CHECKING:
+    TriviaDict = Dict[str, List[str]]
 
 logger = getLogger(__name__)
+
+
+# <!-- Developer -->
+if TYPE_CHECKING:
+    from ..utils.utils import bold, code_block, normalize_smartquotes
+else:
+    bold = MISSING
+    code_block = MISSING
+    normalize_smartquotes = MISSING
+
+
+def _set_globals(*args, **kwargs) -> None:
+    # This should be called from main plugin file once
+    global bold, code_block, normalize_smartquotes
+    bold = kwargs.pop("bold")
+    code_block = kwargs.pop("code_block")
+    normalize_smartquotes = kwargs.pop("normalize_smartquotes")
+
+
+# <-- ----- -->
 
 
 _REVEAL_MESSAGES = (
@@ -41,10 +69,10 @@ class TriviaSession:
         Context object from which this session will be run.
         This object assumes the session was started in `ctx.channel`
         by `ctx.author`.
-    question_list : `dict`
+    question_list : `List[Tuple[str, List[str]]]`
         A list of tuples mapping questions (`str`) to answers (`list` of
         `str`).
-    settings : `dict`
+    settings : `Dict[str, Any]`
         Settings for the trivia session, with values for the following:
          - ``max_score`` (`int`)
          - ``delay`` (`float`)
@@ -53,26 +81,36 @@ class TriviaSession:
          - ``bot_plays`` (`bool`)
          - ``allow_override`` (`bool`)
          - ``payout_multiplier`` (`float`)
-    scores : `collections.Counter`
+    scores : `Counter`
         A counter with the players as keys, and their scores as values. The
         players are of type `discord.Member`.
     count : `int`
         The number of questions which have been asked.
     """
 
-    def __init__(self, ctx, question_list: dict, settings: dict):
-        self.ctx = ctx
-        list_ = list(question_list.items())
+    def __init__(
+        self,
+        ctx: commands.Context,
+        question_list: TriviaDict,
+        settings: Dict[str, Any],
+    ):
+        self.ctx: commands.Context = ctx
+        list_ = list((k, v) for k, v in question_list.items())
         random.shuffle(list_)
-        self.question_list = list_
-        self.settings = settings
-        self.scores = Counter()
-        self.count = 0
-        self._last_response = time.time()
-        self._task = None
+        self.question_list: List[Tuple[str, List[str]]] = list_
+        self.settings: Dict[str, Any] = settings
+        self.scores: Counter = Counter()
+        self.count: int = 0
+        self._last_response: float = time.time()
+        self._task: Optional[asyncio.Task] = None
 
     @classmethod
-    def start(cls, ctx, question_list, settings) -> "TriviaSession":
+    def start(
+        cls,
+        ctx: commands.Context,
+        question_list: TriviaDict,
+        settings: Dict[str, Any],
+    ) -> "TriviaSession":
         """
         Create and start a trivia session.
 
@@ -83,9 +121,9 @@ class TriviaSession:
         ----------
         ctx : `commands.Context`
             Same as `TriviaSession.ctx`
-        question_list : `dict`
-            Same as `TriviaSession.question_list`
-        settings : `dict`
+        question_list : `TriviaDict`
+            Same as `TriviaSession.question_list` parameter.
+        settings : `Dict[str, Any]`
             Same as `TriviaSession.settings`
 
         Returns
@@ -99,7 +137,7 @@ class TriviaSession:
         session._task.add_done_callback(session._error_handler)
         return session
 
-    def _error_handler(self, fut):
+    def _error_handler(self, fut: asyncio.Task) -> None:
         """Catches errors in the session task."""
         try:
             fut.result()
@@ -114,7 +152,7 @@ class TriviaSession:
             asyncio.create_task(self.send_error_reply(error_msg))
             self.stop()
 
-    async def run(self):
+    async def run(self) -> None:
         """
         Run the trivia session.
 
@@ -141,7 +179,7 @@ class TriviaSession:
             await self.send_normal_reply(bold("There are no more questions!"))
             await self.end_game()
 
-    async def _send_startup_msg(self):
+    async def _send_startup_msg(self) -> None:
         list_names = []
         for idx, tup in enumerate(self.settings["lists"].items()):
             name, author = tup
@@ -154,13 +192,13 @@ class TriviaSession:
             bold("Starting Trivia:") + " {list_names}".format(list_names=", ".join(list_names))
         )
 
-    def _iter_questions(self):
+    def _iter_questions(self) -> Tuple[str, Tuple[str]]:
         """
         Iterate over questions and answers for this session.
 
         Yields
         ------
-        `tuple`
+        Tuple[str, Tuple[str]]
             A tuple containing the question (`str`) and the answers (`tuple` of
             `str`).
         """
@@ -168,7 +206,7 @@ class TriviaSession:
             answers = self._parse_answers(answers)
             yield question, answers
 
-    async def wait_for_answer(self, answers, delay: float, timeout: float):
+    async def wait_for_answer(self, answers: List[str], delay: float, timeout: float) -> bool:
         """
         Wait for a correct answer, and then respond.
 
@@ -179,7 +217,7 @@ class TriviaSession:
 
         Parameters
         ----------
-        answers : `iterable` of `str`
+        answers : List[str]
             A list of valid answers to the current question.
         delay : float
             How long users have to respond (in seconds).
@@ -189,7 +227,7 @@ class TriviaSession:
         Returns
         -------
         bool
-            :code:`True` if the session wasn't interrupted.
+            `True` if the session wasn't interrupted.
         """
         try:
             message = await self.ctx.bot.wait_for("message", check=self.check_answer(answers), timeout=delay)
@@ -213,7 +251,7 @@ class TriviaSession:
             await message.reply(reply)
         return True
 
-    def check_answer(self, answers):
+    def check_answer(self, answers: Iterable[str]) -> Callable[[discord.Message], bool]:
         """
         Get a predicate to check for correct answers.
 
@@ -223,12 +261,12 @@ class TriviaSession:
 
         Parameters
         ----------
-        answers : `iterable` of `str`
-            The answers which the predicate must check for.
+        answers : Iterable[str]
+            The list of answers which the predicate must check for.
 
         Returns
         -------
-        function
+        Callable[[discord.Message], bool]
             The message predicate.
         """
         answers = tuple(s.lower() for s in answers)
@@ -255,30 +293,30 @@ class TriviaSession:
 
         return _pred
 
-    async def end_game(self):
+    async def end_game(self) -> None:
         """End the trivia session and display scrores."""
         if self.scores:
             await self.send_table()
         self.stop()
 
-    async def send_table(self):
+    async def send_table(self) -> None:
         """Send a table of scores to the session's channel."""
         table = "+ Results: \n\n"
         for user, score in self.scores.most_common():
             table += "+ {}\t{}\n".format(user, score)
         await self.ctx.send(code_block(table, lang="diff"))
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the trivia session, without showing scores."""
         self.ctx.bot.dispatch("trivia_end", self)
 
-    def force_stop(self):
+    def force_stop(self) -> None:
         """Cancel whichever tasks this session is running."""
         self._task.cancel()
         channel = self.ctx.channel
         logger.debug("Force stopping trivia session; <#%s> in %s", channel.id, channel.guild.id)
 
-    async def send_normal_reply(self, description):
+    async def send_normal_reply(self, description: str) -> None:
         perms = self.ctx.channel.permissions_for(self.ctx.me)
         if perms.embed_links:
             embed = discord.Embed(color=discord.Color.dark_theme(), description=description)
@@ -286,7 +324,7 @@ class TriviaSession:
         else:
             await self.ctx.send(description)
 
-    async def send_error_reply(self, description):
+    async def send_error_reply(self, description: str) -> None:
         perms = self.ctx.channel.permissions_for(self.ctx.me)
         if perms.embed_links:
             embed = discord.Embed(color=self.ctx.bot.error_color, description=description)
@@ -295,7 +333,7 @@ class TriviaSession:
             await self.ctx.send(description)
 
     @staticmethod
-    def _parse_answers(answers):
+    def _parse_answers(answers: Iterable[str]) -> Tuple[str]:
         """
         Parse the raw answers to readable strings.
 
@@ -307,12 +345,12 @@ class TriviaSession:
 
         Parameters
         ----------
-        answers : `iterable` of `str`
+        answers : Iterable[str]
             The raw answers loaded from YAML.
 
         Returns
         -------
-        `tuple` of `str`
+        Tuple[str]
             The answers in readable/ guessable strings.
         """
         ret = []
