@@ -10,13 +10,18 @@ from discord.utils import escape_markdown
 # Chat formatting
 
 
-def inline(text: str) -> str:
-    """Get the given text as inline code.
+def bold(text: str, escape_formatting: bool = True) -> str:
+    """
+    Get the given text in bold.
+
+    Note: By default, this function will escape ``text`` prior to emboldening.
 
     Parameters
     ----------
     text : str
         The text to be marked up.
+    escape_formatting : `bool`, optional
+        Set to :code:`False` to not escape markdown formatting in the text.
 
     Returns
     -------
@@ -24,30 +29,29 @@ def inline(text: str) -> str:
         The marked up text.
 
     """
-    if "`" in text:
-        return "``{}``".format(text)
-    else:
-        return "`{}`".format(text)
+    text = escape(text, formatting=escape_formatting)
+    return "**{}**".format(text)
 
 
-def days(day: Union[int, str]) -> str:
+def code_block(text: str, lang: str = "") -> str:
     """
-    Humanize the number of days.
+    Get the given text in a code block.
 
     Parameters
     ----------
-    day: Union[int, str]
-        The number of days passed.
+    text : str
+        The text to be marked up.
+    lang : `str`, optional
+        The syntax highlighting language for the codeblock.
 
     Returns
     -------
     str
-        A formatted string of the number of days passed.
+        The marked up text.
+
     """
-    day = int(day)
-    if day == 0:
-        return "**today**"
-    return f"{day} day ago" if day == 1 else f"{day} days ago"
+    ret = "```{}\n{}\n```".format(lang, text)
+    return ret
 
 
 def cleanup_code(content: str) -> str:
@@ -70,6 +74,26 @@ def cleanup_code(content: str) -> str:
 
     # remove `foo`
     return content.strip("` \n")
+
+
+def days(day: Union[int, str]) -> str:
+    """
+    Humanize the number of days.
+
+    Parameters
+    ----------
+    day: Union[int, str]
+        The number of days passed.
+
+    Returns
+    -------
+    str
+        A formatted string of the number of days passed.
+    """
+    day = int(day)
+    if day == 0:
+        return "**today**"
+    return f"{day} day ago" if day == 1 else f"{day} days ago"
 
 
 def escape_code_block(text: str) -> str:
@@ -178,18 +202,13 @@ def humanize_roles(
 humanize_members = humanize_roles
 
 
-def bold(text: str, escape_formatting: bool = True) -> str:
-    """
-    Get the given text in bold.
-
-    Note: By default, this function will escape ``text`` prior to emboldening.
+def inline(text: str) -> str:
+    """Get the given text as inline code.
 
     Parameters
     ----------
     text : str
         The text to be marked up.
-    escape_formatting : `bool`, optional
-        Set to :code:`False` to not escape markdown formatting in the text.
 
     Returns
     -------
@@ -197,29 +216,10 @@ def bold(text: str, escape_formatting: bool = True) -> str:
         The marked up text.
 
     """
-    text = escape(text, formatting=escape_formatting)
-    return "**{}**".format(text)
-
-
-def code_block(text: str, lang: str = "") -> str:
-    """
-    Get the given text in a code block.
-
-    Parameters
-    ----------
-    text : str
-        The text to be marked up.
-    lang : `str`, optional
-        The syntax highlighting language for the codeblock.
-
-    Returns
-    -------
-    str
-        The marked up text.
-
-    """
-    ret = "```{}\n{}\n```".format(lang, text)
-    return ret
+    if "`" in text:
+        return "``{}``".format(text)
+    else:
+        return "`{}`".format(text)
 
 
 def normalize_smartquotes(to_normalize: str) -> str:
@@ -241,63 +241,6 @@ def normalize_smartquotes(to_normalize: str) -> str:
         return SMART_QUOTE_REPLACEMENT_DICT.get(obj.group(0), "")
 
     return SMART_QUOTE_REPLACE_RE.sub(replacement_for, to_normalize)
-
-
-def text_to_file(
-    text: str,
-    filename: str = "file.txt",
-    *,
-    spoiler: bool = False,
-    encoding: str = "utf-8",
-):
-    """
-    Prepares text to be sent as a file on Discord, without character limit.
-
-    This writes text into a bytes object that can be used for the ``file`` or ``files`` parameters
-    of :meth:`discord.abc.Messageable.send`.
-
-    Parameters
-    ----------
-    text: str
-        The text to put in your file.
-    filename: str
-        The name of the file sent. Defaults to ``file.txt``.
-    spoiler: bool
-        Whether the attachment is a spoiler. Defaults to ``False``.
-    encoding: str
-        Encoding style. Defaults to ``utf-8``.
-
-    Returns
-    -------
-    discord.File
-        The file containing your text.
-
-    """
-    file = BytesIO(text.encode(encoding))
-    return discord.File(file, filename, spoiler=spoiler)
-
-
-# noinspection PyPep8Naming
-class plural:
-    """
-    Formats a string to singular or plural based on the length objects it refers to.
-
-    Examples
-    --------
-    - 'plural(len(data)):member'
-    - 'plural(len(data)):entry|entries'
-    """
-
-    def __init__(self, value):
-        self.value = value
-
-    def __format__(self, format_spec) -> str:
-        v = self.value
-        singular, _, plural = format_spec.partition("|")
-        plural = plural or f"{singular}s"
-        if abs(v) != 1:
-            return f"{v} {plural}"
-        return f"{v} {singular}"
 
 
 def paginate(
@@ -369,3 +312,60 @@ def paginate(
             yield escape(in_text, mass_mentions=True)
         else:
             yield in_text
+
+
+def text_to_file(
+    text: str,
+    filename: str = "file.txt",
+    *,
+    spoiler: bool = False,
+    encoding: str = "utf-8",
+):
+    """
+    Prepares text to be sent as a file on Discord, without character limit.
+
+    This writes text into a bytes object that can be used for the ``file`` or ``files`` parameters
+    of :meth:`discord.abc.Messageable.send`.
+
+    Parameters
+    ----------
+    text: str
+        The text to put in your file.
+    filename: str
+        The name of the file sent. Defaults to ``file.txt``.
+    spoiler: bool
+        Whether the attachment is a spoiler. Defaults to ``False``.
+    encoding: str
+        Encoding style. Defaults to ``utf-8``.
+
+    Returns
+    -------
+    discord.File
+        The file containing your text.
+
+    """
+    file = BytesIO(text.encode(encoding))
+    return discord.File(file, filename, spoiler=spoiler)
+
+
+# noinspection PyPep8Naming
+class plural:
+    """
+    Formats a string to singular or plural based on the length objects it refers to.
+
+    Examples
+    --------
+    - 'plural(len(data)):member'
+    - 'plural(len(data)):entry|entries'
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def __format__(self, format_spec) -> str:
+        v = self.value
+        singular, _, plural = format_spec.partition("|")
+        plural = plural or f"{singular}s"
+        if abs(v) != 1:
+            return f"{v} {plural}"
+        return f"{v} {singular}"
