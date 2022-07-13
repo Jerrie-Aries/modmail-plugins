@@ -1,20 +1,34 @@
+from __future__ import annotations
+
 import argparse
-import re
-from typing import Tuple, Union
+from typing import (
+    Optional,
+    TYPE_CHECKING,  # need the TYPE_CHECKING to create some lies for type hinting
+    Union,
+)
 
 import discord
-from dateutil.parser import parse
+
 from discord.ext import commands
+from dateutil.parser import parse as parse_datetime
 
 from .checks import my_role_hierarchy
 
 
-class AssignableRole(discord.Role):
-    @classmethod
-    async def convert(cls, ctx: commands.Context, argument: str) -> discord.Role:
-        converter = commands.RoleConverter()
+__all__ = [
+    "Args",
+    "AssignableRole",
+    "EmojiRoleGroup",
+    "NoExitParser",
+    "UnionEmoji",
+    "PERMS",
+]
+
+
+class _AssignableRoleConverter(commands.RoleConverter):
+    async def convert(self, ctx: commands.Context, argument: str) -> discord.Role:
         try:
-            role = await converter.convert(ctx, argument)
+            role = await super().convert(ctx, argument)
         except commands.BadArgument:
             raise commands.BadArgument(f'Role "{argument}" not found.')
         if role.managed:
@@ -25,37 +39,54 @@ class AssignableRole(discord.Role):
         return role
 
 
-class UnionEmoji(discord.Emoji):
-    @classmethod
-    async def convert(cls, ctx: commands.Context, argument: str) -> Union[discord.Emoji, str]:
-        argument = re.sub("\ufe0f", "", argument)  # remove trailing whitespace
+class _UnionEmojiConverter(commands.Converter):
+    async def convert(
+        self, ctx: commands.Context, argument: str
+    ) -> Union[discord.Emoji, discord.PartialEmoji]:
         try:
-            emoji = await ctx.bot.convert_emoji(argument)  # method in `bot.py`
+            return ctx.bot.convert_emoji(argument)  # method in `bot.py`
         except commands.BadArgument:
             raise commands.EmojiNotFound(argument)
-        return emoji
+
+
+if TYPE_CHECKING:
+
+    class AssignableRole(discord.Role):
+        async def convert(self, ctx: commands.Context, argument: str) -> AssignableRole:
+            ...
+
+    class UnionEmoji(discord.Emoji, discord.PartialEmoji):
+        async def convert(self, ctx: commands.Context, argument: str) -> UnionEmoji:
+            ...
+
+else:
+    AssignableRole = _AssignableRoleConverter
+    UnionEmoji = _UnionEmojiConverter
 
 
 class EmojiRoleGroup(commands.Converter):
     """
-    A custom converter to convert arguments to :class:`UnionEmoji` and :class:`AssignableRole`.
+    A custom converter to convert arguments to :class:`UnionEmoji`
+    and :class:`ManageableRole` that is inherited from discord :class:`Role`.
 
     Returns
     --------
     Tuple
-        A tuple of :class:`Emoji` and :class:`AssignableRole`.
+        A tuple of :class:`Emoji` and :class:`ManageableRole`.
     """
 
-    async def convert(
-        self, ctx: commands.Context, argument: str
-    ) -> Tuple[Union[discord.Emoji, str], discord.Role]:
+    def __init__(self):
+        self.emoji: Optional[UnionEmoji] = None
+        self.role: Optional[AssignableRole] = None
+
+    async def convert(self, ctx: commands.Context, argument: str) -> EmojiRoleGroup:
         split = argument.split(";")
         if len(split) < 2:
             raise commands.BadArgument
 
-        emoji = await UnionEmoji.convert(ctx, split[0])
-        role = await AssignableRole.convert(ctx, split[1])
-        return emoji, role
+        self.emoji = await UnionEmoji().convert(ctx, split[0])
+        self.role = await AssignableRole().convert(ctx, split[1])
+        return self
 
 
 class ObjectConverter(commands.IDConverter):
@@ -105,12 +136,16 @@ class NoExitParser(argparse.ArgumentParser):
         raise commands.BadArgument(f"Failed to parse, {message}.")
 
 
+if TYPE_CHECKING:
+    from .types import ArgsParserRawData
+
+
 class Args(commands.Converter):
 
     __slots__ = "vals"
 
     @classmethod
-    async def convert(cls, ctx, argument):
+    async def convert(cls, ctx: commands.Context, argument: str) -> ArgsParserRawData:
         argument = argument.replace("—", "--")
         parser = NoExitParser(description="Targeter argument parser", add_help=False)
 
@@ -128,8 +163,8 @@ class Args(commands.Converter):
         names.add_argument("--no-nick", dest="no-nick", action="store_true")
 
         discs = parser.add_mutually_exclusive_group()
-        discs.add_argument("--disc", nargs="*", dest="disc", default=[])
-        discs.add_argument("--not-disc", nargs="*", dest="ndisc", default=[])
+        discs.add_argument("--discrim", nargs="*", dest="discrim", default=[])
+        discs.add_argument("--not-discrim", nargs="*", dest="not-discrim", default=[])
 
         # Roles
         parser.add_argument("--roles", nargs="*", dest="roles", default=[])
@@ -144,14 +179,14 @@ class Args(commands.Converter):
 
         # Date stuff
         jd = parser.add_argument_group()
-        jd.add_argument("--joined-on", nargs="*", dest="joined-on", default=[])
-        jd.add_argument("--joined-before", nargs="*", dest="joined-be", default=[])
-        jd.add_argument("--joined-after", nargs="*", dest="joined-af", default="")
+        jd.add_argument("--joined-on", nargs="*", dest="joined-on", default=None)
+        jd.add_argument("--joined-before", nargs="*", dest="joined-be", default=None)
+        jd.add_argument("--joined-after", nargs="*", dest="joined-af", default=None)
 
         cd = parser.add_argument_group()
-        cd.add_argument("--created-on", nargs="*", dest="created-on", default=[])
-        cd.add_argument("--created-before", nargs="*", dest="created-be", default=[])
-        cd.add_argument("--created-after", nargs="*", dest="created-af", default=[])
+        cd.add_argument("--created-on", nargs="*", dest="created-on", default=None)
+        cd.add_argument("--created-before", nargs="*", dest="created-be", default=None)
+        cd.add_argument("--created-after", nargs="*", dest="created-af", default=None)
 
         # Status / Activity / Device / Just Basically Profile Stuff
         parser.add_argument("--status", nargs="*", dest="status", default=[])
@@ -234,27 +269,28 @@ class Args(commands.Converter):
             )
 
         # Usernames (and Stuff)
-        if vals["disc"]:
-            new = []
-            for disc in vals["disc"]:
-                if len(disc) != 4:
-                    raise commands.BadArgument("Discriminators must have the length of 4")
-                try:
-                    new.append(int(disc))
-                except ValueError:
-                    raise commands.BadArgument("Discriminators must be valid integers")
-            vals["disc"] = new
 
-        if vals["ndisc"]:
+        if vals["discrim"]:
             new = []
-            for disc in vals["ndisc"]:
+            for disc in vals["discrim"]:
                 if len(disc) != 4:
                     raise commands.BadArgument("Discriminators must have the length of 4")
                 try:
                     new.append(int(disc))
                 except ValueError:
                     raise commands.BadArgument("Discriminators must be valid integers")
-            vals["ndisc"] = new
+            vals["discrim"] = new
+
+        if vals["not-discrim"]:
+            new = []
+            for disc in vals["not-discrim"]:
+                if len(disc) != 4:
+                    raise commands.BadArgument("Discriminators must have the length of 4")
+                try:
+                    new.append(int(disc))
+                except ValueError:
+                    raise commands.BadArgument("Discriminators must be valid integers")
+            vals["not-discrim"] = new
 
         # Roles
 
@@ -295,41 +331,42 @@ class Args(commands.Converter):
 
         if vals["joined-on"]:
             try:
-                vals["joined-on"] = parse(" ".join(vals["joined-on"]))
+                vals["joined-on"] = parse_datetime(" ".join(vals["joined-on"]))
             except:
                 raise commands.BadArgument("Failed to parse --joined-on argument")
 
         if vals["joined-be"]:
             try:
-                vals["joined-be"] = parse(" ".join(vals["joined-be"]))
+                vals["joined-be"] = parse_datetime(" ".join(vals["joined-be"]))
             except:
                 raise commands.BadArgument("Failed to parse --joined-be argument")
 
         if vals["joined-af"]:
             try:
-                vals["joined-af"] = parse(" ".join(vals["joined-af"]))
+                vals["joined-af"] = parse_datetime(" ".join(vals["joined-af"]))
             except:
                 raise commands.BadArgument("Failed to parse --joined-after argument")
 
         if vals["created-on"]:
             try:
-                vals["created-on"] = parse(" ".join(vals["created-on"]))
+                vals["created-on"] = parse_datetime(" ".join(vals["created-on"]))
             except:
                 raise commands.BadArgument("Failed to parse --created-on argument")
 
         if vals["created-be"]:
             try:
-                vals["created-be"] = parse(" ".join(vals["created-be"]))
+                vals["created-be"] = parse_datetime(" ".join(vals["created-be"]))
             except:
                 raise commands.BadArgument("Failed to parse --created-be argument")
 
         if vals["created-af"]:
             try:
-                vals["created-af"] = parse(" ".join(vals["created-af"]))
+                vals["created-af"] = parse_datetime(" ".join(vals["created-af"]))
             except:
                 raise commands.BadArgument("Failed to parse --created-af argument")
 
         # Activities
+
         if vals["device"]:
             if not all(d in ["desktop", "mobile", "web"] for d in vals["device"]):
                 raise commands.BadArgument("Bad device.  Must be `desktop`, `mobile` or `web`.")
@@ -350,6 +387,8 @@ class Args(commands.Converter):
                 )
             new = [switcher[name.lower()] for name in vals["at"]]
             vals["at"] = new
+
+        # Permissions
 
         new = []
         for perm in vals["perms"]:
@@ -391,6 +430,8 @@ class Args(commands.Converter):
             new.append(perm)
         vals["not-any-perm"] = new
 
+        # Formats
+
         if vals["format"]:
             if not vals["format"][0].lower() in ["menu"]:
                 raise commands.BadArgument("Invalid format.  Must be `menu` for in an embed.")
@@ -399,5 +440,5 @@ class Args(commands.Converter):
         self.vals = vals
         return vals
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: str):
         return self.vals[item]

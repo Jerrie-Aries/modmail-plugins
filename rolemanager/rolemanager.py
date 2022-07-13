@@ -8,15 +8,14 @@ from colorsys import rgb_to_hsv
 from copy import deepcopy
 from datetime import timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 
-from discord.utils import MISSING
-
 from core import checks
-from .checks import is_allowed_by_role_hierarchy, my_role_hierarchy
-from .converters import (
+
+from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
+from .core.converters import (
     Args,
     AssignableRole,
     EmojiRoleGroup,
@@ -24,7 +23,7 @@ from .converters import (
     PERMS,
     UnionEmoji,
 )
-from .utils import (
+from .core.utils import (
     delete_quietly,
     guild_roughly_chunked,
 )
@@ -36,9 +35,12 @@ from core.paginator import EmbedPaginatorSession
 
 # <-- ----- -->
 
+
 if TYPE_CHECKING:
     from .motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
+    from .core.types import ArgsParserRawData, DefaultConfigRaw, ReactRoleConfigRaw
+
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -50,7 +52,9 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
 
+
 # <!-- Developer -->
+MISSING = discord.utils.MISSING
 if TYPE_CHECKING:
     from ..utils.utils import ConfirmView, human_join, humanize_roles, human_timedelta, paginate
 else:
@@ -97,7 +101,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     __doc__ = __description__
 
     _id = "config"
-    default_config = {
+    default_config: DefaultConfigRaw = {
         "reactroles": {
             "message_cache": {},
             "channels": [],
@@ -109,7 +113,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         },
     }
 
-    reactroles_default_config = {
+    reactroles_default_config: ReactRoleConfigRaw = {
         "message": int(),
         "channel": int(),
         "emoji_role_groups": {},  # "emoji_string": "role_id"
@@ -143,6 +147,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Initial tasks when loading the cog.
         """
+        await self.bot.wait_for_connected()
 
         config = await self.db.find_one({"_id": self._id})
         if config is None:
@@ -150,7 +155,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         self.config_cache = config
 
     @property
-    def config(self):
+    def config(self) -> DefaultConfigRaw:
         if not self.config_cache:
             self.config_cache = deepcopy(self.default_config)
         return self.config_cache
@@ -224,7 +229,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         `role` may be a role ID, mention, or name.
         """
-        if guild_roughly_chunked(role.guild) is False and self.bot.intents.members:
+        if not guild_roughly_chunked(role.guild) and self.bot.intents.members:
             await role.guild.chunk()
 
         member_list = role.members.copy()
@@ -964,7 +969,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         return str(payload.message_id) in self.config["reactroles"]["message_cache"]
 
-    def _udpate_reactrole_cache(self, message_id: int, remove: bool = False, config: dict = None):
+    def _udpate_reactrole_cache(
+        self, message_id: int, remove: bool = False, config: ReactRoleConfigRaw = None
+    ) -> None:
         """
         Updates config cache.
         """
@@ -977,7 +984,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         self,
         message: Union[discord.Message, discord.Object],
         emoji_list: List[str],
-    ):
+    ) -> None:
         message_config = self.config["reactroles"]["message_cache"].get(str(message.id))
         if message_config is None:
             raise ValueError(f'Message ID "{message.id}" is not in cache.')
@@ -995,16 +1002,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Returns a formatted string of an emoji.
         """
-        if isinstance(emoji, (discord.Emoji, discord.PartialEmoji)):
-            if emoji.id is None:
-                emoji_fmt = emoji.name
-            elif emoji.animated:
-                emoji_fmt = f"<a:{emoji.name}:{emoji.id}>"
-            else:
-                emoji_fmt = f"<:{emoji.name}:{emoji.id}>"
-            return emoji_fmt
+        if emoji.id is None:
+            emoji_fmt = emoji.name
+        elif emoji.animated:
+            emoji_fmt = f"<a:{emoji.name}:{emoji.id}>"
         else:
-            return emoji
+            emoji_fmt = f"<:{emoji.name}:{emoji.id}>"
+        return emoji_fmt
 
     @commands.group(invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -1128,8 +1132,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 name = msg.content
 
         description = f"React to the following emoji to receive the corresponding role:\n"
-        for (emoji, role) in emoji_role_groups:
-            description += f"{emoji} - {role.mention}\n"
+        for group in emoji_role_groups:
+            description += f"{group.emoji} - {group.role.mention}\n"
         embed = discord.Embed(title=name[:256], color=color, description=description)
         message = await channel.send(embed=embed)
 
@@ -1139,13 +1143,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         message_config["channel"] = message.channel.id
         message_config["rules"] = rules
         binds = {}
-        for (emoji, role) in emoji_role_groups:
-            emoji_str = self.emoji_string(emoji)
-            if emoji_str in binds or role.id in binds.values():
-                duplicates[emoji] = role
+        for group in emoji_role_groups:
+            emoji_str = self.emoji_string(group.emoji)
+            if emoji_str in binds or group.role.id in binds.values():
+                duplicates[group.emoji] = group.role
             else:
-                binds[emoji_str] = role.id
-                await message.add_reaction(emoji)
+                binds[emoji_str] = group.role.id
+                await message.add_reaction(group.emoji)
         message_config["emoji_role_groups"] = binds
         if duplicates:
             dupes = "The following groups were duplicates and weren't added:\n"
@@ -1370,8 +1374,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             to_delete_emojis = []
             rules = message_data["rules"]
             reactions = [f"[Reaction Role #{index}]({link}) - `{rules}`"]
-            for emoji_str, role in message_data["emoji_role_groups"].items():
-                role = ctx.guild.get_role(role)
+            for emoji_str, role_id in message_data["emoji_role_groups"].items():
+                role = ctx.guild.get_role(role_id)
                 if role:
                     reactions.append(f"{emoji_str}: {role.mention}")
                 else:
@@ -1388,7 +1392,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         embeds = []
         pages = paginate(description, delims=["\n\n", "\n"])
         base_embed = discord.Embed(color=color)
-        base_embed.set_author(name="Reaction Roles", icon_url=ctx.guild.icon_url)
+        base_embed.set_author(name="Reaction Roles", icon_url=ctx.guild.icon.url)
         for page in pages:
             embed = base_embed.copy()
             embed.description = page
@@ -1519,8 +1523,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     # #################### #
 
     @staticmethod
-    def lookup(ctx: commands.Context, args: Any):
-        matched = ctx.guild.members
+    def lookup(ctx: commands.Context, args: ArgsParserRawData):
+        matched: List[discord.Member] = ctx.guild.members
         passed = []
         # --- Go through each possible argument ---
 
@@ -1582,17 +1586,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                     matched_here.append(user)
             passed.append(matched_here)
 
-        if args["disc"]:
+        if args["discrim"]:
             matched_here = []
             for user in matched:
-                if any([disc == int(user.discriminator) for disc in args["disc"]]):
+                if any([disc == int(user.discriminator) for disc in args["discrim"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
-        if args["ndisc"]:
+        if args["not-discrim"]:
             matched_here = []
             for user in matched:
-                if not any([disc == int(user.discriminator) for disc in args["ndisc"]]):
+                if not any([disc == int(user.discriminator) for disc in args["not-discrim"]]):
                     matched_here.append(user)
             passed.append(matched_here)
 
@@ -1657,7 +1661,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if a.tzinfo:
                     j = user.joined_at.replace(tzinfo=timezone.utc)
                 else:
-                    j = user.joined_at
+                    j = user.joined_at.replace(tzinfo=None)
                 if j.date() == a.date():
                     matched_here.append(user)
                 else:
@@ -1671,7 +1675,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if a.tzinfo:
                     j = user.joined_at.replace(tzinfo=timezone.utc)
                 else:
-                    j = user.joined_at
+                    j = user.joined_at.replace(tzinfo=None)
                 if j < a:
                     matched_here.append(user)
                 else:
@@ -1685,7 +1689,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if a.tzinfo:
                     j = user.joined_at.replace(tzinfo=timezone.utc)
                 else:
-                    j = user.joined_at
+                    j = user.joined_at.replace(tzinfo=None)
                 if j > a:
                     matched_here.append(user)
                 else:
@@ -1699,7 +1703,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if a.tzinfo:
                     c = user.created_at.replace(tzinfo=timezone.utc)
                 else:
-                    c = user.created_at
+                    c = user.created_at.replace(tzinfo=None)
                 if c.date() == a.date():
                     matched_here.append(user)
                 else:
@@ -1713,7 +1717,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if a.tzinfo:
                     c = user.created_at.replace(tzinfo=timezone.utc)
                 else:
-                    c = user.created_at
+                    c = user.created_at.replace(tzinfo=None)
                 if c < a:
                     matched_here.append(user)
                 else:
@@ -1727,7 +1731,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if a.tzinfo:
                     c = user.created_at.replace(tzinfo=timezone.utc)
                 else:
-                    c = user.created_at
+                    c = user.created_at.replace(tzinfo=None)
                 if c > a:
                     matched_here.append(user)
                 else:
@@ -1881,7 +1885,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 embed = discord.Embed(
                     title="Targeting complete",
                     description=f"Found no matches.",
-                    color=0xFF0000,
+                    color=self.bot.error_color,
                 )
                 m = False
         if not m:
@@ -1902,11 +1906,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         desc = (
             "`--nick <nickone> <nicktwo>` - Users must have one of the passed nicks in their nickname.  If they don't have a nickname, they will instantly be excluded.\n"
             "`--user <userone> <usertwo>` - Users must have one of the passed usernames in their real username.  This will not look at nicknames.\n"
-            "`--name <nameone> <nametwo>` - Users must have one of the passed names in their username, and if they don't have one, their username.\n"
+            "`--name <nameone> <nametwo>` - Users must have one of the passed names in their nickname, and if they don't have one, their username.\n"
+            "`--discrim <discrimone> <discrimtwo>` - Users must have one of the passed discriminators in their name.\n"
             "\n"
             "`--not-nick <nickone> <nicktwo>` - Users must not have one of the passed nicks in their nickname.  If they don't have a nickname, they will instantly be excluded.\n"
             "`--not-user <userone> <usertwo>` - Users must not have one of the passed usernames in their real username.  This will not look at nicknames.\n"
             "`--not-name <nameone> <nametwo>` - Users must not have one of the passed names in their username, and if they don't have one, their username.\n"
+            "`--not-discrim <discrimone> <discrimtwo>` - Users must not have one of the passed discriminators in their name.\n"
             "\n"
             "`--a-nick` - Users must have a nickname in the server.\n"
             "`--no-nick` - Users cannot have a nickname in the server."
