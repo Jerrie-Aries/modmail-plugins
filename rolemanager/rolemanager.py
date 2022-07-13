@@ -51,11 +51,14 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 logger = getLogger(__name__)
 
 # <!-- Developer -->
-ConfirmView: Any = MISSING
-human_join: Any = MISSING
-humanize_roles: Any = MISSING
-human_timedelta: Any = MISSING
-paginate: Any = MISSING
+if TYPE_CHECKING:
+    from ..utils.utils import ConfirmView, human_join, humanize_roles, human_timedelta, paginate
+else:
+    ConfirmView = MISSING
+    human_join = MISSING
+    humanize_roles = MISSING
+    human_timedelta = MISSING
+    paginate = MISSING
 
 
 def _set_globals(cog: RoleManager) -> None:

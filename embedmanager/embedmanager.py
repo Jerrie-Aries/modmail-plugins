@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING
 
 import discord
 from discord.utils import MISSING
@@ -38,9 +38,12 @@ __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 # <!-- Developer -->
-inline: Any = MISSING
-human_join: Any = MISSING
-paginate: Any = MISSING
+if TYPE_CHECKING:
+    from ..utils.utils import human_join, inline, paginate
+else:
+    inline = MISSING
+    human_join = MISSING
+    paginate = MISSING
 
 
 def _set_globals(cog: EmbedManager) -> None:

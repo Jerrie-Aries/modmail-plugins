@@ -50,9 +50,12 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 logger = getLogger(__name__)
 
 # <!-- Developer -->
-ConfirmView = MISSING
-human_timedelta = MISSING
-plural = MISSING
+if TYPE_CHECKING:
+    from ..utils.utils import ConfirmView, human_timedelta, plural
+else:
+    ConfirmView = MISSING
+    human_timedelta = MISSING
+    plural = MISSING
 
 
 def _set_globals(cog: Moderation) -> None:

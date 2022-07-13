@@ -8,7 +8,7 @@ import discord
 
 from datetime import datetime
 from discord.utils import MISSING
-from typing import Any, Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
+from typing import Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
 
 from core import checks
 
@@ -40,7 +40,10 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 logger = getLogger(__name__)
 
 # <!-- Developer -->
-dt_formatter: Any = MISSING
+if TYPE_CHECKING:
+    from ..utils.utils import datetime_formatter as dt_formatter
+else:
+    dt_formatter = MISSING
 
 
 def _set_globals(cog: Invites) -> None:
