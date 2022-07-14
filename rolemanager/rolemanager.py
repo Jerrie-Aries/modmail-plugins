@@ -73,7 +73,7 @@ def _set_globals(cog: RoleManager) -> None:
 
     global ConfirmView, human_join, humanize_roles, human_timedelta, paginate
 
-    ConfirmView = utils_cog.views["confirmview"]
+    ConfirmView = utils_cog.views["ConfirmView"]
     human_join = utils_cog.chat_formatting["human_join"]
     humanize_roles = utils_cog.chat_formatting["humanize_roles"]
     paginate = utils_cog.chat_formatting["paginate"]

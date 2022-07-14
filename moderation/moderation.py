@@ -66,7 +66,7 @@ def _set_globals(cog: Moderation) -> None:
 
     global ConfirmView, human_timedelta, plural
 
-    ConfirmView = utils_cog.views["confirmview"]
+    ConfirmView = utils_cog.views["ConfirmView"]
     human_timedelta = utils_cog.timeutils["human_timedelta"]
     plural = utils_cog.chat_formatting["plural"]
 

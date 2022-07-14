@@ -77,7 +77,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             "humanize_timedelta": humanize_timedelta,
         }
         self.views: Dict[str, Any] = {
-            "confirmview": ConfirmView,
+            "ConfirmView": ConfirmView,
         }
 
     async def cog_load(self) -> None:
