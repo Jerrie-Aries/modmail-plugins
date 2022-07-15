@@ -21,7 +21,6 @@ from discord.utils import MISSING
 
 from core import checks
 
-from .core.config import ModConfig
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.utils import parse_delete_message_days
@@ -53,6 +52,7 @@ logger = getLogger(__name__)
 if TYPE_CHECKING:
     from ..utils.utils import ConfirmView, human_timedelta, plural
 else:
+    ModConfig = MISSING
     ConfirmView = MISSING
     human_timedelta = MISSING
     plural = MISSING
@@ -64,11 +64,19 @@ def _set_globals(cog: Moderation) -> None:
     if not utils_cog:
         raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
 
-    global ConfirmView, human_timedelta, plural
+    global ModConfig, ConfirmView, human_timedelta, plural
 
     ConfirmView = utils_cog.views["ConfirmView"]
     human_timedelta = utils_cog.timeutils["human_timedelta"]
     plural = utils_cog.chat_formatting["plural"]
+
+    from .core.vendors import _set_globals as vendors_globals
+
+    kwargs = {"Config": utils_cog.config["Config"]}
+    vendors_globals(**kwargs)
+
+    # this import can only be done after globals in .vendors is set
+    from .core.config import ModConfig as ModConfig
 
 
 # <!-- ----- -->
@@ -172,9 +180,9 @@ class Moderation(commands.Cog):
         for guild in self.bot.guilds:
             db_config = from_db.get(str(guild.id))
             if db_config:
-                config = ModConfig.populate(self.bot, self.db, guild, db_config)
+                config = ModConfig(self, self.db, guild, data=db_config)
             else:
-                config = ModConfig.populate(self.bot, self.db, guild, {})
+                config = ModConfig(self, self.db, guild, data={})
 
             self.config_cache[str(guild.id)] = config
 
@@ -209,7 +217,7 @@ class Moderation(commands.Cog):
             color=self.bot.main_color,
         )
         await ctx.send(embed=embed)
-        await config.update_db()
+        await config.update()
 
     @logging.command(name="enable")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -224,7 +232,7 @@ class Moderation(commands.Cog):
             color=self.bot.main_color,
         )
         await ctx.send(embed=embed)
-        await config.update_db()
+        await config.update()
 
     async def send_log(
         self,
