@@ -28,6 +28,7 @@ from .core.chat_formatting import (
     plural,
     text_to_file,
 )
+from .core.config import BaseConfig, Config
 from .core.timeutils import datetime_formatter, human_timedelta, humanize_timedelta
 from .core.views import ConfirmView
 
@@ -70,6 +71,10 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             "paginate": paginate,
             "plural": plural,
             "text_to_file": text_to_file,
+        }
+        self.config: Dict[str, Any] = {
+            "BaseConfig": BaseConfig,
+            "Config": Config,
         }
         self.timeutils: Dict[str, Any] = {
             "datetime_formatter": datetime_formatter,
