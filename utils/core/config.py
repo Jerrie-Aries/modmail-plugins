@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, ItemsView, List, Protocol, TypeVar, TYPE_CHECKING
+from typing import Any, Dict, ItemsView, List, TYPE_CHECKING
 
+
+# <!-- Developer -->
 from discord.ext import commands
+
+# < -- ----- -->
+
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
-
-    VT = TypeVar("VT")
-
-    class _ItemsProtocol(Protocol):
-        def items(self) -> ItemsView:
-            ...
 
 
 class BaseConfig:
@@ -31,8 +30,8 @@ class BaseConfig:
     def __init__(self, cog: commands.Cog, **kwargs: Any):
         self.cog: commands.Cog = cog
         self.bot: ModmailBot = cog.bot
+        self.default: Dict[str, Any] = deepcopy(kwargs.pop("default", {}))
         self._cache: Dict[str, Any] = {}
-        self.default: Dict[str, Any] = kwargs.pop("default", {})
 
         # extras will be deleted
         del kwargs
@@ -70,11 +69,13 @@ class BaseConfig:
         """
         return self.__setitem__(key, item)
 
-    def remove(self, key: str) -> Any:
+    def remove(self, key: str, *, restore_default: bool = False) -> None:
         """
         Removes item from config.
         """
         del self._cache[key]
+        if restore_default:
+            self._cache[key] = deepcopy(self.default[key])
 
     def keys(self) -> List[str]:
         """
@@ -108,14 +109,15 @@ class Config(BaseConfig):
     def __str__(self) -> str:
         return f"<Config {self._cache}>"
 
-    async def fetch(self) -> None:
+    async def fetch(self) -> Dict[str, Any]:
         """
         Fetches the data from database.
         """
-        config = await self.db.find_one({"_id": self._id})
-        if config is None:
-            config = deepcopy(self.default)
-        self._cache = config
+        data = await self.db.find_one({"_id": self._id})
+        if data is None:
+            data = deepcopy(self.default)
+        self.refresh(data=data)
+        return data
 
     async def update(self, *, data: Dict[str, Any] = None, refresh: bool = False) -> None:
         """
@@ -123,14 +125,14 @@ class Config(BaseConfig):
         """
         if data is None:
             data = self._cache
-        config = await self.db.find_one_and_update(
+        new_data = await self.db.find_one_and_update(
             {"_id": self._id},
             {"$set": data},
             upsert=True,
             return_document=True,
         )
         if refresh:
-            self.refresh(data=config)
+            self.refresh(data=new_data)
 
     def refresh(self, *, data: Dict[str, Any]) -> None:
         """
