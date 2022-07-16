@@ -10,8 +10,8 @@ from discord.utils import MISSING
 
 from core import checks
 
-from .builder import EmbedBuilderView
-from .converters import (
+from .core.builder import EmbedBuilderView
+from .core.converters import (
     MessageableChannel,
     BotMessage,
     StoredEmbedConverter,
