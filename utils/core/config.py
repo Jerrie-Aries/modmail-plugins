@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from copy import deepcopy
+import copy as copylib
 from typing import Any, Dict, ItemsView, List, TYPE_CHECKING
 
 
 # <!-- Developer -->
 from discord.ext import commands
 
-# < -- ----- -->
+# <-- ----- -->
 
 
 if TYPE_CHECKING:
@@ -30,7 +30,7 @@ class BaseConfig:
     def __init__(self, cog: commands.Cog, **kwargs: Any):
         self.cog: commands.Cog = cog
         self.bot: ModmailBot = cog.bot
-        self.default: Dict[str, Any] = deepcopy(kwargs.pop("default", {}))
+        self.default: Dict[str, Any] = self.deepcopy(kwargs.pop("default", {}))
         self._cache: Dict[str, Any] = {}
 
         # extras will be deleted
@@ -45,6 +45,11 @@ class BaseConfig:
     @property
     def cache(self) -> Dict[str, Any]:
         return self._cache
+
+    @staticmethod
+    def deepcopy(data: Any) -> Any:
+        data = copylib.deepcopy(data)
+        return data
 
     def __setitem__(self, key: str, item: Any) -> None:
         if not isinstance(key, str):
@@ -75,7 +80,7 @@ class BaseConfig:
         """
         del self._cache[key]
         if restore_default:
-            self._cache[key] = deepcopy(self.default[key])
+            self._cache[key] = self.deepcopy(self.default[key])
 
     def keys(self) -> List[str]:
         """
@@ -115,7 +120,7 @@ class Config(BaseConfig):
         """
         data = await self.db.find_one({"_id": self._id})
         if data is None:
-            data = deepcopy(self.default)
+            data = self.deepcopy(self.default)
         self.refresh(data=data)
         return data
 
