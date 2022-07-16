@@ -56,7 +56,13 @@ logger = getLogger(__name__)
 # <!-- Developer -->
 MISSING = discord.utils.MISSING
 if TYPE_CHECKING:
-    from ..utils.utils import ConfirmView, human_join, humanize_roles, human_timedelta, paginate
+    from ..utils.utils import (
+        ConfirmView,
+        human_join,
+        humanize_roles,
+        human_timedelta,
+        paginate,
+    )
 else:
     ConfirmView = MISSING
     human_join = MISSING
@@ -83,6 +89,7 @@ def _set_globals(cog: RoleManager) -> None:
 # <!-- ----- -->
 
 
+# TODO: Proper output
 def get_audit_reason(moderator: discord.Member):
     return f"Moderator: {moderator}."
 
@@ -147,8 +154,6 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Initial tasks when loading the cog.
         """
-        await self.bot.wait_for_connected()
-
         config = await self.db.find_one({"_id": self._id})
         if config is None:
             config = deepcopy(self.default_config)
@@ -997,19 +1002,6 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             if emoji_str in react_to_role_config:
                 del react_to_role_config[emoji_str]
 
-    @staticmethod
-    def emoji_string(emoji: Union[discord.Emoji, discord.PartialEmoji]) -> str:
-        """
-        Returns a formatted string of an emoji.
-        """
-        if emoji.id is None:
-            emoji_fmt = emoji.name
-        elif emoji.animated:
-            emoji_fmt = f"<a:{emoji.name}:{emoji.id}>"
-        else:
-            emoji_fmt = f"<:{emoji.name}:{emoji.id}>"
-        return emoji_fmt
-
     @commands.group(invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def reactrole(self, ctx: commands.Context):
@@ -1144,7 +1136,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         message_config["rules"] = rules
         binds = {}
         for group in emoji_role_groups:
-            emoji_str = self.emoji_string(group.emoji)
+            emoji_str = str(group.emoji)
             if emoji_str in binds or group.role.id in binds.values():
                 duplicates[group.emoji] = group.role
             else:
@@ -1189,7 +1181,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                     f"Role {role.mention} is already binded to emoji {emo_id} on that message."
                 )
 
-        emoji_str = self.emoji_string(emoji)
+        emoji_str = str(emoji)
         old_role = ctx.guild.get_role(message_config["emoji_role_groups"].get(emoji_str))
         if old_role:
             view = ConfirmView(bot=self.bot, user=ctx.author)
@@ -1333,7 +1325,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if message_config is None:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
-        emoji_str = self.emoji_string(emoji)
+        emoji_str = str(emoji)
         try:
             del message_config["emoji_role_groups"][emoji_str]
         except KeyError:
@@ -1452,7 +1444,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not message_config:
             return
 
-        emoji_str = self.emoji_string(payload.emoji)
+        emoji_str = str(payload.emoji)
 
         reacts = message_config.get("emoji_role_groups")
         if emoji_str not in reacts:
