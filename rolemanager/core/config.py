@@ -43,7 +43,7 @@ class RoleManagerConfig(Config):
     cache: DefaultConfigRaw
 
     def __init__(self, cog: RoleManager, db: AsyncIOMotorCollection):
-        super().__init__(cog, db, default=DEFAULT_CONFIG)
+        super().__init__(cog, db, defaults=DEFAULT_CONFIG)
 
     @property
     def autorole(self) -> Dict[str, Any]:
