@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import copy
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import discord
@@ -37,9 +36,9 @@ class ModConfig(Config):
         data: Dict[str, Any],
     ):
         self.guild: discord.Guild = guild
-        default = {k: v for k, v in DEFAULT_CONFIG.items()}
-        super().__init__(cog, db, default=default)
-        self._cache: Dict[str, Any] = data if data else copy(self.default)
+        defaults = {k: v for k, v in DEFAULT_CONFIG.items()}
+        super().__init__(cog, db, defaults=defaults)
+        self._cache: Dict[str, Any] = data if data else self.copy(self.defaults)
 
     async def update(self) -> None:
         """
@@ -61,4 +60,4 @@ class ModConfig(Config):
         if key in self.cache:
             del self._cache[key]
 
-        self._cache[key] = copy(DEFAULT_CONFIG[key])
+        self._cache[key] = self.copy(DEFAULT_CONFIG[key])
