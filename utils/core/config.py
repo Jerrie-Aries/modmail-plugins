@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy as copylib
-from typing import Any, Dict, ItemsView, List, TYPE_CHECKING
+from typing import Any, Dict, ItemsView, List, TypeVar, Union, TYPE_CHECKING
 
 
 # <!-- Developer -->
@@ -15,23 +15,30 @@ if TYPE_CHECKING:
     from bot import ModmailBot
 
 
+CogT = TypeVar("CogT", bound=commands.Cog)
+TypeT = TypeVar("TypeT")
+VT = TypeVar("VT")
+KT = TypeVar("KT")
+DataT = Dict[KT, VT]
+
+
 class BaseConfig:
     """
     Represents a dictionary-like base config to store and manage configurations.
 
     Parameters
     -----------
-    cog : commands.Cog
+    cog : CogT
         The instance of Cog this config belongs to.
-    default : Dict[str, Any]
-        A dictionary containing default config.
+    defaults : Dict[str, Any]
+        A dictionary containing the default key value pairs.
     """
 
-    def __init__(self, cog: commands.Cog, **kwargs: Any):
-        self.cog: commands.Cog = cog
+    def __init__(self, cog: CogT, **kwargs: Any):
+        self.cog: CogT = cog
         self.bot: ModmailBot = cog.bot
-        self.default: Dict[str, Any] = self.deepcopy(kwargs.pop("default", {}))
-        self._cache: Dict[str, Any] = {}
+        self.defaults: DataT = self.deepcopy(kwargs.pop("defaults", {}))
+        self._cache: DataT = {}
 
         # extras will be deleted
         del kwargs
@@ -40,61 +47,70 @@ class BaseConfig:
         return repr(self._cache)
 
     def __str__(self) -> str:
-        return f"<BaseConfig {self._cache}>"
+        return f"<BaseConfig cache={self._cache}>"
 
     @property
-    def cache(self) -> Dict[str, Any]:
+    def cache(self) -> DataT:
         return self._cache
 
     @staticmethod
-    def deepcopy(data: Any) -> Any:
-        data = copylib.deepcopy(data)
-        return data
+    def copy(obj: TypeT) -> TypeT:
+        """
+        Returns a shallow copy of object.
+        """
+        return copylib.copy(obj)
 
-    def __setitem__(self, key: str, item: Any) -> None:
+    @staticmethod
+    def deepcopy(obj: TypeT) -> TypeT:
+        """
+        Returns a deep copy of object.
+        """
+        return copylib.deepcopy(obj)
+
+    def __setitem__(self, key: KT, item: VT) -> None:
         if not isinstance(key, str):
             raise TypeError(f"Expected str object for parameter key, got {type(key).__name__} instead.")
         self._cache[key] = item
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: KT) -> VT:
         return self._cache[key]
 
-    def __delitem__(self, key: str) -> None:
+    def __delitem__(self, key: KT) -> None:
         return self.remove(key)
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: KT, default: TypeT = None) -> Union[VT, TypeT]:
         """
         Gets an item from config.
         """
         return self._cache.get(key, default)
 
-    def set(self, key: str, item: Any) -> None:
+    def set(self, key: KT, item: VT) -> None:
         """
         Sets an item.
         """
         return self.__setitem__(key, item)
 
-    def remove(self, key: str, *, restore_default: bool = False) -> None:
+    def remove(self, key: KT, *, restore_default: bool = False) -> None:
         """
         Removes item from config.
         """
         del self._cache[key]
         if restore_default:
-            self._cache[key] = self.deepcopy(self.default[key])
+            self._cache[key] = self.deepcopy(self.defaults[key])
 
-    def keys(self) -> List[str]:
+    def keys(self) -> List[KT]:
         """
         Returns the list of config keys.
         """
         return self._cache.keys()
 
-    def values(self) -> List[Any]:
+    def values(self) -> List[VT]:
         """
         Returns the list of config values.
         """
         return self._cache.values()
 
-    def items(self) -> ItemsView[str, Any]:
+    def items(self) -> ItemsView[KT, VT]:
         """
         Returns a sequence of key value pair tuples.
         """
@@ -106,27 +122,39 @@ class Config(BaseConfig):
     This class inherits from :class:`BaseConfig` with additional database supports.
     """
 
-    def __init__(self, cog: commands.Cog, db: AsyncIOMotorCollection, **kwargs: Any):
+    def __init__(self, cog: CogT, db: AsyncIOMotorCollection, **kwargs: Any):
         self._id: str = kwargs.pop("_id", "config")
         super().__init__(cog, **kwargs)
         self.db: AsyncIOMotorCollection = db
 
     def __str__(self) -> str:
-        return f"<Config {self._cache}>"
+        return f"<Config _id={self._id} cache={self._cache}>"
 
-    async def fetch(self) -> Dict[str, Any]:
+    async def fetch(self) -> DataT:
         """
-        Fetches the data from database.
+        Fetches the data from database and refresh the cache. If the response data is `None` default data
+        will be returned.
         """
         data = await self.db.find_one({"_id": self._id})
         if data is None:
-            data = self.deepcopy(self.default)
+            data = self.deepcopy(self.defaults)
         self.refresh(data=data)
         return data
 
-    async def update(self, *, data: Dict[str, Any] = None, refresh: bool = False) -> None:
+    async def update(self, *, data: DataT = None, refresh: bool = False) -> None:
         """
         Updates the database with the new data.
+
+        By default if data parameter is not provided, this will insert the data
+        from cache into the database. If you want to change the behaviour consider
+        overriding this method.
+
+        Parameters
+        -----------
+        data : DataT
+            The data to be saved into the database. Defaults to`None`.
+        refresh : bool
+            Whether to refresh the cache after the operation. Defaults to  `False`.
         """
         if data is None:
             data = self._cache
@@ -139,9 +167,14 @@ class Config(BaseConfig):
         if refresh:
             self.refresh(data=new_data)
 
-    def refresh(self, *, data: Dict[str, Any]) -> None:
+    def refresh(self, *, data: DataT) -> None:
         """
         Refreshes config cache with the provided data.
+
+        Parameters
+        -----------
+        data : DataT
+            The data to cache.
         """
         for key, value in data.items():
             self._cache[key] = value
