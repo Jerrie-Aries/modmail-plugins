@@ -30,59 +30,55 @@ class BaseConfig:
     -----------
     cog : CogT
         The instance of Cog this config belongs to.
-    defaults : Dict[str, Any]
+    defaults : DataT
         A dictionary containing the default key value pairs.
+    use_cache : bool
+        Whether should use cache mapping to store config data. If this were set to `False`,
+        the dictionary-like methods (e.g `.set()` and `.get()`) cannot be used.
+        Defaults to `True`.
     """
 
-    def __init__(self, cog: CogT, **kwargs: Any):
+    def __init__(self, cog: CogT, *, defaults: DataT = None, use_cache: bool = True):
         self.cog: CogT = cog
         self.bot: ModmailBot = cog.bot
-        self.defaults: DataT = self.deepcopy(kwargs.pop("defaults", {}))
+        if defaults is not None:
+            if not isinstance(defaults, dict):
+                raise TypeError(
+                    f"Invalid type for defaults parameter. Expected dict, got {defaults.__class__.__name__} instead."
+                )
+        self.defaults: DataT = self.deepcopy(defaults) if defaults is not None else None
+        self._use_cache: bool = use_cache
         self._cache: DataT = {}
 
-        # extras will be deleted
-        del kwargs
-
     def __repr__(self) -> str:
-        return repr(self._cache)
+        return f"<{self.__class__.__name__} cog='{self.cog.qualified_name}' cache={self._cache}>"
 
-    def __str__(self) -> str:
-        return f"<BaseConfig cache={self._cache}>"
+    def cache_enabled(self) -> bool:
+        """
+        Returns `True` if this instance is using cache mapping to store data. Otherwise, `False`.
+        """
+        return self._use_cache
 
     @property
     def cache(self) -> DataT:
         return self._cache
 
-    @staticmethod
-    def copy(obj: TypeT) -> TypeT:
-        """
-        Returns a shallow copy of object.
-        """
-        return copylib.copy(obj)
-
-    @staticmethod
-    def deepcopy(obj: TypeT) -> TypeT:
-        """
-        Returns a deep copy of object.
-        """
-        return copylib.deepcopy(obj)
-
     def __setitem__(self, key: KT, item: VT) -> None:
+        if not self.cache_enabled():
+            raise NotImplementedError("Method is not allowed due to disabled cache.")
         if not isinstance(key, str):
             raise TypeError(f"Expected str object for parameter key, got {type(key).__name__} instead.")
         self._cache[key] = item
 
     def __getitem__(self, key: KT) -> VT:
+        if not self.cache_enabled():
+            raise NotImplementedError("Method is not allowed due to disabled cache.")
         return self._cache[key]
 
     def __delitem__(self, key: KT) -> None:
-        return self.remove(key)
-
-    def get(self, key: KT, default: TypeT = None) -> Union[VT, TypeT]:
-        """
-        Gets an item from config.
-        """
-        return self._cache.get(key, default)
+        if not self.cache_enabled():
+            raise NotImplementedError("Method is not allowed due to disabled cache.")
+        del self._cache[key]
 
     def set(self, key: KT, item: VT) -> None:
         """
@@ -90,11 +86,17 @@ class BaseConfig:
         """
         return self.__setitem__(key, item)
 
+    def get(self, key: KT, default: TypeT = None) -> Union[VT, TypeT]:
+        """
+        Gets an item from config.
+        """
+        return self._cache.get(key, default)
+
     def remove(self, key: KT, *, restore_default: bool = False) -> None:
         """
         Removes item from config.
         """
-        del self._cache[key]
+        self.__delitem__(key)
         if restore_default:
             self._cache[key] = self.deepcopy(self.defaults[key])
 
@@ -116,10 +118,24 @@ class BaseConfig:
         """
         return self._cache.items()
 
+    @staticmethod
+    def copy(obj: TypeT) -> TypeT:
+        """
+        Returns a shallow copy of object.
+        """
+        return copylib.copy(obj)
+
+    @staticmethod
+    def deepcopy(obj: TypeT) -> TypeT:
+        """
+        Returns a deep copy of object.
+        """
+        return copylib.deepcopy(obj)
+
 
 class Config(BaseConfig):
     """
-    This class inherits from :class:`BaseConfig` with additional database supports.
+    This class inherits from :class:`BaseConfig` with additional of database support.
     """
 
     def __init__(self, cog: CogT, db: AsyncIOMotorCollection, **kwargs: Any):
@@ -127,27 +143,30 @@ class Config(BaseConfig):
         super().__init__(cog, **kwargs)
         self.db: AsyncIOMotorCollection = db
 
-    def __str__(self) -> str:
-        return f"<Config _id={self._id} cache={self._cache}>"
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} cog='{self.cog.qualified_name}' id='{self._id}' cache={self._cache}>"
+        )
 
     async def fetch(self) -> DataT:
         """
-        Fetches the data from database and refresh the cache. If the response data is `None` default data
-        will be returned.
+        Fetches the data from database. If the response data is `None` default data will be returned.
+
+        By default if cache is enabled, this will automatically refresh the cache after the data is retrieved.
         """
         data = await self.db.find_one({"_id": self._id})
-        if data is None:
+        if data is None and self.defaults is not None:
             data = self.deepcopy(self.defaults)
-        self.refresh(data=data)
+        if self.cache_enabled():
+            self.refresh(data=data)
         return data
 
     async def update(self, *, data: DataT = None, refresh: bool = False) -> None:
         """
         Updates the database with the new data.
 
-        By default if data parameter is not provided, this will insert the data
-        from cache into the database. If you want to change the behaviour consider
-        overriding this method.
+        By default if the data parameter is not provided and cache is enabled, this will insert the data
+        from the cache into the database. If you want to change the behaviour consider overriding this method.
 
         Parameters
         -----------
@@ -157,6 +176,9 @@ class Config(BaseConfig):
             Whether to refresh the cache after the operation. Defaults to  `False`.
         """
         if data is None:
+            if not self.cache_enabled() or not self.cache:
+                # kind of security to prevent data lost
+                raise ValueError("Cache is disabled or empty, data parameter must be provided.")
             data = self._cache
         new_data = await self.db.find_one_and_update(
             {"_id": self._id},
@@ -176,5 +198,7 @@ class Config(BaseConfig):
         data : DataT
             The data to cache.
         """
+        if not self.cache_enabled():
+            raise NotImplementedError("Method is not allowed due to disabled cache.")
         for key, value in data.items():
             self._cache[key] = value
