@@ -153,9 +153,8 @@ class Moderation(commands.Cog):
                     return await ctx.send(embed=embed)
 
         # else let the handler in 'bot.py' deal with it
-        # TODO: PR a solution for this to Modmail's repo
-        # if not handled:
-        #     await self.bot.on_command_error(ctx, error, unhandled_by_cog=True)
+        if not handled:
+            await self.bot.on_command_error(ctx, error, unhandled_by_cog=True)
 
     async def initialize(self) -> None:
         """
