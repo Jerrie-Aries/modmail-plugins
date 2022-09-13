@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Union, TYPE_CHECKING
 import discord
 
 from core import checks
+from core.utils import human_join
 
 from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
 from .core.converters import (
@@ -58,7 +59,6 @@ if TYPE_CHECKING:
     from .core.config import RoleManagerConfig, ReactRules
     from ..utils.utils import (
         ConfirmView,
-        human_join,
         humanize_roles,
         human_timedelta,
         paginate,
@@ -67,7 +67,6 @@ else:
     RoleManagerConfig = MISSING
     ReactRules = MISSING
     ConfirmView = MISSING
-    human_join = MISSING
     humanize_roles = MISSING
     human_timedelta = MISSING
     paginate = MISSING
@@ -82,7 +81,6 @@ def _set_globals(cog: RoleManager) -> None:
     global RoleManagerConfig, ReactRules, ConfirmView, human_join, humanize_roles, human_timedelta, paginate
 
     ConfirmView = utils_cog.views["ConfirmView"]
-    human_join = utils_cog.chat_formatting["human_join"]
     humanize_roles = utils_cog.chat_formatting["humanize_roles"]
     paginate = utils_cog.chat_formatting["paginate"]
     human_timedelta = utils_cog.timeutils["human_timedelta"]
