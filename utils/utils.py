@@ -62,7 +62,6 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             "escape": escape,
             "escape_code_block": escape_code_block,
             "escape_mentions": escape_mentions,
-            "human_join": human_join,
             "humanize_roles": humanize_roles,
             "humanize_members": humanize_members,
             "inline": inline,

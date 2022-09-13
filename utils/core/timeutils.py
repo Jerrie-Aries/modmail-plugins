@@ -4,7 +4,7 @@ from typing import Literal, Optional, SupportsInt
 
 import discord
 
-from .chat_formatting import human_join
+from core.utils import human_join
 
 
 __all__ = [
