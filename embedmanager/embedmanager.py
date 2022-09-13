@@ -9,6 +9,7 @@ import discord
 from discord.utils import MISSING
 
 from core import checks
+from core.utils import human_join
 
 from .core.builder import EmbedBuilderView
 from .core.converters import (
@@ -39,10 +40,9 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 # <!-- Developer -->
 if TYPE_CHECKING:
-    from ..utils.utils import human_join, inline, paginate
+    from ..utils.utils import inline, paginate
 else:
     inline = MISSING
-    human_join = MISSING
     paginate = MISSING
 
 
@@ -55,7 +55,6 @@ def _set_globals(cog: EmbedManager) -> None:
     global inline, human_join, paginate
 
     inline = utils_cog.chat_formatting["inline"]
-    human_join = utils_cog.chat_formatting["human_join"]
     paginate = utils_cog.chat_formatting["paginate"]
 
 
