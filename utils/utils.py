@@ -19,7 +19,6 @@ from .core.chat_formatting import (
     escape,
     escape_code_block,
     escape_mentions,
-    human_join,
     humanize_roles,
     humanize_members,
     inline,
