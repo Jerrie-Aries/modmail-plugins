@@ -1,0 +1,15 @@
+{
+    "name": "Keep Alive",
+    "description": [
+        "A tool to help Modmail bot stays alive when hosting on `Replit`.",
+        "\nThis plugin will create a simple HTTP web server on `Replit` to handle HTTP requests.",
+        "\n**Note:**\n- You must also set up a monitor on [UptimeRobot](https://uptimerobot.com/) to send HTTP request to the web server created by this plugin.",
+        "Read the [wiki]({0}) for more info.",
+        "\n**Version:**\n`{1}`"
+    ],
+    "wiki": "https://github.com/Jerrie-Aries/modmail-plugins/wiki/Keep-Alive-plugin-guide",
+    "author": "Jerrie-Aries",
+    "version": "1.0.0",
+    "bot_version": "4.0.0",
+    "dpy_version": "2.0.0"
+}

@@ -1,26 +1,68 @@
+from __future__ import annotations
+
 import io
 import json
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, Optional, TYPE_CHECKING
 
 import discord
-from discord.ext import commands
+from discord.utils import MISSING
 
 from core import checks
-from core.paginator import EmbedPaginatorSession
-from core.models import PermissionLevel
+from core.utils import human_join
 
-from .converters import (
+from .core.builder import EmbedBuilderView
+from .core.converters import (
     MessageableChannel,
     BotMessage,
     StoredEmbedConverter,
     StringToEmbed,
 )
-from .utils import inline, human_join, paginate
+
+# <!-- Developer -->
+from discord.ext import commands
+from core.paginator import EmbedPaginatorSession
+from core.models import PermissionLevel
+
+# <!-- ----- -->
+
+if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
+    from bot import ModmailBot
+
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    __plugin_info__ = json.loads(f.read())
+
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
+
+# <!-- Developer -->
+if TYPE_CHECKING:
+    from ..utils.utils import inline, paginate
+else:
+    inline = MISSING
+    paginate = MISSING
+
+
+def _set_globals(cog: EmbedManager) -> None:
+    required = __plugin_info__["cogs_required"][0]
+    utils_cog = cog.bot.get_cog(required)
+    if not utils_cog:
+        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+
+    global inline, human_join, paginate
+
+    inline = utils_cog.chat_formatting["inline"]
+    paginate = utils_cog.chat_formatting["paginate"]
+
+
+# <!-- ----- -->
+
 
 JSON_CONVERTER = StringToEmbed()
 JSON_CONTENT_CONVERTER = StringToEmbed(content=True)
-
-
 JSON_EXAMPLE = """
 {
     "title": "JSON Example",
@@ -66,35 +108,36 @@ JSON_EXAMPLE = """
 """
 
 
-YES_EMOJI = "✅"
-NO_EMOJI = "❌"
+YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
+NO_EMOJI = "\N{CROSS MARK}"
 
 
-class EmbedManager(commands.Cog, name="Embed Manager"):
-    """
-    Create, post, and store embeds.
-
-    __**About:**__
-    This plugin is a modified version of `embedutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n).
-    Original repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/embedutils).
-    Any credits must go to original developer of this cog.
-
-    __**Note:**__
-    The JSON must be in the format expected by this [Discord documentation](https://discord.com/developers/docs/resources/channel#embed-object).
-    """
+class EmbedManager(commands.Cog, name=__plugin_name__):
+    __doc__ = __description__
 
     _id = "config"
     default_config = {"embeds": {}}
 
-    def __init__(self, bot):
+    def __init__(self, bot: ModmailBot):
         """
         Parameters
         ----------
-        bot : bot.ModmailBot
+        bot : ModmailBot
             The Modmail bot.
         """
-        self.bot = bot
-        self.db = bot.api.get_plugin_partition(self)
+        self.bot: ModmailBot = bot
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
+
+    async def cog_load(self) -> None:
+        """
+        Initial tasks when loading the cog.
+        """
+        self.bot.loop.create_task(self.initialize())
+
+    async def initialize(self) -> None:
+        # Ensure everything is ready and all extensions are loaded
+        await self.bot.wait_for_connected()
+        _set_globals(self)
 
     async def db_config(self) -> Dict:
         # No need to store in cache when initializing the plugin.
@@ -143,7 +186,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
 
     @commands.group(name="embed", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def _embed(self, ctx: commands.Context):
+    async def embed_group(self, ctx: commands.Context):
         """
         Base command for Embed Manager.
 
@@ -153,7 +196,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         """
         await ctx.send_help(ctx.command)
 
-    @_embed.command(name="example")
+    @embed_group.command(name="example")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_example(self, ctx: commands.Context):
         """
@@ -163,7 +206,27 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed.description = f"```py\n{JSON_EXAMPLE}\n```"
         await ctx.send(embed=embed)
 
-    @_embed.command(name="simple")
+    @embed_group.command(name="build")
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def embed_build(self, ctx: commands.Context):
+        """
+        Build embeds in an interactive mode using buttons and modal view.
+        """
+        description = "Press the button below to start creating your embed."
+        embed = discord.Embed(
+            title="Embed Builder",
+            description=description,
+            color=self.bot.main_color,
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.set_footer(text="Note: This view will be automatically timed out after 10 minutes.")
+        view = EmbedBuilderView(ctx.author)
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if view.embed:
+            await ctx.send(embed=view.embed)
+
+    @embed_group.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_simple(
         self,
@@ -184,7 +247,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed = discord.Embed(color=color, title=title, description=description)
         await channel.send(embed=embed)
 
-    @_embed.command(name="json", aliases=["fromjson", "fromdata"])
+    @embed_group.command(name="json", aliases=["fromjson", "fromdata"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_json(self, ctx: commands.Context, *, data: JSON_CONTENT_CONVERTER):
         """
@@ -194,7 +257,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         await ctx.send(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
-    @_embed.command(name="fromfile", aliases=["fromjsonfile", "fromdatafile"])
+    @embed_group.command(name="fromfile", aliases=["fromjsonfile", "fromdatafile"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_fromfile(self, ctx: commands.Context):
         """
@@ -205,7 +268,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         await ctx.send(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
-    @_embed.command(name="message", aliases=["frommsg", "frommessage"])
+    @embed_group.command(name="message", aliases=["frommsg", "frommessage"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_message(self, ctx: commands.Context, message: discord.Message, index: int = 0):
         """
@@ -219,7 +282,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed = await self.get_embed_from_message(message, index)
         await ctx.send(embed=embed)
 
-    @_embed.command(name="download")
+    @embed_group.command(name="download")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_download(self, ctx: commands.Context, message: discord.Message, index: int = 0):
         """
@@ -236,10 +299,13 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         fp = io.BytesIO(bytes(data, "utf-8"))
         await ctx.send(file=discord.File(fp, "embed.json"))
 
-    @_embed.command(name="post", aliases=["view", "drop", "show"], invoke_without_command=True)
+    @embed_group.command(name="post", aliases=["view", "drop", "show"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_post(
-        self, ctx: commands.Context, name: StoredEmbedConverter, channel: MessageableChannel = None
+        self,
+        ctx: commands.Context,
+        name: StoredEmbedConverter,
+        channel: MessageableChannel = None,
     ):
         """
         Post a stored embed.
@@ -252,7 +318,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         channel = channel or ctx.channel
         await channel.send(embed=discord.Embed.from_dict(name["embed"]))
 
-    @_embed.command(name="info")
+    @embed_group.command(name="info")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_info(self, ctx: commands.Context, name: StoredEmbedConverter):
         """
@@ -265,13 +331,12 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         embed = discord.Embed(
             title=f"`{name['name']}` Info",
             description=(
-                f"Author: <@!{name['author']}>\n"
-                f"Length: {len(discord.Embed.from_dict(name['embed']))}"
+                f"Author: <@!{name['author']}>\n" f"Length: {len(discord.Embed.from_dict(name['embed']))}"
             ),
         )
         await ctx.send(embed=embed)
 
-    @_embed.group(name="edit", usage="<option>", invoke_without_command=True)
+    @embed_group.group(name="edit", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_edit(
         self,
@@ -294,9 +359,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_edit_json(
-        self, ctx: commands.Context, message: BotMessage, *, data: JSON_CONVERTER
-    ):
+    async def embed_edit_json(self, ctx: commands.Context, message: BotMessage, *, data: JSON_CONVERTER):
         """
         Edit a message's embed using valid JSON.
 
@@ -340,7 +403,7 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         await target.edit(embed=embed)
         await ctx.message.add_reaction(YES_EMOJI)
 
-    @_embed.group(name="store", usage="<option>", invoke_without_command=True)
+    @embed_group.group(name="store", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_store(self, ctx: commands.Context):
         """
@@ -393,7 +456,9 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
 
     @embed_store.command(name="message", aliases=["frommsg", "frommessage"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_store_message(self, ctx: commands.Context, name: str, message: discord.Message, index: int = 0):
+    async def embed_store_message(
+        self, ctx: commands.Context, name: str, message: discord.Message, index: int = 0
+    ):
         """
         Store an embed from a message.
 
@@ -486,5 +551,5 @@ class EmbedManager(commands.Cog, name="Embed Manager"):
         return embed, data["author"], data["uses"]
 
 
-def setup(bot):
-    bot.add_cog(EmbedManager(bot))
+async def setup(bot: ModmailBot) -> None:
+    await bot.add_cog(EmbedManager(bot))

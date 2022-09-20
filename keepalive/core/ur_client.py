@@ -7,7 +7,7 @@ from core.models import getLogger
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from bot import ModmailBot
-    from .keepalive import KeepAlive
+    from ..keepalive import KeepAlive
 
 
 logger = getLogger(__name__)
@@ -93,9 +93,7 @@ class UptimeRobotAPIClient:
             The UptimeRobot API key.
         """
         if not api_key:
-            raise ValueError(
-                f"api_key is required to instantiate {type(self).__name__} class."
-            )
+            raise ValueError(f"api_key is required to instantiate {type(self).__name__} class.")
         self.cog: KeepAlive = cog
         self.bot: ModmailBot = cog.bot
         self.session: ClientSession = cog.bot.session
@@ -159,9 +157,7 @@ class UptimeRobotAPIClient:
             "timeout": self.monitor_timeout,
         }
         logger.info("Creating a new UptimeRobot monitor.")
-        data = await self.request(
-            self.NEW_MONITOR, payload={k: v for k, v in default_data.items()}
-        )
+        data = await self.request(self.NEW_MONITOR, payload={k: v for k, v in default_data.items()})
         monitor = data.get("monitor")
         if not monitor:
             raise ValueError("Failed to create a new UptimeRobot monitor.")
@@ -172,9 +168,7 @@ class UptimeRobotAPIClient:
     async def edit_monitor(self, *, payload: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("Editing UptimeRobot monitor.")
         # only "id" will be returned from response
-        data = await self.request(
-            self.EDIT_MONITOR, payload={k: v for k, v in payload.items()}
-        )
+        data = await self.request(self.EDIT_MONITOR, payload={k: v for k, v in payload.items()})
         monitor = data.get("monitor")
         if not monitor:
             raise ValueError("Failed to edit the UptimeRobot monitor.")

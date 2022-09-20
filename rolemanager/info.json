@@ -1,0 +1,17 @@
+{
+    "name": "Role Manager",
+    "description": [
+        "Useful role commands to manage roles on your server.",
+        "\n**Features:**\nAuto Role, Mass Roles, Reaction Roles, and Targeter.",
+        "\nThis plugin is a combination and modified version of:",
+        "- `roleutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n). Source repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/roleutils).",
+        "- `targeter` cog made by [NeuroAssassin](https://github.com/NeuroAssassin). Source repository can be found [here](https://github.com/NeuroAssassin/Toxic-Cogs/tree/master/targeter).",
+        "\n**Note:**\nIn order for any of the features in this plugin to work, the bot must have `Manage Roles` permission on your server.",
+        "\n**Version:**\n`{0}`"
+    ],
+    "author": "Jerrie-Aries",
+    "version": "1.1.6",
+    "bot_version": "4.0.0",
+    "dpy_version": "2.0.0",
+    "cogs_required": ["Extended Utils"]
+}

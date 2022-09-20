@@ -1,38 +1,41 @@
 from __future__ import annotations
 
-import asyncio
+import json
 import os
-import signal
 
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import discord
-from discord.ext import commands
 
 from core import checks
+
+from .core.ur_client import UptimeRobotAPIClient
+from .core.web_server import KeepAliveServer
+
+# <!-- Developer -->
+from discord.ext import commands
 from core.models import getLogger, PermissionLevel
 
-from .client import UptimeRobotAPIClient
-from .web_server import KeepAliveServer
+# <-- ----- -->
 
 
 if TYPE_CHECKING:
     from bot import ModmailBot
 
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    __plugin_info__ = json.loads(f.read())
+
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__plugin_info__["wiki"], __version__)
 
 logger = getLogger(__name__)
 
 
-class KeepAlive(commands.Cog, name="Keep Alive"):
-    """
-    A tool to help Modmail bot stays alive when hosting on `Replit`.
-
-    This plugin will create a simple HTTP web server on `Replit` to handle HTTP requests.
-
-    __**Note:**__
-    - You must also set up a monitor on [UptimeRobot](https://uptimerobot.com/) to send HTTP request to the web server created by this plugin.
-    Read the [Keep Alive plugin wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki/Keep-Alive-plugin-guide) for more info.
-    """
+class KeepAlive(commands.Cog, name=__plugin_name__):
+    __doc__ = __description__
 
     def __init__(self, bot: ModmailBot):
         """
@@ -44,48 +47,28 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
         self.bot: ModmailBot = bot
         self.keep_alive: Optional[KeepAliveServer] = None
         self.uptimerobot_client: Optional[UptimeRobotAPIClient] = None
+        self.repl_slug: Optional[str] = os.environ.get("REPL_SLUG")
+        self.repl_owner: Optional[str] = os.environ.get("REPL_OWNER")
+        self.using_replit: bool = self.repl_slug is not None
 
-        slug = os.environ.get("REPL_SLUG")
-        self.using_replit: bool = slug is not None
+    async def cog_load(self) -> None:
         if self.using_replit:
-            self.keep_alive = KeepAliveServer(slug, os.environ.get("REPL_OWNER"))
-            self.keep_alive.run()
-            self._set_signal_handlers()
+            self.keep_alive = KeepAliveServer(self.repl_slug, self.repl_owner)
+            await self.keep_alive.start()
 
             api_key = os.environ.get("UPTIMEROBOT_API_KEY")
             if api_key:
                 self.uptimerobot_client = UptimeRobotAPIClient(self, api_key=api_key)
-                asyncio.create_task(self.uptimerobot_client.check_monitor())
+                await self.uptimerobot_client.check_monitor()
             else:
                 logger.error("UPTIMEROBOT_API_KEY is not set.")
 
-    def cog_unload(self) -> None:
-        self._shutdown_keep_alive()
+    async def cog_unload(self) -> None:
+        await self._shutdown_keep_alive()
 
-    def _set_signal_handlers(self) -> None:
-        """
-        An internal method to set the signal handlers to terminate the bot and web server.
-        """
-
-        logger.debug("Setting up signal handlers.")
-
-        def stop_callback(*_args):
-            self._shutdown_keep_alive()
-
-            if not self.bot.is_closed():
-                raise SystemExit
-
-        for attr in ("SIGINT", "SIGTERM"):
-            sig = getattr(signal, attr, None)
-            if sig is None:
-                continue
-            signal.signal(sig, stop_callback)
-
-    def _shutdown_keep_alive(self) -> None:
-        if self.keep_alive:
-            self.keep_alive.shutdown()
-        # reset the attribute
-        self.keep_alive = None
+    async def _shutdown_keep_alive(self) -> None:
+        if self.keep_alive.is_running():
+            await self.keep_alive.stop()
 
     @commands.group(name="keepalive", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
@@ -95,6 +78,39 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
         """
         await ctx.send_help(ctx.command)
 
+    @keepalive_group.command(name="start")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def ka_start(self, ctx: commands.Context):
+        """
+        Starts the keep alive server.
+        """
+        if not self.using_replit:
+            raise commands.BadArgument("Keep alive server can only be ran on Replit.")
+        if self.keep_alive.is_running():
+            raise commands.BadArgument("Keep alive server is already running.")
+
+        await self.keep_alive.start()
+        embed = discord.Embed(
+            title="Start",
+            color=self.bot.main_color,
+            description="Keep alive server is now running.",
+        )
+        await ctx.send(embed=embed)
+
+    @keepalive_group.command(name="stop")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def ka_stop(self, ctx: commands.Context):
+        """
+        Stops the keep alive server.
+        """
+        if not self.keep_alive.is_running():
+            raise commands.BadArgument("Keep alive server is not running.")
+        await self._shutdown_keep_alive()
+        embed = discord.Embed(
+            title="Stop", color=self.bot.main_color, description="Keep alive server is now stopped."
+        )
+        await ctx.send(embed=embed)
+
     @keepalive_group.command(name="info")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def keepalive_info(self, ctx: commands.Context):
@@ -103,17 +119,15 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
         """
         embed = discord.Embed(title="Keep alive status")
         if not self.using_replit:
-            raise commands.BadArgument(
-                "Not running since this bot is not hosted on `Replit`."
-            )
+            raise commands.BadArgument("Not running since this bot is not hosted on `Replit`.")
 
         status = "Running" if self.keep_alive is not None else "Not running"
         embed.color = self.bot.main_color
         embed.description = status
         embed.add_field(name="URL", value=self.keep_alive.url)
-        http_server = self.keep_alive.http_server
-        embed.add_field(name="Raw name", value=http_server.server_name)
-        embed.add_field(name="Port", value=http_server.server_port)
+        server = self.keep_alive.server
+        embed.add_field(name="Server class", value=f"`{str(type(server)).strip('<>')}`")
+        embed.set_footer(text=f"Version: v{__version__}")
         await ctx.send(embed=embed)
 
     @commands.group(name="uptimerobot", aliases=["uprob"], invoke_without_command=True)
@@ -126,18 +140,14 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
 
     @uptimerobot_group.command(name="info")
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def uptimerobot_info(
-        self, ctx: commands.Context, option: Optional[str] = None
-    ):
+    async def uptimerobot_info(self, ctx: commands.Context, option: Optional[str] = None):
         """
         Shows the UptimeRobot monitor information.
 
-        `option` can be `refresh` or `fetch` of you want to update the information from API.
+        `option` can be `refresh` or `fetch`, this will fetch the latest monitor information from API.
         """
         if self.uptimerobot_client is None:
-            raise commands.BadArgument(
-                "UptimeRobot service is not set due to missing API key."
-            )
+            raise commands.BadArgument("UptimeRobot service is not set due to missing API key.")
         monitor = self.uptimerobot_client.monitor
         if monitor is None:
             raise commands.BadArgument("UptimeRobot monitor is not set.")
@@ -156,5 +166,5 @@ class KeepAlive(commands.Cog, name="Keep Alive"):
         await ctx.send(embed=embed)
 
 
-def setup(bot):
-    bot.add_cog(KeepAlive(bot))
+async def setup(bot: ModmailBot) -> None:
+    await bot.add_cog(KeepAlive(bot))

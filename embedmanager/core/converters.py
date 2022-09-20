@@ -66,9 +66,7 @@ class StringToEmbed(Converter):
             e = discord.Embed.from_dict(data)
             length = len(e)
             if length > 6000:
-                raise BadArgument(
-                    f"Embed size exceeds Discord limit of 6000 characters ({length})."
-                )
+                raise BadArgument(f"Embed size exceeds Discord limit of 6000 characters ({length}).")
         except BadArgument:
             raise
         except Exception as error:
@@ -82,9 +80,7 @@ class StringToEmbed(Converter):
             title=f"{error_type}: `{type(error).__name__}`",
             description=f"```py\n{error}\n```",
         )
-        embed.set_footer(
-            text=f'Use "{ctx.prefix}embed example" to see an example'
-        )
+        embed.set_footer(text=f'Use "{ctx.prefix}embed example" to see an example')
         asyncio.create_task(ctx.send(embed=embed))
         raise CheckFailure
 

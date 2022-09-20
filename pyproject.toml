@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "Modmail Plugins"
+version = "0.1.0"
+description = "Plugins for Modmail."
+authors = ["Jerrie <noemail@example.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.8.0,<3.10"
+
+[tool.poetry.dev-dependencies]
+black = "22.3.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = "110"
+target-version = ["py39"]
