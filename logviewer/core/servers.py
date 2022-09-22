@@ -10,7 +10,7 @@ import aiohttp
 import jinja2
 
 from aiohttp import web
-from aiohttp.web import Application, Request as AIOHTTPRequest, Response as AIOHTTPResponse
+from aiohttp.web import Application, Request, Response
 from discord.utils import MISSING
 from jinja2 import Environment, FileSystemLoader
 
@@ -49,13 +49,12 @@ class Config:
     def __init__(self):
         self.log_prefix = os.getenv("URL_PREFIX", "/logs")
         self.host = os.getenv("HOST", "0.0.0.0")
-        self.port = os.getenv("PORT", 8000)
+        self.port = int(os.getenv("PORT", 8000))
 
 
 class LogviewerServer:
     """
-    Parent class for Log viewer server. This class should not be instantiated directly instead
-    use one of its subclasses.
+    Main class to handle the log viewer server.
     """
 
     def __init__(self, bot: ModmailBot):
@@ -63,127 +62,15 @@ class LogviewerServer:
         self.config: Config = Config()
 
         self.app: Application = MISSING
+        self.site: web.TCPSite = MISSING
+        self.runner: web.AppRunner = MISSING
         self._hooked: bool = False
         self._running: bool = False
 
     def init_hook(self) -> None:
         """
-        Hooks everything necessary before starting up the server.
-
-        This method should be overridden by subclasses.
+        Initial setup to start the server.
         """
-        raise NotImplementedError
-
-    async def _setup(self) -> None:
-        """
-        Setup the server. This method should be overridden by subclasses.
-        """
-        raise NotImplementedError
-
-    async def start(self) -> None:
-        """
-        Starts the log viewer server.
-
-        Internally this will call the `._setup()` method to setup the server, so it should be overridden
-        by subclasses.
-        """
-        if self._running:
-            raise RuntimeError("Log viewer server is already running.")
-        if not self._hooked:
-            self.init_hook()
-        logger.info("Starting log viewer server.")
-        await self._setup()
-        favicon_path = static_path / "favicon.webp"
-        if not favicon_path.exists():
-            asset = self.bot.user.display_avatar.replace(size=32, format="webp")
-            await asset.save(favicon_path)
-        self._running = True
-
-    async def stop(self) -> None:
-        """
-        Stops the log viewer server.
-
-        Internally this will call the `._stop()` method, so it should be overridden by subclasses.
-        """
-        logger.warning(" - Shutting down web server. - ")
-        await self._stop()
-        self._running = False
-
-    async def _stop(self) -> None:
-        raise NotImplementedError
-
-    def is_running(self) -> bool:
-        return self._running
-
-    def info(self) -> None:
-        raise NotImplementedError
-
-    async def process_logs(self, request: AIOHTTPRequest, *, path: str, key: str) -> AIOHTTPResponse:
-        """
-        Matches the request path with regex before rendering the logs template to user.
-        """
-        PATH_RE = re.compile(rf"^{self.config.log_prefix}/(?:(?P<raw>raw)/)?(?P<key>([a-zA-Z]|[0-9])+)")
-        match = PATH_RE.match(path)
-        if match is None:
-            return await self.raise_error("not_found", message=f"Invalid path, '{path}'.")
-        data = match.groupdict()
-        raw = data["raw"]
-        if not raw:
-            return await self.render_logs(request, key)
-        else:
-            return await self.render_raw_logs(request, key)
-
-    async def render_logs(
-        self,
-        request: AIOHTTPRequest,
-        key: str,
-    ) -> AIOHTTPResponse:
-        """Returns the html rendered log entry"""
-        logs = self.bot.api.logs
-        document: RawPayload = await logs.find_one({"key": key})
-        if not document:
-            return await self.raise_error("not_found", message=f"Log entry '{key}' not found.")
-        log_entry = LogEntry(document)
-        return await self.render_template("logbase", request, log_entry=log_entry)
-
-    async def render_raw_logs(self, request, key) -> Any:
-        """
-        Returns the plain text rendered log entry.
-
-        This method should be overridden by subclass.
-        """
-        raise NotImplementedError
-
-    @staticmethod
-    async def raise_error(error_type: str, *, message: Optional[str] = None, **kwargs) -> Any:
-        """
-        Raises error. This method should be overridden by subclass.
-        """
-        raise NotImplementedError
-
-    async def render_template(
-        self,
-        name: str,
-        request: AIOHTTPRequest,
-        *args: Any,
-        **kwargs: Any,
-    ) -> AIOHTTPResponse:
-
-        kwargs["app"] = request.app
-        kwargs["config"] = self.config
-
-        template = jinja_env.get_template(name + ".html")
-        template = await template.render_async(*args, **kwargs)
-        return await self.send_template(template, **kwargs)
-
-
-class AIOHTTPServer(LogviewerServer):
-    def __init__(self, bot: ModmailBot):
-        super().__init__(bot)
-        self.site: web.TCPSite = MISSING
-        self.runner: web.AppRunner = MISSING
-
-    def init_hook(self) -> None:
         self.app: Application = Application()
         self.app.router.add_static("/static", static_path)
         self.app["server"] = self
@@ -201,22 +88,42 @@ class AIOHTTPServer(LogviewerServer):
         for path in ("/", prefix + "/{key}", prefix + "/raw/{key}"):
             self.app.router.add_route("GET", path, AIOHTTPMethodHandler)
 
-    async def _setup(self) -> None:
+    async def start(self) -> None:
+        """
+        Starts the log viewer server.
+        """
+        if self._running:
+            raise RuntimeError("Log viewer server is already running.")
+        if not self._hooked:
+            self.init_hook()
+        logger.info("Starting log viewer server.")
         self.runner = web.AppRunner(self.app, handle_signals=True)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.config.host, self.config.port)
         await self.site.start()
+        favicon_path = static_path / "favicon.webp"
+        if not favicon_path.exists():
+            asset = self.bot.user.display_avatar.replace(size=32, format="webp")
+            await asset.save(favicon_path)
+        self._running = True
 
-    async def _stop(self) -> None:
+    async def stop(self) -> None:
         """
-        Stops the logviewer server.
+        Stops the log viewer server.
         """
+        logger.warning(" - Shutting down web server. - ")
         if self.site:
             await self.site.stop()
         if self.runner:
             await self.runner.cleanup()
+        self._running = False
+
+    def is_running(self) -> bool:
+        """Returns `True` if the server is currently running."""
+        return self._running
 
     def info(self) -> str:
+        """Returns modules used to run the web server."""
         main_deps = (
             f"Web application: aiohttp v{aiohttp.__version__}\n"
             f"Template renderer: jinja2 v{jinja2.__version__}\n"
@@ -224,15 +131,45 @@ class AIOHTTPServer(LogviewerServer):
 
         return main_deps
 
-    async def render_raw_logs(self, request: AIOHTTPRequest, key: str) -> AIOHTTPResponse:
-        """Returns the plain text rendered log entry"""
+    async def process_logs(self, request: Request, *, path: str, key: str) -> Response:
+        """
+        Matches the request path with regex before rendering the logs template to user.
+        """
+        path_re = re.compile(rf"^{self.config.log_prefix}/(?:(?P<raw>raw)/)?(?P<key>([a-zA-Z]|[0-9])+)")
+        match = path_re.match(path)
+        if match is None:
+            return await self.raise_error("not_found", message=f"Invalid path, '{path}'.")
+        data = match.groupdict()
+        raw = data["raw"]
+        if not raw:
+            return await self.render_logs(request, key)
+        else:
+            return await self.render_raw_logs(request, key)
+
+    async def render_logs(
+        self,
+        request: Request,
+        key: str,
+    ) -> Response:
+        """Returns the html rendered log entry"""
+        logs = self.bot.api.logs
+        document: RawPayload = await logs.find_one({"key": key})
+        if not document:
+            return await self.raise_error("not_found", message=f"Log entry '{key}' not found.")
+        log_entry = LogEntry(document)
+        return await self.render_template("logbase", request, log_entry=log_entry)
+
+    async def render_raw_logs(self, request, key) -> Any:
+        """
+        Returns the plain text rendered log entry.
+        """
         logs = self.bot.api.logs
         document: RawPayload = await logs.find_one({"key": key})
         if not document:
             return await self.raise_error("not_found", message=f"Log entry '{key}' not found.")
 
         log_entry = LogEntry(document)
-        return AIOHTTPResponse(
+        return Response(
             status=200,
             text=log_entry.plain_text(),
             content_type="text/plain",
@@ -240,18 +177,7 @@ class AIOHTTPServer(LogviewerServer):
         )
 
     @staticmethod
-    async def send_template(template: Template, status: int = 200, **kwargs) -> AIOHTTPResponse:
-        response = AIOHTTPResponse(
-            status=status,
-            content_type="text/html",
-            charset="utf-8",
-        )
-        response.text = template
-
-        return response
-
-    @staticmethod
-    async def raise_error(error_type: str, *, message: Optional[str] = None, **kwargs) -> None:
+    async def raise_error(error_type: str, *, message: Optional[str] = None, **kwargs) -> Any:
         exc_mapping = {
             "not_found": web.HTTPNotFound,
             "error": web.HTTPInternalServerError,
@@ -267,3 +193,24 @@ class AIOHTTPServer(LogviewerServer):
         if message is None:
             message = "No error message."
         raise ret(reason=message, **kwargs)
+
+    async def render_template(
+        self,
+        name: str,
+        request: Request,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Response:
+
+        kwargs["app"] = request.app
+        kwargs["config"] = self.config
+
+        template = jinja_env.get_template(name + ".html")
+        template = await template.render_async(*args, **kwargs)
+        response = Response(
+            status=200,
+            content_type="text/html",
+            charset="utf-8",
+        )
+        response.text = template
+        return response

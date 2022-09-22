@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Callable, TYPE_CHECKING
 
 from aiohttp import web
-from aiohttp.web import Response as AIOHTTPResponse
+from aiohttp.web import Response
 
 from core.models import getLogger
 
 
 if TYPE_CHECKING:
-    from aiohttp.web import Request as AIOHTTPRequest
+    from aiohttp.web import Request
 
 
 logger = getLogger(__name__)
@@ -17,9 +17,9 @@ logger = getLogger(__name__)
 
 @web.middleware
 async def aiohttp_error_handler(
-    request: AIOHTTPRequest,
-    handler: Callable[[AIOHTTPRequest], AIOHTTPResponse],
-) -> AIOHTTPResponse:
+    request: Request,
+    handler: Callable[[Request], Response],
+) -> Response:
     status_map = {
         404: "not_found",
         500: "error",
@@ -52,15 +52,15 @@ class AIOHTTPMethodHandler(web.View):
     Represents HTTP handler. Every incoming HTTP requests will be handled from this class.
     """
 
-    async def head(self) -> AIOHTTPResponse:
-        return AIOHTTPResponse(
+    async def head(self) -> Response:
+        return Response(
             status=200,
             text="OK!",
             content_type="text/plain",
             charset="utf-8",
         )
 
-    async def get(self) -> AIOHTTPResponse:
+    async def get(self) -> Response:
         """
         Every `GET` requests is handled from here.
         """

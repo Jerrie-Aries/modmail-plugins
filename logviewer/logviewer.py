@@ -13,7 +13,7 @@ from discord.utils import MISSING
 from core import checks
 from core.utils import strtobool
 
-from .core.servers import AIOHTTPServer
+from .core.servers import LogviewerServer
 
 # <!-- Developer -->
 from discord.ext import commands
@@ -41,11 +41,11 @@ class Logviewer(commands.Cog, name=__plugin_name__):
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
-        self.server: AIOHTTPServer = MISSING
+        self.server: LogviewerServer = MISSING
 
     async def cog_load(self) -> None:
         if strtobool(os.environ.get("LOGVIEWER_AUTOSTART", True)):
-            self.server = AIOHTTPServer(self.bot)
+            self.server = LogviewerServer(self.bot)
             await self.server.start()
 
     async def cog_unload(self) -> None:
@@ -73,7 +73,7 @@ class Logviewer(commands.Cog, name=__plugin_name__):
         if self.server:
             raise commands.BadArgument("Log viewer server is already running.")
 
-        self.server = AIOHTTPServer(self.bot)
+        self.server = LogviewerServer(self.bot)
         await self.server.start()
         embed = discord.Embed(
             title="Start",
