@@ -42,7 +42,6 @@ GIFT = "\U0001F381"
 BASE_URL = "https://discordapp.com"
 
 
-# Actual Cog
 class Giveaway(commands.Cog):
     __doc__ = __description__
 
@@ -56,13 +55,15 @@ class Giveaway(commands.Cog):
         self.bot: ModmailBot = bot
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
         self.active_giveaways: List["GiveawaySession"] = []
-        self.bot.loop.create_task(self._set_giveaways_from_db())
+
+    async def cog_load(self) -> None:
+        await self.populate_from_db()
 
     async def cog_unload(self) -> None:
         for session in self.active_giveaways:
             session.force_stop()
 
-    async def _set_giveaways_from_db(self) -> None:
+    async def populate_from_db(self) -> None:
         config = await self.db.find_one({"_id": "config"})
         if config is None:
             config = await self.db.find_one_and_update(
@@ -174,7 +175,7 @@ class Giveaway(commands.Cog):
         """
         await ctx.send_help(ctx.command)
 
-    @giveaway.command(aliases=["create", "c", "s"])
+    @giveaway.command(aliases=["create"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def start(self, ctx: commands.Context, channel: discord.TextChannel):
         """
@@ -246,6 +247,7 @@ class Giveaway(commands.Cog):
                 return await send_fail_embed()
 
             try:
+                # <!-- Developer -->
                 ends_at = await UserFriendlyTime().convert(ctx, message.content, now=discord.utils.utcnow())
             except (commands.BadArgument, commands.CommandError):
                 await ctx.send(
@@ -436,5 +438,5 @@ class Giveaway(commands.Cog):
             await self._update_db()
 
 
-async def setup(bot: ModmailBot):
+async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(Giveaway(bot))
