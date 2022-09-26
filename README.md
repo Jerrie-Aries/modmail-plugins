@@ -27,6 +27,7 @@ to add the trivia plugin.
 | --- | --- | --- |
 | Embed Manager`*` | `embedmanager` | Manage, post, edit, store embeds with this plugin. This plugin is a modified version of `embedutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n). Any credits must go to original developer of this cog. Original repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/embedutils). |
 | Extended Utils | `utils` | Entended utils from various sources to work with other plugins. |
+| Giveaway | `giveaway` | Host giveaways on your server with this plugin. The source code was from [officialpiyush/modmail-plugins/giveaway](https://github.com/officialpiyush/modmail-plugins/tree/master/giveaway). |
 | Invites`*` | `invites` | Checks which invite is used when someone joins the server, and the log embed will be posted in the designated channel. |
 | Keep Alive | `keepalive` | Hosting on Replit? Keep Alive plugin is specifically for those who host their bots on Replit. This plugin will keep your bots up using [UptimeRobot](https://uptimerobot.com/) service to ping the web server created by the plugin. Read [Keep Alive plugin wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki/Keep-Alive-plugin-guide) for more info. |
 | Log Viewer | `logviewer` | Start the logviewer server with plugin? Yes. This plugin is a modified version of kyb3r's [logviewer](https://github.com/kyb3r/logviewer). Any credits must go to original developers. If you want to use this plugin, make sure to read the [wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki/Log-Viewer-plugin) first. |
@@ -36,3 +37,7 @@ to add the trivia plugin.
 | Trivia`*` | `trivia` | Play trivia with friends on your server. This is a modified version of `cogs trivia` of [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot). I just made it compatible with Modmail bot. Any credits must go to original developer. You can find the source [here](https://github.com/Cog-Creators/Red-DiscordBot/tree/V3/develop/redbot/cogs/trivia). |
 
 `*` : Requires *Extended Utils* plugin to work.
+
+
+## Reporting bugs and errors
+If you encounter any bugs or errors, just open a new issue [here](https://github.com/Jerrie-Aries/modmail-plugins/issues/new) and report it.
