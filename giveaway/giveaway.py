@@ -114,7 +114,7 @@ class Giveaway(commands.Cog):
         """
         Returns `True` if the given Embed is a giveaway embed. Otherwise, `False`.
         """
-        if not embed.title or embed.title != self._giveaway_title:
+        if not embed.title or embed.title != self.giveaway_title:
             return False
         url = getattr(embed.author, "url", "")
         if not url:
@@ -141,7 +141,7 @@ class Giveaway(commands.Cog):
         )
 
     @property
-    def _giveaway_title(self) -> str:
+    def giveaway_title(self) -> str:
         return "Giveaway"
 
     @property
@@ -167,6 +167,8 @@ class Giveaway(commands.Cog):
     async def start(self, ctx: commands.Context, channel: discord.TextChannel):
         """
         Start a giveaway with interactive buttons and text inputs.
+
+        `channel` may be a channel ID, mention, or name.
         """
         if not can_execute_giveaway(ctx, channel):
             ch_text = "this channel"
@@ -182,7 +184,7 @@ class Giveaway(commands.Cog):
             title="Giveaway Settings",
             color=self.bot.main_color,
             description=(
-                f"Giveaway will be posted in {channel.mention}.\n\n"
+                f"Giveaway will be posted in {channel.mention}.\n"
                 "Click the `Edit` button to set the values.\n\n"
                 "See the notes below for additional info."
             ),

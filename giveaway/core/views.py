@@ -51,7 +51,7 @@ class GiveawayModal(Modal):
         self.stop()
         for _, value in self.view.input_map.items():
             if value.get("required", True) and value["default"] is None:
-                self.view._ready = False
+                self.view.giveaway_ready = False
                 await self.view.update_view()
                 return
 
@@ -79,13 +79,13 @@ class GiveawayModal(Modal):
                 errors.append("Invalid duration provided.")
             else:
                 self.view.giveaway_end = converted.dt.timestamp()
-                self.view._ready = True
+                self.view.giveaway_ready = True
         if errors:
-            self.view._ready = False
+            self.view.giveaway_ready = False
             for error in errors:
                 await interaction.followup.send(error, ephemeral=True)
         else:
-            self.view._ready = True
+            self.view.giveaway_ready = True
         await self.view.update_view()
 
 
@@ -161,7 +161,7 @@ class GiveawayView(View):
             "cancel": (ButtonStyle.red, self._action_cancel),
         }
 
-        self._ready: bool = False
+        self.giveaway_ready: bool = False
         self._generate_buttons()
         self.refresh()
 
@@ -173,7 +173,7 @@ class GiveawayView(View):
     def refresh(self) -> None:
         for child in self.children:
             if child.label.lower() in ("send", "preview"):
-                child.disabled = not self._ready
+                child.disabled = not self.giveaway_ready
 
     async def update_view(self) -> None:
         self.refresh()
@@ -240,7 +240,7 @@ class GiveawayView(View):
         time_left = self.giveaway_end - now_utc
         time_remaining = format_time_remaining(time_left)
 
-        embed = discord.Embed(title=self.cog._giveaway_title, colour=0x00FF00)
+        embed = discord.Embed(title=self.cog.giveaway_title, colour=0x00FF00)
         embed.set_author(
             **self.cog.author_data("system", extra="giveaway", channel_id=self.giveaway_channel.id)
         )
