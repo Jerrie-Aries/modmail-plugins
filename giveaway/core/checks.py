@@ -24,11 +24,3 @@ def can_execute_giveaway(ctx: commands.Context, destination: discord.TextChannel
         all_perms = (*all_perms, *(getattr(ch_perms, attr) for attr in attrs))
 
     return all(all_perms)
-
-
-def validate_message(ctx: commands.Context, message: discord.Message) -> bool:
-    return ctx.author == message.author and ctx.channel == message.channel and (len(message.content) < 2048)
-
-
-def is_cancelled(ctx: commands.Context, message: discord.Message) -> bool:
-    return message.content.lower() in ("cancel", f"{ctx.prefix}cancel")

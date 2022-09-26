@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 import discord
 import yarl
@@ -14,11 +12,11 @@ from discord.ext import commands
 
 from core import checks
 from core.models import getLogger, PermissionLevel
-from core.time import human_timedelta, UserFriendlyTime
 
-from .core.checks import can_execute_giveaway, is_cancelled, validate_message
+from .core.checks import can_execute_giveaway
 from .core.sessions import GiveawaySession
-from .core.utils import duration_syntax, format_time_remaining
+from .core.utils import duration_syntax
+from .core.views import GiveawayView
 
 
 if TYPE_CHECKING:
@@ -36,9 +34,6 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
 
-YES = "\u2705"
-NO = "\u274C"
-GIFT = "\U0001F381"
 BASE_URL = "https://discordapp.com"
 
 
@@ -115,14 +110,6 @@ class Giveaway(commands.Cog):
             "url": str(url),
         }
 
-    def generate_embed(self, description: str) -> discord.Embed:
-        embed = discord.Embed()
-        embed.colour = self.bot.main_color
-        embed.description = description
-        embed.set_footer(text='To cancel, type "cancel".')
-
-        return embed
-
     def is_giveaway_embed(self, embed: discord.Embed) -> bool:
         """
         Returns `True` if the given Embed is a giveaway embed. Otherwise, `False`.
@@ -179,7 +166,7 @@ class Giveaway(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def start(self, ctx: commands.Context, channel: discord.TextChannel):
         """
-        Start a giveaway in interactive mode.
+        Start a giveaway with interactive buttons and text inputs.
         """
         if not can_execute_giveaway(ctx, channel):
             ch_text = "this channel"
@@ -190,144 +177,25 @@ class Giveaway(commands.Cog):
                 f"`EMBED_LINKS`, and `ADD_REACTIONS` permissions in {ch_text}."
             )
 
-        async def send_fail_embed(description="Cancelled.") -> None:
-            embed = discord.Embed(color=self.bot.error_color, description=description)
-            return await ctx.send(embed=embed)
-
-        await ctx.send(
-            embed=self.generate_embed(
-                f"Giveaway will be posted in {channel.mention}.\n\n" "What is the giveaway item?"
-            )
-        )
-
-        def check(message: discord.Message) -> bool:
-            return validate_message(ctx, message)
-
-        try:
-            message = await self.bot.wait_for("message", check=check, timeout=30.0)
-        except asyncio.TimeoutError:
-            return send_fail_embed("Time out.")
-        if is_cancelled(ctx, message):
-            return await send_fail_embed()
-        prize = message.content
-        await ctx.send(
-            embed=self.generate_embed(
-                f"Giveaway item:\n**{prize}**\n\n" "How many winners are to be selected?"
-            )
-        )
-        try:
-            message = await self.bot.wait_for("message", check=check, timeout=30.0)
-        except asyncio.TimeoutError:
-            return send_fail_embed("Time out.")
-        if is_cancelled(ctx, message):
-            return await send_fail_embed()
-
-        try:
-            winners = int(message.content)
-        except ValueError:
-            raise commands.BadArgument("Unable to parse giveaway winners to numbers, exiting.")
-
-        if winners <= 0:
-            raise commands.BadArgument(
-                "Giveaway can only be held with 1 or more winners. Cancelling command."
-            )
-        await ctx.send(
-            embed=self.generate_embed(
-                f"**{winners} {'winners' if winners > 1 else 'winner'}** will be selected.\n\n"
-                f"How long will the giveaway last?\n\n{duration_syntax}"
-            )
-        )
-
-        while True:
-            try:
-                message = await self.bot.wait_for("message", check=check, timeout=30.0)
-            except asyncio.TimeoutError:
-                return send_fail_embed("Time out.")
-            if is_cancelled(ctx, message):
-                return await send_fail_embed()
-
-            try:
-                # <!-- Developer -->
-                ends_at = await UserFriendlyTime().convert(ctx, message.content, now=discord.utils.utcnow())
-            except (commands.BadArgument, commands.CommandError):
-                await ctx.send(
-                    embed=discord.Embed(
-                        description=(
-                            "I was not able to parse the time properly. Please use the following syntax.\n\n"
-                            f"{duration_syntax}"
-                        ),
-                        color=self.bot.error_color,
-                    ).set_footer(text='To cancel, type "cancel".')
-                )
-                continue
-
-            if (ends_at.dt.timestamp() - ends_at.now.timestamp()) <= 0:
-                return await send_fail_embed("I was not able to parse the time properly. Exiting.")
-
-            gtime = ends_at.dt
-            break
-
-        reactions = [YES, NO]
-        confirm_message = await ctx.send(
-            embed=discord.Embed(
-                description=f"Giveaway will last for **{human_timedelta(gtime)}**. Proceed?",
-                color=self.bot.main_color,
-            ).set_footer(text=f"React with {YES} to proceed, {NO} to cancel")
-        )
-        for emoji in reactions:
-            await confirm_message.add_reaction(emoji)
-            await asyncio.sleep(0.2)
-
-        def reaction_check(reaction, user) -> bool:
-            return (
-                user.id == ctx.author.id
-                and reaction.message.id == confirm_message.id
-                and reaction.emoji in reactions
-            )
-
-        try:
-            reaction, _ = await self.bot.wait_for("reaction_add", check=reaction_check, timeout=20.0)
-        except asyncio.TimeoutError:
-            return await confirm_message.clear_reactions()
-        try:
-            await confirm_message.clear_reactions()
-        except (discord.Forbidden, discord.HTTPException):
-            pass
-        if reaction.emoji == NO:
-            await send_fail_embed()
-            return
-
-        now_utc = discord.utils.utcnow().timestamp()
-        gtime_utc = gtime.replace(tzinfo=timezone.utc).timestamp()
-        time_left = gtime_utc - now_utc
-        time_remaining = format_time_remaining(time_left)
-
-        embed = discord.Embed(title=self._giveaway_title, colour=0x00FF00)
-        embed.set_author(**self.author_data("system", extra="giveaway", channel_id=channel.id))
-        embed.description = f"React with {self.giveaway_emoji} to enter the giveaway!"
-        embed.add_field(name=f"{GIFT} Prize:", value=prize)
-        embed.add_field(name="Hosted by:", value=ctx.author.mention, inline=False)
-        embed.add_field(name="Time remaining:", value=f"_**{time_remaining}**_", inline=False)
-        embed.set_footer(text=f"{winners} {'winners' if winners > 1 else 'winner'} | Ends at")
-        embed.timestamp = datetime.fromtimestamp(gtime.timestamp())
-        msg = await channel.send(embed=embed)
-
-        await msg.add_reaction(self.giveaway_emoji)
+        view = GiveawayView(ctx, ctx.author, channel=channel)
         embed = discord.Embed(
+            title="Giveaway Settings",
             color=self.bot.main_color,
-            description=f"Done! Giveaway embed has been posted in {channel.mention}!",
+            description=(
+                f"Giveaway will be posted in {channel.mention}.\n\n"
+                "Click the `Edit` button to set the values.\n\n"
+                "See the notes below for additional info."
+            ),
         )
-        await ctx.send(embed=embed)
-
-        giveaway_data = {
-            "item": prize,
-            "winners": winners,
-            "time": gtime_utc,
-            "guild": ctx.guild.id,
-            "channel": channel.id,
-            "message": msg.id,
-        }
-        session = GiveawaySession.start(self, giveaway_data)
+        embed.add_field(name="Winners count", value="Must be integers and can only be 3 digits or lower.")
+        embed.add_field(name="Duration syntax", value=duration_syntax)
+        embed.set_footer(text="This view will time out after 10 minutes.")
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if not view.giveaway_message:
+            return
+        data = view.giveaway_data()
+        session = GiveawaySession.start(self, data)
         self.active_giveaways.append(session)
         await self._update_db()
 
