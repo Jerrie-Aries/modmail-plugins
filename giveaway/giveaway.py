@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import discord
 import yarl
@@ -179,7 +179,7 @@ class Giveaway(commands.Cog):
                 f"`EMBED_LINKS`, and `ADD_REACTIONS` permissions in {ch_text}."
             )
 
-        view = GiveawayView(ctx, ctx.author, channel=channel)
+        view = GiveawayView(ctx)
         embed = discord.Embed(
             title="Giveaway Settings",
             color=self.bot.main_color,
@@ -194,9 +194,21 @@ class Giveaway(commands.Cog):
         embed.set_footer(text="This view will time out after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
-        if not view.giveaway_message:
+
+        if not view.giveaway_ready:
             return
-        data = view.giveaway_data()
+
+        message = await channel.send(**view.send_params())
+        await message.add_reaction(self.giveaway_emoji)
+        await ctx.send(f"Done. Giveaway has been posted in {channel.mention}.", ephemeral=True)
+        data = {
+            "item": view.giveaway_prize,
+            "winners": view.giveaway_winners,
+            "time": view.giveaway_end,
+            "guild": channel.guild.id,
+            "channel": channel.id,
+            "message": message.id,
+        }
         session = GiveawaySession.start(self, data)
         self.active_giveaways.append(session)
         await self._update_db()

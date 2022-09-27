@@ -43,50 +43,12 @@ class GiveawayModal(Modal):
             self.add_item(GiveawayTextInput(key, **value))
 
     async def on_submit(self, interaction: Interaction) -> None:
-        errors = []
         for child in self.children:
             self.view.input_map[child.name]["default"] = child.value
 
         await interaction.response.defer()
         self.stop()
-        for _, value in self.view.input_map.items():
-            if value.get("required", True) and value["default"] is None:
-                self.view.giveaway_ready = False
-                await self.view.update_view()
-                return
-
-        self.view.giveaway_prize = self.view.input_map["prize"].get("default")
-        winners = self.view.input_map["winners"]["default"]
-        try:
-            winners = int(winners)
-        except ValueError:
-            errors.append("Unable to parse giveaway winners to numbers.")
-        else:
-            if winners < 0:
-                errors.append("Giveaway can only be held with 1 or more winners.")
-            else:
-                self.view.giveaway_winners = winners
-
-        duration = self.view.input_map["duration"]["default"]
-        try:
-            converted = await time_converter(self.view.ctx, duration, now=discord.utils.utcnow())
-        except (commands.BadArgument, commands.CommandError):
-            errors.append(
-                "Failed to parse duration. Please use the following syntax.\n\n" f"{duration_syntax}"
-            )
-        else:
-            if converted.dt.timestamp() - converted.now.timestamp() <= 0:
-                errors.append("Invalid duration provided.")
-            else:
-                self.view.giveaway_end = converted.dt.timestamp()
-                self.view.giveaway_ready = True
-        if errors:
-            self.view.giveaway_ready = False
-            for error in errors:
-                await interaction.followup.send(error, ephemeral=True)
-        else:
-            self.view.giveaway_ready = True
-        await self.view.update_view()
+        await self.view.on_modal_submit(interaction)
 
 
 class GiveawayViewButton(Button["GiveawayView"]):
@@ -109,26 +71,17 @@ class GiveawayView(View):
 
     children: List[GiveawayViewButton]
 
-    def __init__(
-        self,
-        ctx: commands.Context,
-        user: discord.Member,
-        *,
-        channel: discord.TextChannel,
-        timeout: float = 600.0,
-    ):
+    def __init__(self, ctx: commands.Context, *, timeout: float = 600.0):
         super().__init__(timeout=timeout)
         self.ctx: commands.Context = ctx
         self.cog: Giveaway = ctx.cog
-        self.user: discord.Member = user
-        self.message: discord.Message = MISSING  # should be reassigned
-        self.giveaway_channel: discord.TextChannel = channel
+        self.user: discord.Member = ctx.author
+        self.message: discord.Message = MISSING
+        self.giveaway_ready: bool = False
         self.giveaway_end: float = MISSING
         self.giveaway_winners: int = MISSING
         self.giveaway_prize: str = MISSING
-        self.giveaway_message: discord.Message = MISSING
 
-        # button labels and modal titles will be based on these keys
         self.input_map: Dict[str, Any] = {
             "content": {
                 "label": "Mention or short content",
@@ -161,7 +114,6 @@ class GiveawayView(View):
             "cancel": (ButtonStyle.red, self._action_cancel),
         }
 
-        self.giveaway_ready: bool = False
         self._generate_buttons()
         self.refresh()
 
@@ -179,24 +131,8 @@ class GiveawayView(View):
         self.refresh()
         await self.message.edit(view=self)
 
-    def giveaway_data(self) -> Dict[str, Any]:
-        data = {
-            "item": self.giveaway_prize,
-            "winners": self.giveaway_winners,
-            "time": self.giveaway_end,
-            "guild": self.giveaway_channel.guild.id,
-            "channel": self.giveaway_channel.id,
-            "message": self.giveaway_message.id,
-        }
-        return data
-
     async def _action_done(self, interaction: Interaction) -> None:
-        message = await self.giveaway_channel.send(**self.send_params())
-        await message.add_reaction(self.cog.giveaway_emoji)
-        self.giveaway_message = message
-        await interaction.response.send_message(
-            f"Done. Giveaway has been posted in {self.giveaway_channel.mention}.", ephemeral=True
-        )
+        await interaction.response.defer()
         self.disable_and_stop()
         await self.message.edit(view=self)
 
@@ -213,6 +149,7 @@ class GiveawayView(View):
             await interaction.response.send_message(error, ephemeral=True)
 
     async def _action_cancel(self, interaction: Interaction) -> None:
+        self.giveaway_ready = False
         self.disable_and_stop()
         await interaction.response.edit_message(view=self)
 
@@ -225,13 +162,52 @@ class GiveawayView(View):
         )
         return False
 
+    async def on_modal_submit(self, interaction: Interaction) -> None:
+        for _, value in self.input_map.items():
+            if value.get("required", True) and value["default"] is None:
+                self.giveaway_ready = False
+                await self.update_view()
+                return
+
+        errors = []
+        self.giveaway_prize = self.input_map["prize"].get("default")
+        winners = self.input_map["winners"]["default"]
+        try:
+            winners = int(winners)
+        except ValueError:
+            errors.append("Unable to parse giveaway winners to numbers.")
+        else:
+            if winners < 0:
+                errors.append("Giveaway can only be held with 1 or more winners.")
+            else:
+                self.giveaway_winners = winners
+
+        duration = self.input_map["duration"]["default"]
+        try:
+            converted = await time_converter(self.ctx, duration, now=discord.utils.utcnow())
+        except (commands.BadArgument, commands.CommandError):
+            errors.append(
+                "Failed to parse duration. Please use the following syntax.\n\n" f"{duration_syntax}"
+            )
+        else:
+            if converted.dt.timestamp() - converted.now.timestamp() <= 0:
+                errors.append("Invalid duration provided.")
+            else:
+                self.giveaway_end = converted.dt.timestamp()
+                self.giveaway_ready = True
+        if errors:
+            self.giveaway_ready = False
+            for error in errors:
+                await interaction.followup.send(error, ephemeral=True)
+        else:
+            self.giveaway_ready = True
+        await self.update_view()
+
     def send_params(self) -> Dict[str, Any]:
-        params = {}
+        params = {"embed": self.create_embed()}
         content = self.input_map["content"].get("default")
         if content:
             params["content"] = content
-        embed = self.create_embed()
-        params["embed"] = embed
         return params
 
     def create_embed(self) -> discord.Embed:
@@ -241,9 +217,7 @@ class GiveawayView(View):
         time_remaining = format_time_remaining(time_left)
 
         embed = discord.Embed(title=self.cog.giveaway_title, colour=0x00FF00)
-        embed.set_author(
-            **self.cog.author_data("system", extra="giveaway", channel_id=self.giveaway_channel.id)
-        )
+        embed.set_author(**self.cog.author_data("system", extra="giveaway"))
         embed.description = f"React with {self.cog.giveaway_emoji} to enter the giveaway!"
         embed.add_field(name=f"{GIFT} Prize:", value=self.giveaway_prize)
         embed.add_field(name="Hosted by:", value=self.ctx.author.mention, inline=False)
@@ -251,8 +225,6 @@ class GiveawayView(View):
         embed.set_footer(text=f"{winners} {'winners' if winners > 1 else 'winner'} | Ends at")
         embed.timestamp = datetime.fromtimestamp(self.giveaway_end)
         length = len(embed)
-        if not length:
-            raise ValueError("Embed is empty.")
         if length > _max_embed_length:
             raise ValueError(
                 f"Embed length exceeds the maximum length allowed, {length}/{_max_embed_length}."
@@ -266,6 +238,6 @@ class GiveawayView(View):
             self.stop()
 
     async def on_timeout(self) -> None:
+        self.giveaway_ready = False
         self.disable_and_stop()
-        # Edit the message without `interaction.response`
         await self.message.edit(view=self)
