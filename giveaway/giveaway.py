@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, TYPE_CHECKING
 
@@ -309,6 +310,31 @@ class Giveaway(commands.Cog):
         self.active_giveaways.remove(session)
         await self._update_db()
         await ctx.send("Cancelled!")
+
+    @giveaway.command(name="list")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def gaway_list(self, ctx: commands.Context):
+        """
+        Show the list of active giveaways.
+        """
+        embed = discord.Embed(title="Active giveaways", color=self.bot.main_color)
+        desc = ""
+        n = 0
+        for session in self.active_giveaways:
+            n += 1
+            message = session.message
+            if not message:
+                message = await session.channel.fetch_message(session.id)
+            desc += (
+                f"[Giveaway {n}]({message.jump_url})\n"
+                f"End: {discord.utils.format_dt(datetime.fromtimestamp(session.ends), 'R')}\n\n"
+            )
+
+        if not desc:
+            desc = "No active giveaways."
+        embed.description = desc
+
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_giveaway_end(self, session: GiveawaySession) -> None:
