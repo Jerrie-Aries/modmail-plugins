@@ -189,7 +189,7 @@ class Giveaway(commands.Cog):
                 "See the notes below for additional info."
             ),
         )
-        embed.add_field(name="Winners count", value="Must be integers and can only be 3 digits or lower.")
+        embed.add_field(name="Winners count", value="Must be integers between 1 to 50.")
         embed.add_field(name="Duration syntax", value=duration_syntax)
         embed.set_footer(text="This view will time out after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)

@@ -175,10 +175,10 @@ class GiveawayView(View):
         try:
             winners = int(winners)
         except ValueError:
-            errors.append("Unable to parse giveaway winners to numbers.")
+            errors.append("Unable to convert giveaway winners to numbers.")
         else:
-            if winners < 0:
-                errors.append("Giveaway can only be held with 1 or more winners.")
+            if not 1 <= winners <= 50:
+                errors.append("Giveaway can only be held with 1 up to 50 winners.")
             else:
                 self.giveaway_winners = winners
 
