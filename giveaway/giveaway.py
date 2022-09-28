@@ -161,7 +161,7 @@ class Giveaway(commands.Cog):
         """
         Create / Stop Giveaways.
 
-        _**Notes:**_
+        __**Notes:**__
         - Make sure the bot has these permissions in your Giveaway channel:
         `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, and `Add Reactions`.
         - Only 15 active giveaways are allowed at a time.
