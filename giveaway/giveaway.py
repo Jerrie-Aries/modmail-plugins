@@ -160,7 +160,7 @@ class Giveaway(commands.Cog):
     async def giveaway(self, ctx: commands.Context):
         """
         Create / Stop Giveaways.
-        
+
         _**Notes:**_
         - Make sure the bot has these permissions in your Giveaway channel:
         `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, and `Add Reactions`.
