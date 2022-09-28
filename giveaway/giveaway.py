@@ -160,6 +160,11 @@ class Giveaway(commands.Cog):
     async def giveaway(self, ctx: commands.Context):
         """
         Create / Stop Giveaways.
+        
+        _**Notes:**_
+        - Make sure the bot has these permissions in your Giveaway channel:
+        `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, and `Add Reactions`.
+        - Only 15 active giveaways are allowed at a time.
         """
         await ctx.send_help(ctx.command)
 
@@ -176,8 +181,8 @@ class Giveaway(commands.Cog):
             if ctx.channel != channel:
                 ch_text += f" and {channel.mention} channel"
             raise commands.BadArgument(
-                "Need `SEND_MESSAGES`, `READ_MESSAGES`, `MANAGE_MESSAGES`, "
-                f"`EMBED_LINKS`, and `ADD_REACTIONS` permissions in {ch_text}."
+                "Need `Send Messaged`, `Read Message History`, "
+                f"`Embed Links`, and `Add Reactions` permissions in {ch_text}."
             )
         if len(self.active_giveaways) >= 15:
             raise commands.BadArgument("Only 15 active giveaways are allowed at the same time.")
@@ -311,7 +316,7 @@ class Giveaway(commands.Cog):
         session.force_stop()
         self.active_giveaways.remove(session)
         await self._update_db()
-        await ctx.send("Cancelled!")
+        await ctx.send(f"Giveaway ID `{message_id}` is now cancelled!")
 
     @giveaway.command(name="list")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
