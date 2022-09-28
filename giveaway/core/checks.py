@@ -14,7 +14,6 @@ def can_execute_giveaway(ctx: commands.Context, destination: discord.TextChannel
     attrs = [
         "send_messages",
         "read_message_history",
-        "manage_messages",
         "embed_links",
         "add_reactions",
     ]
