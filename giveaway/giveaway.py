@@ -179,6 +179,8 @@ class Giveaway(commands.Cog):
                 "Need `SEND_MESSAGES`, `READ_MESSAGES`, `MANAGE_MESSAGES`, "
                 f"`EMBED_LINKS`, and `ADD_REACTIONS` permissions in {ch_text}."
             )
+        if len(self.active_giveaways) >= 15:
+            raise commands.BadArgument("Only 15 active giveaways are allowed at the same time.")
 
         view = GiveawayView(ctx)
         embed = discord.Embed(
