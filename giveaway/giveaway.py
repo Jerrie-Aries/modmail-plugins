@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, TYPE_CHECKING
 
@@ -159,6 +160,11 @@ class Giveaway(commands.Cog):
     async def giveaway(self, ctx: commands.Context):
         """
         Create / Stop Giveaways.
+
+        __**Notes:**__
+        - Make sure the bot has these permissions in your Giveaway channel:
+        `View Channel`, `Send Messages`, `Read Message History`, `Embed Links`, and `Add Reactions`.
+        - Only 15 active giveaways are allowed at a time.
         """
         await ctx.send_help(ctx.command)
 
@@ -175,9 +181,11 @@ class Giveaway(commands.Cog):
             if ctx.channel != channel:
                 ch_text += f" and {channel.mention} channel"
             raise commands.BadArgument(
-                "Need `SEND_MESSAGES`, `READ_MESSAGES`, `MANAGE_MESSAGES`, "
-                f"`EMBED_LINKS`, and `ADD_REACTIONS` permissions in {ch_text}."
+                "Need `Send Messaged`, `Read Message History`, "
+                f"`Embed Links`, and `Add Reactions` permissions in {ch_text}."
             )
+        if len(self.active_giveaways) >= 15:
+            raise commands.BadArgument("Only 15 active giveaways are allowed at the same time.")
 
         view = GiveawayView(ctx)
         embed = discord.Embed(
@@ -189,7 +197,7 @@ class Giveaway(commands.Cog):
                 "See the notes below for additional info."
             ),
         )
-        embed.add_field(name="Winners count", value="Must be integers and can only be 3 digits or lower.")
+        embed.add_field(name="Winners count", value="Must be integers between 1 to 50.")
         embed.add_field(name="Duration syntax", value=duration_syntax)
         embed.set_footer(text="This view will time out after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
@@ -308,7 +316,32 @@ class Giveaway(commands.Cog):
         session.force_stop()
         self.active_giveaways.remove(session)
         await self._update_db()
-        await ctx.send("Cancelled!")
+        await ctx.send(f"Giveaway ID `{message_id}` is now cancelled!")
+
+    @giveaway.command(name="list")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def gaway_list(self, ctx: commands.Context):
+        """
+        Show the list of active giveaways.
+        """
+        embed = discord.Embed(title="Active giveaways", color=self.bot.main_color)
+        desc = ""
+        n = 0
+        for session in self.active_giveaways:
+            n += 1
+            message = session.message
+            if not message:
+                message = await session.channel.fetch_message(session.id)
+            desc += (
+                f"[Giveaway {n}]({message.jump_url})\n"
+                f"End: {discord.utils.format_dt(datetime.fromtimestamp(session.ends), 'R')}\n\n"
+            )
+
+        if not desc:
+            desc = "No active giveaways."
+        embed.description = desc
+
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_giveaway_end(self, session: GiveawaySession) -> None:
