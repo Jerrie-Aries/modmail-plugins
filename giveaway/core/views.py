@@ -84,15 +84,10 @@ class GiveawayView(View):
 
         self.input_map: Dict[str, Any] = {
             "content": {
-                "label": "Mention or short content",
-                "max_length": _short_length,
-                "required": False,
-            },
-            "description": {
-                "label": "Description",
-                "default": f"React with {self.cog.giveaway_emoji} to enter the giveaway!",
+                "label": "Content",
                 "style": TextStyle.long,
                 "max_length": _long_length,
+                "required": False,
             },
             "prize": {
                 "label": "Giveaway prize",
@@ -157,18 +152,12 @@ class GiveawayView(View):
         if self.user.id == interaction.user.id:
             return True
         await interaction.response.send_message(
-            "This view cannot be controlled by you!",
+            "This panel cannot be controlled by you!",
             ephemeral=True,
         )
         return False
 
     async def on_modal_submit(self, interaction: Interaction) -> None:
-        for _, value in self.input_map.items():
-            if value.get("required", True) and value["default"] is None:
-                self.giveaway_ready = False
-                await self.update_view()
-                return
-
         errors = []
         self.giveaway_prize = self.input_map["prize"].get("default")
         winners = self.input_map["winners"]["default"]
@@ -194,17 +183,18 @@ class GiveawayView(View):
                 errors.append("Invalid duration provided.")
             else:
                 self.giveaway_end = converted.dt.timestamp()
-                self.giveaway_ready = True
+
         if errors:
             self.giveaway_ready = False
             for error in errors:
                 await interaction.followup.send(error, ephemeral=True)
         else:
+            self.embed = self.create_embed()
             self.giveaway_ready = True
         await self.update_view()
 
     def send_params(self) -> Dict[str, Any]:
-        params = {"embed": self.create_embed()}
+        params = {"embed": self.embed}
         content = self.input_map["content"].get("default")
         if content:
             params["content"] = content
@@ -225,10 +215,6 @@ class GiveawayView(View):
         embed.set_footer(text=f"{winners} {'winners' if winners > 1 else 'winner'} | Ends at")
         embed.timestamp = datetime.fromtimestamp(self.giveaway_end)
         length = len(embed)
-        if length > _max_embed_length:
-            raise ValueError(
-                f"Embed length exceeds the maximum length allowed, {length}/{_max_embed_length}."
-            )
         return embed
 
     def disable_and_stop(self) -> None:
