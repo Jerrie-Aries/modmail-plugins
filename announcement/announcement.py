@@ -69,8 +69,8 @@ class Announcement(commands.Cog):
         embed.description = (
             "Choose a type of announcement using the dropdown menu below.\n\n"
             "__**Available types:**__\n"
-            "`Normal` - Plain text announcement.\n"
-            "`Embed` - Embedded announcement. Image and thumbnail image are also supported."
+            "- **Normal** : Plain text announcement.\n"
+            "- **Embed** : Embedded announcement. Image and thumbnail image are also supported."
         )
         embed.set_footer(text="This panel will timeout after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
