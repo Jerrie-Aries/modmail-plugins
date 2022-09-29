@@ -36,18 +36,48 @@ class Announcement(commands.Cog):
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
 
-    @commands.command()
+    @commands.group(invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def announce(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
+    async def announce(self, ctx: commands.Context):
         """
-        Post an announcement in channel specified.
+        Base command to create announcements.
+        """
+        await ctx.send_help(ctx.command)
+
+    @announce.command(name="start", aliases=["create"])
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def announce_start(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
+        """
+        Post an announcement in a channel specified.
+
+        This will initiate a announcement creation panel where you can choose and customise the output of the announcement.
+
+        `channel` if specified may be a channel ID, mention, or name. Otherwise, fallbacks to current channel.
         """
         if channel is None:
             channel = ctx.channel
         announcement = AnnouncementModel(ctx, channel)
         view = AnnouncementView(ctx, announcement)
-        view.message = await ctx.send("Announcement creation panel.", view=view)
+        embed = discord.Embed(title="Announcement Creation Panel")
+        embed.description = (
+            "Choose a type of announcement using the dropdown menu below.\n\n"
+            "__**Available types:**__\n"
+            "`Normal` - Plain text announcement.\n"
+            "`Embed` - Embedded announcement. Image and thumbnail image are also supported."
+        )
+        embed.set_footer(text="This panel will timeout after 10 minutes.")
+        view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
+
+    @announce.command(name="quick")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def announce_quick(self, ctx: commands.Context, channel: discord.TextChannel, *, content: str):
+        """
+        Create a quick plain text announcement.
+
+        `channel` may be a channel ID, mention, or name.
+        """
+        await channel.send(content)
 
 
 async def setup(bot: ModmailBot) -> None:

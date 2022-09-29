@@ -51,7 +51,7 @@ class AnnouncementModal(Modal):
 class DropdownMenu(Select):
     def __init__(self, *, options: List[discord.SelectOption], **kwargs):
         super().__init__(
-            placeholder="Choose the type of announcement",
+            placeholder="Choose a type",
             min_values=1,
             max_values=1,
             options=options,
@@ -59,8 +59,12 @@ class DropdownMenu(Select):
         )
 
     async def callback(self, interaction: Interaction):
+        await interaction.response.defer()
         assert self.view is not None
-        await self.view.on_dropdown_select(self, interaction)
+        value = self.values[0]
+        self.placeholder = value.title()
+        self.disabled = True
+        await self.view.set_announcement_type(value)
 
 
 class AnnouncementViewButton(Button["AnnouncementView"]):
@@ -116,49 +120,48 @@ class AnnouncementView(View):
             },
             "color": {
                 "label": "Embed color",
-                "default": self.cog.bot.main_color,
                 "required": False,
                 "max_length": 20,
             },
         }
         self.input_map: Dict[str, Any] = {"content": self.content_data}
-        self.ret_buttons: Dict[str, Any] = {
-            "post": (ButtonStyle.green, self._action_post),
-            "edit": (ButtonStyle.grey, self._action_edit),
-            "preview": (ButtonStyle.grey, self._action_preview),
-            "cancel": (ButtonStyle.red, self._action_cancel),
-        }
-        self.menu_map: Dict[str, Any] = {
-            "normal": {
-                "label": "Normal",
-                "emoji": None,
-                "description": "Plain text announcement.",
-            },
-            "embed": {
-                "label": "Embed",
-                "emoji": None,
-                "description": "Embedded announcement. Image and thumbnail image are alose supported.",
-            },
-        }
 
         self._add_menu()
         self._generate_buttons()
         self.refresh()
 
     def _add_menu(self) -> None:
+        attrs = [
+            {
+                "label": "Normal",
+                "emoji": None,
+                "description": "Plain text announcement.",
+            },
+            {
+                "label": "Embed",
+                "emoji": None,
+                "description": "Embedded announcement. Image and thumbnail image are alose supported.",
+            },
+        ]
         options = []
-        for key, value in self.menu_map.items():
+        for attr in attrs:
             option = discord.SelectOption(
-                label=value["label"],
-                emoji=value["emoji"],
-                description=value["description"],
-                value=key,
+                label=attr["label"],
+                emoji=attr["emoji"],
+                description=attr["description"],
+                value=attr["label"].lower(),
             )
             options.append(option)
         self.add_item(DropdownMenu(options=options, row=0))
 
     def _generate_buttons(self) -> None:
-        for label, item in self.ret_buttons.items():
+        buttons: Dict[str, Any] = {
+            "post": (ButtonStyle.green, self._action_post),
+            "edit": (ButtonStyle.grey, self._action_edit),
+            "preview": (ButtonStyle.grey, self._action_preview),
+            "cancel": (ButtonStyle.red, self._action_cancel),
+        }
+        for label, item in buttons.items():
             # `item` is a tuple of (ButtonStyle, callback)
             self.add_item(AnnouncementViewButton(label.title(), style=item[0], callback=item[1]))
 
@@ -166,17 +169,19 @@ class AnnouncementView(View):
         for child in self.children:
             if not isinstance(child, AnnouncementViewButton):
                 continue
+            if child.label.lower() == "cancel":
+                continue
             if not self.announcement.type:
-                if child.label.lower() == "cancel":
-                    continue
                 child.disabled = True
                 continue
             if child.label.lower() in ("post", "preview"):
                 child.disabled = not self.announcement.ready
+            else:
+                child.disabled = False
 
     async def update_view(self) -> None:
         self.refresh()
-        await self.message.edit(view=self)
+        await self.message.edit(embed=self.message.embeds[0], view=self)
 
     async def _action_post(self, interaction: Interaction) -> None:
         await interaction.response.defer()
@@ -205,15 +210,14 @@ class AnnouncementView(View):
         if self.user.id == interaction.user.id:
             return True
         await interaction.response.send_message(
-            "This view cannot be controlled by you!",
+            "This panel cannot be controlled by you!",
             ephemeral=True,
         )
         return False
 
-    async def on_dropdown_select(self, select: DropdownMenu, interaction: Interaction) -> None:
-        await interaction.response.defer()
-        value = select.values[0]
+    async def set_announcement_type(self, value: str) -> None:
         self.announcement.type = AnnouncementType.from_value(value)
+        description = f"__**{value.title()}:**__\n"
         if self.announcement.type == AnnouncementType.EMBED:
             self.content_data = {
                 "label": "Mention",
@@ -222,8 +226,21 @@ class AnnouncementView(View):
                 "max_length": _short_length,
             }
             self.input_map.update(content=self.content_data, **self.embed_data)
-        self.clear_items()
-        self._generate_buttons()
+            description += (
+                "Click the `Edit` button below to set/edit the values.\n\n"
+                "__**Available fields:**__\n"
+                "`Mention` - Mention @User, @Role, @here, or @everyone.\n"
+                "`Description` - The content of the announcement. Must not exceed 4000 characters.\n"
+                "`Thumbnail URL` - URL of the image shown at the top right of the embed.\n"
+                "`Image URL` - URL of the large image shown at the bottom of the embed.\n"
+                "`Color` - The color code of the embed. If not specified, fallbacks to bot main color.\n"
+                "The following formats are accepted:\n\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`\n"
+                "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n\n"
+            )
+        else:
+            description += "Click the `Edit` button below to set/edit the content."
+        embed = self.message.embeds[0]
+        embed.description = description
         await self.update_view()
 
     async def on_modal_submit(self, interaction: Interaction) -> None:

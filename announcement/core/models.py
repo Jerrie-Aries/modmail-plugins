@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, Union
+from typing import Any, Dict
 
 import discord
 from discord.utils import MISSING
@@ -57,11 +57,14 @@ class AnnouncementModel:
         self,
         *,
         description: str = MISSING,
-        color: Union[int, str] = MISSING,
+        color: str = MISSING,
         thumbnail_url: str = MISSING,
         image_url: str = MISSING,
     ) -> discord.Embed:
-        color = _color_converter(color)
+        if not color:
+            color = self.ctx.bot.main_color
+        else:
+            color = _color_converter(color)
         embed = discord.Embed(description=description, color=color, timestamp=discord.utils.utcnow())
         author = self.ctx.author
         embed.set_author(name=str(author), icon_url=author.display_avatar)
