@@ -53,12 +53,19 @@ class Announcement(commands.Cog):
         This will initiate a announcement creation panel where you can choose and customise the output of the announcement.
 
         `channel` if specified may be a channel ID, mention, or name. Otherwise, fallbacks to current channel.
+
+        __**Note:**__
+        - If `channel` is not specified, to ensure cleaner output the creation message will automatically be deleted after the announcement is posted.
         """
+        # TODO: Support publish
+        delete = False
         if channel is None:
             channel = ctx.channel
+            delete = True
+
         announcement = AnnouncementModel(ctx, channel)
         view = AnnouncementView(ctx, announcement)
-        embed = discord.Embed(title="Announcement Creation Panel")
+        embed = discord.Embed(title="Announcement Creation Panel", color=self.bot.main_color)
         embed.description = (
             "Choose a type of announcement using the dropdown menu below.\n\n"
             "__**Available types:**__\n"
@@ -68,6 +75,17 @@ class Announcement(commands.Cog):
         embed.set_footer(text="This panel will timeout after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
+
+        await view.message.edit(view=view)
+        if announcement.posted:
+            if delete:
+                try:
+                    await ctx.message.delete()
+                except discord.Forbidden:
+                    pass
+                await view.message.delete()
+            else:
+                await ctx.send(f"Announcement has been posted in {channel.mention}.")
 
     @announce.command(name="quick")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)

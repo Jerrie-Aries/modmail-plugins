@@ -185,9 +185,8 @@ class AnnouncementView(View):
 
     async def _action_post(self, interaction: Interaction) -> None:
         await interaction.response.defer()
-        self.disable_and_stop()
         await self.announcement.post()
-        await self.message.edit(view=self)
+        self.disable_and_stop()
 
     async def _action_edit(self, interaction: Interaction) -> None:
         modal = AnnouncementModal(self, self.input_map)

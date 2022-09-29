@@ -48,6 +48,7 @@ class AnnouncementModel:
         self.ctx: commands.Context = ctx
         self.channel: discord.TextChannel = channel
         self.ready: bool = False
+        self.posted: bool = False
 
         self.type: AnnouncementType = MISSING
         self.content: str = MISSING
@@ -84,3 +85,4 @@ class AnnouncementModel:
 
     async def post(self) -> None:
         await self.channel.send(**self.send_params())
+        self.posted = True
