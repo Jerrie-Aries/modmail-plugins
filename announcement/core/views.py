@@ -229,6 +229,8 @@ class AnnouncementView(View):
                 "Click the `Edit` button below to set/edit the values.\n\n"
                 "__**Available fields:**__\n"
                 "`Mention` - Mention @User, @Role, @here, or @everyone.\n"
+                "Multiple mentions is also supported, just separate the values with space.\n"
+                "For User or Role, you may pass an ID, mention (in the format of `<@id>` for User or `<@&id>` for Role), or name.\n"
                 "`Description` - The content of the announcement. Must not exceed 4000 characters.\n"
                 "`Thumbnail URL` - URL of the image shown at the top right of the embed.\n"
                 "`Image URL` - URL of the large image shown at the bottom of the embed.\n"
@@ -246,6 +248,10 @@ class AnnouncementView(View):
         self.announcement.content = self.input_map["content"].get("default")
         errors = []
         if self.announcement.type == AnnouncementType.EMBED:
+            try:
+                await self.announcement.resolve_mentions()
+            except commands.BadArgument as exc:
+                errors.append(str(exc))
             kwargs = {}
             elems = [
                 "description",

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import discord
 from discord.utils import MISSING
@@ -53,6 +53,27 @@ class AnnouncementModel:
         self.type: AnnouncementType = MISSING
         self.content: str = MISSING
         self.embed: discord.Embed = MISSING
+
+    async def resolve_mentions(self) -> None:
+        if not self.content:
+            return
+        ret = []
+        argument = self.content.split()
+        for arg in argument:
+            if arg in ("@here", "@everyone"):
+                ret.append(arg)
+                continue
+            user_or_role = None
+            try:
+                user_or_role = await commands.RoleConverter().convert(self.ctx, arg)
+            except commands.BadArgument:
+                try:
+                    user_or_role = await commands.MemberConverter().convert(self.ctx, arg)
+                except commands.BadArgument:
+                    raise commands.BadArgument(f"Unable to convert {arg} to user or role mention.")
+            if user_or_role is not None:
+                ret.append(user_or_role.mention)
+        self.content = ", ".join(ret) if ret else None
 
     def create_embed(
         self,
