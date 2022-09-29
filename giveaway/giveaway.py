@@ -193,13 +193,18 @@ class Giveaway(commands.Cog):
             color=self.bot.main_color,
             description=(
                 f"Giveaway will be posted in {channel.mention}.\n"
-                "Click the `Edit` button to set the values.\n\n"
-                "See the notes below for additional info."
+                "Click the `Edit` button to set/edit the values.\n\n"
+                "__**Available fields:**__\n"
+                "- **Content** : Additional content or mention @User, @Role, @here, or @everyone. "
+                "User or Role mention must be in the format of `<@id>` for User or `<@&id>` for Role.\n"
+                "- **Prize** : Giveaway prize.\n"
+                "- **Winners count** : How many winners should be selected when the giveaway ends. "
+                "The value must be integers between 1 to 50.\n"
+                "- **Duration** : How long before the giveaway ends. The value must be in the format of syntax shown below.\n"
             ),
         )
-        embed.add_field(name="Winners count", value="Must be integers between 1 to 50.")
         embed.add_field(name="Duration syntax", value=duration_syntax)
-        embed.set_footer(text="This view will time out after 10 minutes.")
+        embed.set_footer(text="This panel will time out after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
 

@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
 # Parsing and Conversion
 duration_syntax = (
-    "Examples:\n"
     "`30m` or `30 minutes` = 30 minutes\n"
     "`2d` or `2days` or `2day` = 2 days\n"
     "`1mo` or `1 month` = 1 month\n"
