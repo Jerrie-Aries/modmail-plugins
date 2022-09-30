@@ -131,7 +131,10 @@ class EmbedBuilderModal(Modal):
 
     async def on_submit(self, interaction: Interaction) -> None:
         for child in self.children:
-            self.view.input_map[self.view.current][child.name]["default"] = child.value
+            value = child.value
+            if not value:
+                value = None
+            self.view.input_map[self.view.current][child.name]["default"] = value
 
         await interaction.response.defer()
         self.stop()
@@ -195,7 +198,7 @@ class EmbedBuilderView(View):
         super().__init__(timeout=timeout)
         self.user: discord.Member = user
         self.message: discord.Message = MISSING
-        self.embed: discord.Embed = MISSING
+        self.embed: discord.Embed = discord.Embed()
         self.current: Optional[str] = None
 
         self.input_map: Dict[str, Any] = {
@@ -281,9 +284,6 @@ class EmbedBuilderView(View):
                 },
             },
         }
-        self.response_map = {
-            "fields": [],
-        }
         self._add_menu()
         self._generate_buttons()
         self.refresh()
@@ -339,10 +339,10 @@ class EmbedBuilderView(View):
                     child.disabled = True
                     continue
                 if key == "clear fields":
-                    child.disabled = not len(self.response_map["fields"])
+                    child.disabled = not self.embed.fields
                     continue
             if key in ("done", "preview"):
-                child.disabled = self.embed is MISSING or not len(self.embed)
+                child.disabled = len(self.embed) == 0
             else:
                 child.disabled = False
 
@@ -375,25 +375,18 @@ class EmbedBuilderView(View):
             else:
                 resp_data[key] = value
 
-        if resp_data:
-            if self.current == "fields":
-                self.response_map[self.current].append(resp_data)
-            else:
-                self.response_map[self.current] = resp_data
-
         if errors:
             for error in errors:
                 await interaction.followup.send(error, ephemeral=True)
         else:
-            self.embed = self.build_embed()
+            self.embed = self.update_embed(data=resp_data)
         await self.update_view()
 
     async def _action_add_field(self, interaction: Interaction) -> None:
         await self._action_edit(interaction)
 
     async def _action_clear_fields(self, interaction: Interaction) -> None:
-        self.response_map["fields"] = []
-        if self.embed:
+        if self.embed.fields:
             self.embed = self.embed.clear_fields()
         await self.update_view()
         await interaction.response.send_message("Cleared all fields.", ephemeral=True)
@@ -429,50 +422,36 @@ class EmbedBuilderView(View):
         )
         return False
 
-    def build_embed(self) -> discord.Embed:
+    def update_embed(self, *, data: Dict[str, Any]) -> discord.Embed:
         """
-        Build an embed from the stored response data.
+        Update embed from the response data.
         """
-        embed_data = {}
-        body = self.response_map.get("body", {})
-        description = body.get("description", "")
-        if description:
-            embed_data["description"] = description
-        thumbnail_url = body.get("thumbnail", "")
-        if thumbnail_url:
-            embed_data["thumbnail"] = {"url": thumbnail_url}
-        image_url = body.get("image", "")
-        if image_url:
-            embed_data["image"] = {"url": image_url}
-        author_data = self.response_map.get("author", {})
-        if author_data:
-            embed_data["author"] = author_data
-        title_data = self.response_map.get("title", {})
-        title = title_data.get("title", "")
-        if title:
-            embed_data["title"] = title
-            url = title_data.get("url", "")
-
-            # url can only be added if the title exists
-            if url:
-                embed_data["url"] = url
-        footer_data = self.response_map.get("footer", {})
-        if footer_data:
-            embed_data["footer"] = footer_data
-        color_data = self.response_map.get("color", {})
-        if color_data:
-            embed_data["color"] = color_data["value"]
-        embed_data["fields"] = self.response_map.get("fields", [])
-        embed_data["timestamp"] = str(discord.utils.utcnow())
-
-        embed = discord.Embed.from_dict(embed_data)
-        length = len(embed)
-        if length > _max_embed_length:
-            raise ValueError(
-                f"Embed length exceeds the maximum length allowed, {length}/{_max_embed_length}."
-            )
-
-        return embed
+        if self.current == "title":
+            title = data["title"]
+            self.embed.title = title
+            if title:
+                url = data["url"]
+            else:
+                url = None
+            self.embed.url = url
+        if self.current == "author":
+            self.embed.set_author(**data)
+        if self.current == "body":
+            self.embed.description = data["description"]
+            thumbnail_url = data["thumbnail"]
+            if thumbnail_url:
+                self.embed.set_thumbnail(url=thumbnail_url)
+            image_url = data["image"]
+            if image_url:
+                self.embed.set_image(url=image_url)
+        if self.current == "color":
+            self.embed.colour = data["value"]
+        if self.current == "footer":
+            self.embed.set_footer(**data)
+        if self.current == "fields":
+            self.embed.add_field(**data)
+        self.embed.timestamp = discord.utils.utcnow()
+        return self.embed
 
     def disable_and_stop(self) -> None:
         for child in self.children:
