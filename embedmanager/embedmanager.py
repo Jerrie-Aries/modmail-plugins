@@ -212,14 +212,14 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Build embeds in an interactive mode using buttons and modal view.
         """
-        description = "Press the button below to start creating your embed."
+        description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
-            title="Embed Builder",
+            title="Embed Builder Panel",
             description=description,
             color=self.bot.main_color,
             timestamp=discord.utils.utcnow(),
         )
-        embed.set_footer(text="Note: This view will be automatically timed out after 10 minutes.")
+        embed.set_footer(text="This panel will time out after 10 minutes.")
         view = EmbedBuilderView(ctx.author)
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
