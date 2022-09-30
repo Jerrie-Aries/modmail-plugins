@@ -291,7 +291,7 @@ class EmbedBuilderView(View):
     def _add_menu(self) -> None:
         options = []
         placeholder = None
-        for key in self.input_map.keys():
+        for key in self.input_map:
             if key == self.current:
                 placeholder = key.title()
             option = discord.SelectOption(
