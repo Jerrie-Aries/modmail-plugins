@@ -216,6 +216,7 @@ class AnnouncementView(View):
         self.disable_and_stop()
 
     async def _action_no(self, interaction: Interaction) -> None:
+        self.confirm = False
         self.disable_and_stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
