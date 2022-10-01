@@ -52,7 +52,7 @@ def _set_globals(cog: EmbedManager) -> None:
     if not utils_cog:
         raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
 
-    global inline, human_join, paginate
+    global inline, paginate
 
     inline = utils_cog.chat_formatting["inline"]
     paginate = utils_cog.chat_formatting["paginate"]
