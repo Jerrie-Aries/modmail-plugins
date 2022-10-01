@@ -57,7 +57,6 @@ class Announcement(commands.Cog):
         __**Note:**__
         - If `channel` is not specified, to ensure cleaner output the creation message will automatically be deleted after the announcement is posted.
         """
-        # TODO: Support publish
         delete = False
         if channel is None:
             channel = ctx.channel
@@ -78,24 +77,37 @@ class Announcement(commands.Cog):
         )
         embed.set_footer(text="This panel will timeout after 10 minutes.")
         view.message = message = await ctx.send(embed=embed, view=view)
+        await announcement.wait()
+
+        if not announcement.posted:
+            await message.edit(view=view)
+            return
+
+        if delete:
+            view.stop()
+            await message.delete()
+            return
+
+        embed = message.embeds[0]
+        description = f"Announcement has been posted in {channel.mention}.\n\n"
+        if announcement.channel.type == discord.ChannelType.news:
+            description += "Would you like to publish the announcement?"
+            view.generate_buttons(confirm=True)
+        else:
+            view.stop()
+        embed.description = description
+        await message.edit(embed=embed, view=view)
+        if view.is_finished():
+            return
         await view.wait()
 
-        await message.edit(view=view)
-        if announcement.posted:
-            if delete:
-                await message.delete()
-            else:
-                description = f"Announcement has been posted in {channel.mention}.\n\n"
-                if announcement.channel.type == discord.ChannelType.news:
-                    description += (
-                        "To publish the announcement, use command:\n"
-                        f"```py\n{ctx.prefix}publish {announcement.channel.id}-{announcement.message.id}\n```"
-                    )
-                embed = discord.Embed(
-                    description=description,
-                    color=self.bot.main_color,
-                )
-                await ctx.send(embed=embed)
+        if view.confirm:
+            await announcement.publish()
+            embed.description = f"Successfully published this [announcement]({announcement.message.jump_url}) to all subscribed channels."
+        if view.confirm is not None:
+            view = None
+
+        await message.edit(embed=embed, view=view)
 
     @announce.command(name="quick")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)

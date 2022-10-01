@@ -1,3 +1,5 @@
+import asyncio
+
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -47,13 +49,30 @@ class AnnouncementModel:
     def __init__(self, ctx: commands.Context, channel: discord.TextChannel):
         self.ctx: commands.Context = ctx
         self.channel: discord.TextChannel = channel
+        self.event: asyncio.Event = asyncio.Event()
         self.ready: bool = False
-        self.posted: bool = False
 
         self.type: AnnouncementType = MISSING
         self.message: discord.Message = MISSING
         self.content: str = MISSING
         self.embed: discord.Embed = MISSING
+
+    @property
+    def posted(self) -> bool:
+        return self.event.is_set()
+
+    @posted.setter
+    def posted(self, flag: bool) -> None:
+        if flag:
+            self.event.set()
+        else:
+            self.event.clear()
+
+    async def wait(self) -> None:
+        try:
+            await self.event.wait()
+        except asyncio.CancelledError:
+            pass
 
     async def resolve_mentions(self) -> None:
         if not self.content:
@@ -108,3 +127,6 @@ class AnnouncementModel:
     async def post(self) -> None:
         self.message = await self.channel.send(**self.send_params())
         self.posted = True
+
+    async def publish(self) -> None:
+        await self.message.publish()

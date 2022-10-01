@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Union, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, TextStyle
@@ -94,6 +94,7 @@ class AnnouncementView(View):
         self.user: discord.Member = ctx.author
         self.message: discord.Message = MISSING
         self.announcement: AnnouncementModel = announcement
+        self.confirm: Optional[bool] = None
 
         self.content_data: Dict[str, Any] = {
             "label": "Content",
@@ -127,7 +128,7 @@ class AnnouncementView(View):
         self.input_map: Dict[str, Any] = {"content": self.content_data}
 
         self._add_menu()
-        self._generate_buttons()
+        self.generate_buttons()
         self.refresh()
 
     def _add_menu(self) -> None:
@@ -154,15 +155,20 @@ class AnnouncementView(View):
             options.append(option)
         self.add_item(DropdownMenu(options=options, row=0))
 
-    def _generate_buttons(self) -> None:
-        buttons: Dict[str, Any] = {
-            "post": (ButtonStyle.green, self._action_post),
-            "edit": (ButtonStyle.grey, self._action_edit),
-            "preview": (ButtonStyle.grey, self._action_preview),
-            "cancel": (ButtonStyle.red, self._action_cancel),
-        }
+    def generate_buttons(self, *, confirm: bool = False) -> None:
+        if confirm:
+            buttons = {
+                "yes": (ButtonStyle.green, self._action_yes),
+                "no": (ButtonStyle.red, self._action_no),
+            }
+        else:
+            buttons: Dict[str, Any] = {
+                "post": (ButtonStyle.green, self._action_post),
+                "edit": (ButtonStyle.grey, self._action_edit),
+                "preview": (ButtonStyle.grey, self._action_preview),
+                "cancel": (ButtonStyle.red, self._action_cancel),
+            }
         for label, item in buttons.items():
-            # `item` is a tuple of (ButtonStyle, callback)
             self.add_item(AnnouncementViewButton(label.title(), style=item[0], callback=item[1]))
 
     def refresh(self) -> None:
@@ -186,7 +192,7 @@ class AnnouncementView(View):
     async def _action_post(self, interaction: Interaction) -> None:
         await interaction.response.defer()
         await self.announcement.post()
-        self.disable_and_stop()
+        self.clear_items()
 
     async def _action_edit(self, interaction: Interaction) -> None:
         modal = AnnouncementModal(self, self.input_map)
@@ -201,9 +207,16 @@ class AnnouncementView(View):
             await interaction.response.send_message(error, ephemeral=True)
 
     async def _action_cancel(self, interaction: Interaction) -> None:
-        self.announcement.ready = False
+        self.announcement.posted = False
         self.disable_and_stop()
         await interaction.response.edit_message(view=self)
+
+    async def _action_yes(self, interaction: Interaction) -> None:
+        self.confirm = True
+        self.disable_and_stop()
+
+    async def _action_no(self, interaction: Interaction) -> None:
+        self.disable_and_stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
@@ -281,6 +294,6 @@ class AnnouncementView(View):
             self.stop()
 
     async def on_timeout(self) -> None:
-        self.announcement.ready = False
+        self.announcement.posted = False
         self.disable_and_stop()
         await self.message.edit(view=self)
