@@ -51,6 +51,7 @@ class AnnouncementModel:
         self.posted: bool = False
 
         self.type: AnnouncementType = MISSING
+        self.message: discord.Message = MISSING
         self.content: str = MISSING
         self.embed: discord.Embed = MISSING
 
@@ -105,5 +106,5 @@ class AnnouncementModel:
         return params
 
     async def post(self) -> None:
-        await self.channel.send(**self.send_params())
+        self.message = await self.channel.send(**self.send_params())
         self.posted = True

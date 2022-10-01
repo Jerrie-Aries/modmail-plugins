@@ -62,6 +62,10 @@ class Announcement(commands.Cog):
         if channel is None:
             channel = ctx.channel
             delete = True
+            try:
+                await ctx.message.delete()
+            except discord.Forbidden:
+                logger.warning(f"Missing `Manage Messages` permission in {channel} channel.")
 
         announcement = AnnouncementModel(ctx, channel)
         view = AnnouncementView(ctx, announcement)
@@ -73,19 +77,25 @@ class Announcement(commands.Cog):
             "- **Embed** : Embedded announcement. Image and thumbnail image are also supported."
         )
         embed.set_footer(text="This panel will timeout after 10 minutes.")
-        view.message = await ctx.send(embed=embed, view=view)
+        view.message = message = await ctx.send(embed=embed, view=view)
         await view.wait()
 
-        await view.message.edit(view=view)
+        await message.edit(view=view)
         if announcement.posted:
             if delete:
-                try:
-                    await ctx.message.delete()
-                except discord.Forbidden:
-                    pass
-                await view.message.delete()
+                await message.delete()
             else:
-                await ctx.send(f"Announcement has been posted in {channel.mention}.")
+                description = f"Announcement has been posted in {channel.mention}.\n\n"
+                if announcement.channel.type == discord.ChannelType.news:
+                    description += (
+                        "To publish the announcement, use command:\n"
+                        f"```py\n{ctx.prefix}publish {announcement.channel.id}-{announcement.message.id}\n```"
+                    )
+                embed = discord.Embed(
+                    description=description,
+                    color=self.bot.main_color,
+                )
+                await ctx.send(embed=embed)
 
     @announce.command(name="quick")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -96,6 +106,31 @@ class Announcement(commands.Cog):
         `channel` may be a channel ID, mention, or name.
         """
         await channel.send(content)
+
+    @commands.command()
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def publish(self, ctx: commands.Context, *, message: discord.Message):
+        """
+        Publish a message from announcement channel to all subscribed channels.
+
+        `message` may be a message ID, format of `channel ID-message ID`, or message link.
+
+        __**Notes:**__
+        - If message ID is provided (without channel ID and not the message link), the bot will only look for the message in the current channel.
+        - Only messages in [announcement](https://support.discord.com/hc/en-us/articles/360032008192-Announcement-Channels) channels can be published.
+        """
+        channel = message.channel
+        if not channel.type == discord.ChannelType.news:
+            raise commands.BadArgument(f"Channel {channel.mention} is not an announcement channel.")
+        if message.flags.crossposted:
+            raise commands.BadArgument(f"Message `{message.id}` is already published.")
+
+        await message.publish()
+        embed = discord.Embed(
+            description=f"Successfully published this [message]({message.jump_url}) to all subscribed channels.",
+            color=self.bot.main_color,
+        )
+        await ctx.reply(embed=embed)
 
 
 async def setup(bot: ModmailBot) -> None:
