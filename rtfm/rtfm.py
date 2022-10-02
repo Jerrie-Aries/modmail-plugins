@@ -7,16 +7,13 @@ import zlib
 from typing import Dict, Iterator, Optional, TYPE_CHECKING
 
 import discord
+from discord.ext import commands
 
 from core import checks
-
-# <!-- Developer -->
-from discord.ext import commands
 from core.models import PermissionLevel
 
-# <!-- --------- -->
-
 from .core.utils import finder
+
 
 if TYPE_CHECKING:
     from bot import ModmailBot

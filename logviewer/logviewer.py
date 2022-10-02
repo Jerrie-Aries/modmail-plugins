@@ -8,18 +8,14 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from discord.ext import commands
 from discord.utils import MISSING
 
 from core import checks
+from core.models import getLogger, PermissionLevel
 from core.utils import strtobool
 
 from .core.servers import LogviewerServer
-
-# <!-- Developer -->
-from discord.ext import commands
-from core.models import getLogger, PermissionLevel
-
-# <-- ----- -->
 
 
 if TYPE_CHECKING:

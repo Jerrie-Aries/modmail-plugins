@@ -7,17 +7,13 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import discord
+from discord.ext import commands
 
 from core import checks
+from core.models import getLogger, PermissionLevel
 
 from .core.ur_client import UptimeRobotAPIClient
 from .core.web_server import KeepAliveServer
-
-# <!-- Developer -->
-from discord.ext import commands
-from core.models import getLogger, PermissionLevel
-
-# <-- ----- -->
 
 
 if TYPE_CHECKING:
