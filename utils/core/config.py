@@ -3,11 +3,7 @@ from __future__ import annotations
 import copy as copylib
 from typing import Any, Dict, ItemsView, List, TypeVar, Union, TYPE_CHECKING
 
-
-# <!-- Developer -->
 from discord.ext import commands
-
-# <-- ----- -->
 
 
 if TYPE_CHECKING:

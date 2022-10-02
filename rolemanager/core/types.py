@@ -4,30 +4,30 @@ from typing import Dict, List, TypedDict, Optional
 import discord
 
 
-class ReactRoleConfigRaw(TypedDict):
+class ReactRolePayload(TypedDict):
     message: int
     channel: int
-    emoji_role_groups: Dict[str, int]
+    binds: Dict[str, int]
     rules: str
 
 
-MessageCacheRaw = Dict[str, ReactRoleConfigRaw]
+MessageCachePayload = Dict[str, ReactRolePayload]
 
 
-class ReactRoleGlobalRaw(TypedDict):
-    message_cache: MessageCacheRaw
+class ReactRoleConfigPayload(TypedDict):
+    message_cache: MessageCachePayload
     channels: List[int]
-    enabled: bool
+    enable: bool
 
 
-class AutoRoleConfigRaw(TypedDict):
+class AutoRoleConfigPayload(TypedDict):
     roles: List[int]
-    enabled: bool
+    enable: bool
 
 
-class DefaultConfigRaw(TypedDict):
-    reactroles: ReactRoleGlobalRaw
-    autorole: AutoRoleConfigRaw
+class ConfigPayload(TypedDict):
+    reactroles: ReactRoleConfigPayload
+    autoroles: AutoRoleConfigPayload
 
 
 _ArgsRawUserName = TypedDict(
