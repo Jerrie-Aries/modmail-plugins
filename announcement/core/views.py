@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
@@ -155,8 +156,8 @@ class AnnouncementView(View):
             options.append(option)
         self.add_item(DropdownMenu(options=options, row=0))
 
-    def generate_buttons(self, *, confirm: bool = False) -> None:
-        if confirm:
+    def generate_buttons(self, *, confirmation: bool = False) -> None:
+        if confirmation:
             buttons = {
                 "yes": (ButtonStyle.green, self._action_yes),
                 "no": (ButtonStyle.red, self._action_no),
@@ -212,10 +213,12 @@ class AnnouncementView(View):
         await interaction.response.edit_message(view=self)
 
     async def _action_yes(self, interaction: Interaction) -> None:
+        await interaction.response.defer()
         self.confirm = True
         self.disable_and_stop()
 
     async def _action_no(self, interaction: Interaction) -> None:
+        await interaction.response.defer()
         self.confirm = False
         self.disable_and_stop()
 
@@ -287,6 +290,15 @@ class AnnouncementView(View):
         else:
             self.announcement.ready = True
         await self.update_view()
+
+    async def wait(self, *, input_event: bool = False) -> None:
+        if input_event:
+            try:
+                await self.announcement.wait()
+            except asyncio.CancelledError:
+                pass
+        else:
+            await super().wait()
 
     def disable_and_stop(self) -> None:
         for child in self.children:

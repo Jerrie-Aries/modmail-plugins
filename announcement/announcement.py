@@ -44,13 +44,13 @@ class Announcement(commands.Cog):
         """
         await ctx.send_help(ctx.command)
 
-    @announce.command(name="start", aliases=["create"])
+    @announce.command(name="create", aliases=["start"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def announce_start(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
+    async def announce_create(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
         """
         Post an announcement in a channel specified.
 
-        This will initiate a announcement creation panel where you can choose and customise the output of the announcement.
+        This will initiate a creation panel where you can choose and customise the output of the announcement.
 
         `channel` if specified may be a channel ID, mention, or name. Otherwise, fallbacks to current channel.
 
@@ -77,7 +77,7 @@ class Announcement(commands.Cog):
         )
         embed.set_footer(text="This panel will timeout after 10 minutes.")
         view.message = message = await ctx.send(embed=embed, view=view)
-        await announcement.wait()
+        await view.wait(input_event=True)
 
         if not announcement.posted:
             await message.edit(view=view)
@@ -91,20 +91,28 @@ class Announcement(commands.Cog):
         embed = message.embeds[0]
         description = f"Announcement has been posted in {channel.mention}.\n\n"
         if announcement.channel.type == discord.ChannelType.news:
-            description += "Would you like to publish the announcement?"
-            view.generate_buttons(confirm=True)
+            description += "Would you like to publish this announcement?\n\n"
+            view.generate_buttons(confirmation=True)
         else:
             view.stop()
+
         embed.description = description
         await message.edit(embed=embed, view=view)
         if view.is_finished():
             return
+
         await view.wait()
 
+        hyper_link = f"[announcement]({announcement.message.jump_url})"
         if view.confirm:
             await announcement.publish()
-            embed.description = f"Successfully published this [announcement]({announcement.message.jump_url}) to all subscribed channels."
+            embed.description = f"Successfully published this {hyper_link} to all subscribed channels.\n\n"
         if view.confirm is not None:
+            if not view.confirm:
+                embed.description += (
+                    f"To manually publish this {hyper_link}, use command:\n"
+                    f"```\n{ctx.prefix}publish {announcement.channel.id}-{announcement.message.id}\n```"
+                )
             view = None
 
         await message.edit(embed=embed, view=view)
