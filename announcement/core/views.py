@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
@@ -293,10 +292,7 @@ class AnnouncementView(View):
 
     async def wait(self, *, input_event: bool = False) -> None:
         if input_event:
-            try:
-                await self.announcement.wait()
-            except asyncio.CancelledError:
-                pass
+            await self.announcement.wait()
         else:
             await super().wait()
 
