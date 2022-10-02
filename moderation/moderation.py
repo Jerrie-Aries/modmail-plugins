@@ -17,21 +17,17 @@ from typing import (
 )
 
 import discord
+from discord.ext import commands
 from discord.utils import MISSING
 
 from core import checks
+from core.models import getLogger, PermissionLevel
+from core.paginator import EmbedPaginatorSession
+from core.time import UserFriendlyTime
 
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.utils import parse_delete_message_days
-
-# <!-- Developer -->
-from discord.ext import commands
-from core.models import getLogger, PermissionLevel
-from core.time import UserFriendlyTime
-from core.paginator import EmbedPaginatorSession
-
-# <-- ----- -->
 
 
 if TYPE_CHECKING:

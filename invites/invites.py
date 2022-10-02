@@ -2,22 +2,17 @@ from __future__ import annotations
 
 import json
 
-from pathlib import Path
-
-import discord
-
 from datetime import datetime
-from discord.utils import MISSING
+from pathlib import Path
 from typing import Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
 
-from core import checks
-
-# <!-- Developer -->
+import discord
 from discord.ext import commands
+from discord.utils import MISSING
+
+from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
-
-# <!-- ----- -->
 
 
 if TYPE_CHECKING:

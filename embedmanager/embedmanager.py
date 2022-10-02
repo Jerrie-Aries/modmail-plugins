@@ -6,9 +6,12 @@ from pathlib import Path
 from typing import Dict, Optional, TYPE_CHECKING
 
 import discord
+from discord.ext import commands
 from discord.utils import MISSING
 
 from core import checks
+from core.models import PermissionLevel
+from core.paginator import EmbedPaginatorSession
 from core.utils import human_join
 
 from .core.builder import EmbedBuilderView
@@ -19,12 +22,6 @@ from .core.converters import (
     StringToEmbed,
 )
 
-# <!-- Developer -->
-from discord.ext import commands
-from core.paginator import EmbedPaginatorSession
-from core.models import PermissionLevel
-
-# <!-- ----- -->
 
 if TYPE_CHECKING:
     from .motor.motor_asyncio import AsyncIOMotorCollection

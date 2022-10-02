@@ -7,19 +7,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import discord
+from discord.ext import commands
+from discord.utils import MISSING
 
 from core import checks
+from core.models import getLogger, PermissionLevel
+from core.paginator import EmbedPaginatorSession, MessagePaginatorSession
 
 from .core.session import TriviaSession
 from .core.checks import trivia_stop_check
 
-# <!-- Developer -->
-from discord.ext import commands
-from discord.utils import MISSING
-from core.models import getLogger, PermissionLevel
-from core.paginator import EmbedPaginatorSession, MessagePaginatorSession
-
-# <-- ----- -->
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
