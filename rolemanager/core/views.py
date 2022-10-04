@@ -1,0 +1,389 @@
+from __future__ import annotations
+
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+
+import discord
+from discord import ButtonStyle, Interaction, TextStyle
+from discord.ext import commands
+from discord.ui import Button, Modal, Select, TextInput, View
+from discord.utils import MISSING
+
+from core.models import getLogger
+
+from .converters import AssignableRole, UnionEmoji
+
+
+if TYPE_CHECKING:
+    from ..rolemanager import RoleManager
+
+    ButtonCallbackT = Callable[[Union[Interaction, Any]], Awaitable]
+
+logger = getLogger(__name__)
+
+_max_embed_length = 6000
+_button_label_length = 80
+_short_length = 256
+_long_length = 4000
+
+_button_colors = {
+    "blurple": ButtonStyle.blurple,
+    "green": ButtonStyle.green,
+    "grey": ButtonStyle.grey,
+    "red": ButtonStyle.red,
+}
+
+
+class RoleManagerTextInput(TextInput):
+    def __init__(self, name: str, **kwargs):
+        self.name: str = name
+        super().__init__(**kwargs)
+
+
+class RoleManagerModal(Modal):
+
+    children: List[RoleManagerTextInput]
+
+    def __init__(self, view: RoleManagerView, options: Dict[str, Any]):
+        super().__init__(title="Reaction Role")
+        self.view = view
+        for key, value in options.items():
+            self.add_item(RoleManagerTextInput(key, **value))
+
+    async def on_submit(self, interaction: Interaction) -> None:
+        for child in self.children:
+            value = child.value
+            if not value:
+                # resolve empty string value
+                value = None
+            self.view.current_input[child.name] = value
+        self.view.current_input["converted"] = False
+
+        await interaction.response.defer()
+        self.stop()
+        await self.view.on_modal_submit(interaction)
+
+
+class DropdownMenu(Select):
+    def __init__(self, category: str, *, options: List[discord.SelectOption], **kwargs):
+        self.category: str = category
+        placeholder = kwargs.pop("placeholder", "Choose option")
+        self.after_callback = kwargs.pop("callback")
+        super().__init__(
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            options=options,
+            **kwargs,
+        )
+
+    async def callback(self, interaction: Interaction) -> None:
+        await interaction.response.defer()
+        assert self.view is not None
+        option = self.get_option(self.values[0])
+        await self.after_callback(interaction, self, option)
+
+    def get_option(self, value: str) -> discord.SelectOption:
+        for option in self.options:
+            if value == option.value:
+                return option
+        raise ValueError(f"Cannot find select option with value of `{value}`.")
+
+
+class RoleManagerViewButton(Button["RoleManagerView"]):
+    def __init__(
+        self,
+        label: str,
+        *,
+        style: ButtonStyle = ButtonStyle.blurple,
+        callback: ButtonCallbackT = MISSING,
+        **kwargs,
+    ):
+        super().__init__(label=label, style=style, **kwargs)
+        self.callback_override: ButtonCallbackT = callback
+
+    async def callback(self, interaction: Interaction):
+        assert self.view is not None
+        await self.callback_override(interaction)
+
+
+class RoleManagerView(View):
+
+    children: List[RoleManagerViewButton]
+
+    def __init__(self, ctx: commands.Context, *, timeout: float = 600.0):
+        super().__init__(timeout=timeout)
+        self.ctx: commands.Context = ctx
+        self.user: discord.Member = ctx.author
+        self.cog: RoleManager = ctx.cog
+        self.message: discord.Message = MISSING
+
+        self._initialize()
+        self.refresh()
+
+    def _initialize(self) -> None:
+        """
+        Should be overridden by subclasses.
+        """
+        pass
+
+    def refresh(self) -> None:
+        pass
+
+    async def update_view(self) -> None:
+        self.refresh()
+        await self.message.edit(embed=self.message.embeds[0], view=self)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if self.user.id == interaction.user.id:
+            return True
+        await interaction.response.send_message(
+            "This panel cannot be controlled by you!",
+            ephemeral=True,
+        )
+        return False
+
+    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
+        logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
+
+    def disable_and_stop(self) -> None:
+        for child in self.children:
+            child.disabled = True
+        if not self.is_finished():
+            self.stop()
+
+    async def on_timeout(self) -> None:
+        self.disable_and_stop()
+        if self.message:
+            await self.message.edit(view=self)
+
+
+class ReactionRoleCreationPanel(RoleManagerView):
+    def __init__(
+        self,
+        ctx: commands.Context,
+        *,
+        input_sessions: List[Tuple[[str, Any]]],
+        rule: str = MISSING,
+        binds: Dict[str, Any] = MISSING,
+    ):
+        self.input_sessions: List[Tuple[[str, Any]]] = input_sessions
+        self.current_input: Dict[str, Any] = {}  # keys would be emoji, label, role, color
+        self.current_index: int = 0
+        self.rule: Optional[str] = rule
+        self.embed: discord.Embed = discord.Embed(color=ctx.bot.main_color)
+        self.binds: Dict[str, Any] = binds if binds else {}
+        super().__init__(ctx)
+
+    def _initialize(self) -> None:
+        self.add_menu()
+        self.add_buttons()
+
+    def add_menu(self) -> None:
+        options = []
+        if self.session_key == "rule":
+            attrs = {
+                "normal": "Allow users to have multiple roles in group.",
+                "unique": "Remove existing role when assigning another role in group.",
+            }
+            category = "rule"
+            placeholder = "Choose a rule"
+        elif self.session_key == "bind":
+            attrs = {
+                "blurple": None,
+                "green": None,
+                "red": None,
+                "grey": None,
+            }
+            category = "color"
+            placeholder = "Choose a color"
+        else:
+            raise KeyError(f"Session key `{self.session_key}` is not recognized for menu.")
+        for key, value in attrs.items():
+            option = discord.SelectOption(label=key.title(), description=value, value=key)
+            options.append(option)
+        self.add_item(
+            DropdownMenu(
+                category, options=options, row=0, placeholder=placeholder, callback=self.on_dropdown_select
+            )
+        )
+
+    def add_buttons(self) -> None:
+        if self.session_key == "bind":
+            config_buttons = {
+                "add": self._action_add,
+                "edit": self._action_edit,
+                "clear": self._action_clear,
+            }
+            for label, callback in config_buttons.items():
+                if label in ("title", "add"):
+                    style = ButtonStyle.blurple
+                else:
+                    style = ButtonStyle.grey
+                self.add_item(RoleManagerViewButton(label.title(), style=style, callback=callback, row=3))
+
+        ret_buttons: Dict[str, Any] = {
+            "done": (ButtonStyle.green, self._action_done),
+            "preview": (ButtonStyle.grey, self._action_preview),
+            "cancel": (ButtonStyle.red, self._action_cancel),
+        }
+        for label, item in ret_buttons.items():
+            self.add_item(RoleManagerViewButton(label.title(), style=item[0], callback=item[1], row=4))
+
+    def refresh(self) -> None:
+        for child in self.children:
+            if not isinstance(child, RoleManagerViewButton):
+                continue
+            label = child.label.lower()
+            if label == "cancel":
+                continue
+            if not self.rule:
+                child.disabled = True
+                continue
+            if label in ("done", "clear"):
+                child.disabled = len(self.binds) < 1
+            elif label == "preview":
+                child.disabled = len(self.embed) < 1
+            elif label == "add":
+                child.disabled = not self.current_input.get("converted", False)
+            else:
+                child.disabled = False
+
+    @property
+    def session_key(self) -> str:
+        return self.input_sessions[self.current_index]["key"]
+
+    @property
+    def session_description(self) -> str:
+        return self.input_sessions[self.current_index]["description"]
+
+    async def _action_add(self, interaction: Interaction) -> None:
+        role = self.current_input.pop("role")
+        self.binds[str(role.id)] = {
+            "emoji": self.current_input.pop("emoji"),
+            "label": self.current_input.pop("label"),
+            "color": self.current_input.pop("color", ButtonStyle.blurple),
+        }
+        self.current_input.clear()
+        await interaction.response.send_message(str(self.binds), ephemeral=True)
+        self.clear_items()
+        self.add_menu()
+        self.add_buttons()
+        await self.update_view()
+
+    async def _action_edit(self, interaction: Interaction) -> None:
+        options = {
+            "emoji": {
+                "label": "Emoji",
+                "required": False,
+                "max_length": _short_length,
+            },
+            "label": {
+                "label": "Label",
+                "required": False,
+                "max_length": _button_label_length,
+            },
+            "role": {
+                "label": "Role",
+                "max_length": _short_length,
+            },
+        }
+        modal = RoleManagerModal(self, options)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+
+    async def _action_clear(self, interaction: Interaction) -> None:
+        await interaction.response.defer()
+        self.binds.clear()
+        await self.update_view()
+
+    async def _action_preview(self, interaction: Interaction) -> None:
+        buttons = []
+        for key, value in self.binds.items():
+            button = Button(
+                label=value["label"],
+                emoji=value["emoji"],
+                style=value["color"],
+                custom_id=key,
+            )
+            buttons.append(button)
+        if self.current_input.get("converted", False):
+            button = Button(
+                label=self.current_input["label"],
+                emoji=self.current_input["emoji"],
+                style=self.current_input.get("color", ButtonStyle.blurple),
+                custom_id=str(self.current_input["role"].id),
+            )
+            buttons.append(button)
+        if buttons:
+            view = RoleManagerView(self.ctx, timeout=10)
+            for button in buttons:
+                view.add_item(button)
+        else:
+            view = MISSING
+        try:
+            await interaction.response.send_message(embed=self.embed, view=view, ephemeral=True)
+        except discord.HTTPException as exc:
+            error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
+            await interaction.response.send_message(error, ephemeral=True)
+
+    async def _action_done(self, interaction: Interaction) -> None:
+        await interaction.response.defer()
+
+    async def _action_cancel(self, interaction: Interaction) -> None:
+        self.current_input.clear()
+        self.binds.clear()
+        self.disable_and_stop()
+        await interaction.response.edit_message(view=self)
+
+    async def on_dropdown_select(
+        self,
+        interaction: Interaction,
+        select: DropdownMenu,
+        option: discord.SelectOption,
+    ) -> None:
+        select.placeholder = option.label
+        category = select.category
+        if category == "rule":
+            select.disabled = True
+            self.rule = option.value
+            self.current_index += 1
+            embed = self.message.embeds[0]
+            embed.description = self.session_description
+            self.clear_items()
+            self.add_menu()
+            self.add_buttons()
+        elif category == "color":
+            self.current_input["color"] = _button_colors.get(option.value)
+        else:
+            raise KeyError(f"Category `{category}` is invalid for `on_dropdown_select` method.")
+        await self.update_view()
+
+    async def on_modal_submit(self, interaction: Interaction) -> None:
+        if self.session_key != "bind":
+            raise KeyError(
+                f"Session key `{self.session_key}` is not recognized for `on_modal_submit` method."
+            )
+        converters = {
+            "emoji": UnionEmoji,
+            "role": AssignableRole,
+        }
+        errors = []
+        converted = {}
+        for key, value in self.current_input.items():
+            conv = converters.get(key)
+            if conv is None or value is None:
+                converted[key] = value
+                continue
+            try:
+                entity = await conv().convert(self.ctx, value)
+            except Exception as exc:
+                errors.append(f"{key.title()} error:\n{type(exc).__name__} - {str(exc)}")
+            else:
+                converted[key] = entity
+        if errors:
+            for error in errors:
+                await interaction.followup.send(error, ephemeral=True)
+        else:
+            self.current_input = converted
+            self.current_input["converted"] = True
+        await self.update_view()
