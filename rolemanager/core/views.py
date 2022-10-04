@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import discord
-from discord import ButtonStyle, Interaction, TextStyle
+from discord import ButtonStyle, Interaction
 from discord.ext import commands
 from discord.ui import Button, Modal, Select, TextInput, View
 from discord.utils import MISSING
@@ -11,10 +11,12 @@ from discord.utils import MISSING
 from core.models import getLogger
 
 from .converters import AssignableRole, UnionEmoji
+from .utils import error_embed
 
 
 if TYPE_CHECKING:
     from ..rolemanager import RoleManager
+    from .models import ReactionRole
 
     ButtonCallbackT = Callable[[Union[Interaction, Any]], Awaitable]
 
@@ -25,12 +27,12 @@ _button_label_length = 80
 _short_length = 256
 _long_length = 4000
 
-_button_colors = {
-    "blurple": ButtonStyle.blurple,
-    "green": ButtonStyle.green,
-    "grey": ButtonStyle.grey,
-    "red": ButtonStyle.red,
-}
+
+def _resolve_button_style(value: str) -> ButtonStyle:
+    try:
+        return ButtonStyle[value]
+    except (KeyError, TypeError):
+        return ButtonStyle.blurple
 
 
 class RoleManagerTextInput(TextInput):
@@ -62,6 +64,9 @@ class RoleManagerModal(Modal):
         self.stop()
         await self.view.on_modal_submit(interaction)
 
+    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
+        logger.error("Ignoring exception in modal %r for item %r", self, item, exc_info=error)
+
 
 class DropdownMenu(Select):
     def __init__(self, category: str, *, options: List[discord.SelectOption], **kwargs):
@@ -89,7 +94,7 @@ class DropdownMenu(Select):
         raise ValueError(f"Cannot find select option with value of `{value}`.")
 
 
-class RoleManagerViewButton(Button["RoleManagerView"]):
+class RoleManagerButton(Button["RoleManagerView"]):
     def __init__(
         self,
         label: str,
@@ -101,14 +106,14 @@ class RoleManagerViewButton(Button["RoleManagerView"]):
         super().__init__(label=label, style=style, **kwargs)
         self.callback_override: ButtonCallbackT = callback
 
-    async def callback(self, interaction: Interaction):
+    async def callback(self, interaction: Interaction) -> None:
         assert self.view is not None
-        await self.callback_override(interaction)
+        await self.callback_override(interaction, self)
 
 
 class RoleManagerView(View):
 
-    children: List[RoleManagerViewButton]
+    children: List[RoleManagerButton]
 
     def __init__(self, ctx: commands.Context, *, timeout: float = 600.0):
         super().__init__(timeout=timeout)
@@ -116,18 +121,6 @@ class RoleManagerView(View):
         self.user: discord.Member = ctx.author
         self.cog: RoleManager = ctx.cog
         self.message: discord.Message = MISSING
-
-        self._initialize()
-        self.refresh()
-
-    def _initialize(self) -> None:
-        """
-        Should be overridden by subclasses.
-        """
-        pass
-
-    def refresh(self) -> None:
-        pass
 
     async def update_view(self) -> None:
         self.refresh()
@@ -171,12 +164,12 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.current_index: int = 0
         self.rule: Optional[str] = rule
         self.embed: discord.Embed = discord.Embed(color=ctx.bot.main_color)
+        self.original_output_description: str = MISSING
         self.binds: Dict[str, Any] = binds if binds else {}
         super().__init__(ctx)
-
-    def _initialize(self) -> None:
         self.add_menu()
         self.add_buttons()
+        self.refresh()
 
     def add_menu(self) -> None:
         options = []
@@ -194,8 +187,8 @@ class ReactionRoleCreationPanel(RoleManagerView):
                 "red": None,
                 "grey": None,
             }
-            category = "color"
-            placeholder = "Choose a color"
+            category = "style"
+            placeholder = "Choose a color style"
         else:
             raise KeyError(f"Session key `{self.session_key}` is not recognized for menu.")
         for key, value in attrs.items():
@@ -211,7 +204,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         if self.session_key == "bind":
             config_buttons = {
                 "add": self._action_add,
-                "edit": self._action_edit,
+                "set": self._action_set,
                 "clear": self._action_clear,
             }
             for label, callback in config_buttons.items():
@@ -219,7 +212,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
                     style = ButtonStyle.blurple
                 else:
                     style = ButtonStyle.grey
-                self.add_item(RoleManagerViewButton(label.title(), style=style, callback=callback, row=3))
+                self.add_item(RoleManagerButton(label.title(), style=style, callback=callback, row=3))
 
         ret_buttons: Dict[str, Any] = {
             "done": (ButtonStyle.green, self._action_done),
@@ -227,11 +220,11 @@ class ReactionRoleCreationPanel(RoleManagerView):
             "cancel": (ButtonStyle.red, self._action_cancel),
         }
         for label, item in ret_buttons.items():
-            self.add_item(RoleManagerViewButton(label.title(), style=item[0], callback=item[1], row=4))
+            self.add_item(RoleManagerButton(label.title(), style=item[0], callback=item[1], row=4))
 
     def refresh(self) -> None:
         for child in self.children:
-            if not isinstance(child, RoleManagerViewButton):
+            if not isinstance(child, RoleManagerButton):
                 continue
             label = child.label.lower()
             if label == "cancel":
@@ -256,21 +249,51 @@ class ReactionRoleCreationPanel(RoleManagerView):
     def session_description(self) -> str:
         return self.input_sessions[self.current_index]["description"]
 
-    async def _action_add(self, interaction: Interaction) -> None:
+    def _parse_output_description(self, *, buttons: List[Button] = None) -> str:
+        desc = self.original_output_description
+        if not buttons:
+            return desc
+        for button in buttons:
+            prefix = f"{str(button.emoji)} " if button.emoji else ""
+            desc += f"> **{prefix}{button.label}** - <@&{button.custom_id}>\n"
+        return desc
+
+    def get_output_buttons(self) -> List[Button]:
+        buttons = []
+        for key, value in self.binds.items():
+            button = Button(
+                label=value["label"],
+                emoji=value["emoji"],
+                style=_resolve_button_style(value["style"]),
+                custom_id=key,
+            )
+            buttons.append(button)
+        if self.current_input.get("converted", False):
+            button = Button(
+                label=self.current_input["label"],
+                emoji=self.current_input["emoji"],
+                style=_resolve_button_style(self.current_input.get("style")),
+                custom_id=str(self.current_input["role"].id),
+            )
+            buttons.append(button)
+        return buttons
+
+    async def _action_add(self, interaction: Interaction, *args) -> None:
+        # need to store raw inputs for the database later
         role = self.current_input.pop("role")
         self.binds[str(role.id)] = {
             "emoji": self.current_input.pop("emoji"),
             "label": self.current_input.pop("label"),
-            "color": self.current_input.pop("color", ButtonStyle.blurple),
+            "style": self.current_input.pop("style", "blurple"),
         }
         self.current_input.clear()
-        await interaction.response.send_message(str(self.binds), ephemeral=True)
+        await interaction.response.send_message(f"Added role {role.mention}.", ephemeral=True)
         self.clear_items()
         self.add_menu()
         self.add_buttons()
         await self.update_view()
 
-    async def _action_edit(self, interaction: Interaction) -> None:
+    async def _action_set(self, interaction: Interaction, *args) -> None:
         options = {
             "emoji": {
                 "label": "Emoji",
@@ -291,45 +314,36 @@ class ReactionRoleCreationPanel(RoleManagerView):
         await interaction.response.send_modal(modal)
         await modal.wait()
 
-    async def _action_clear(self, interaction: Interaction) -> None:
+    async def _action_clear(self, interaction: Interaction, *args) -> None:
         await interaction.response.defer()
         self.binds.clear()
         await self.update_view()
 
-    async def _action_preview(self, interaction: Interaction) -> None:
-        buttons = []
-        for key, value in self.binds.items():
-            button = Button(
-                label=value["label"],
-                emoji=value["emoji"],
-                style=value["color"],
-                custom_id=key,
-            )
-            buttons.append(button)
-        if self.current_input.get("converted", False):
-            button = Button(
-                label=self.current_input["label"],
-                emoji=self.current_input["emoji"],
-                style=self.current_input.get("color", ButtonStyle.blurple),
-                custom_id=str(self.current_input["role"].id),
-            )
-            buttons.append(button)
+    async def _action_preview(self, interaction: Interaction, *args) -> None:
+        buttons = self.get_output_buttons()
         if buttons:
             view = RoleManagerView(self.ctx, timeout=10)
             for button in buttons:
                 view.add_item(button)
         else:
             view = MISSING
+
+        self.embed.description = self._parse_output_description(buttons=buttons)
         try:
             await interaction.response.send_message(embed=self.embed, view=view, ephemeral=True)
         except discord.HTTPException as exc:
-            error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
-            await interaction.response.send_message(error, ephemeral=True)
+            description = f"```py\n{type(exc).__name__}: {str(exc)}\n```"
+            embed = error_embed(self.ctx.bot, description=description)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def _action_done(self, interaction: Interaction) -> None:
+    async def _action_done(self, interaction: Interaction, *args) -> None:
         await interaction.response.defer()
+        self.current_index += 1
+        self.embed.description = self._parse_output_description(buttons=self.get_output_buttons())
+        self.clear_items()
+        self.stop()
 
-    async def _action_cancel(self, interaction: Interaction) -> None:
+    async def _action_cancel(self, interaction: Interaction, *args) -> None:
         self.current_input.clear()
         self.binds.clear()
         self.disable_and_stop()
@@ -352,8 +366,8 @@ class ReactionRoleCreationPanel(RoleManagerView):
             self.clear_items()
             self.add_menu()
             self.add_buttons()
-        elif category == "color":
-            self.current_input["color"] = _button_colors.get(option.value)
+        elif category == "style":
+            self.current_input["style"] = option.value
         else:
             raise KeyError(f"Category `{category}` is invalid for `on_dropdown_select` method.")
         await self.update_view()
@@ -368,22 +382,76 @@ class ReactionRoleCreationPanel(RoleManagerView):
             "role": AssignableRole,
         }
         errors = []
-        converted = {}
+        if self.current_input["emoji"] is None and self.current_input["label"] is None:
+            errors.append("ValueError: Emoji and Label cannot both be None.")
+
+        ret = {}
         for key, value in self.current_input.items():
             conv = converters.get(key)
             if conv is None or value is None:
-                converted[key] = value
+                ret[key] = value
                 continue
             try:
                 entity = await conv().convert(self.ctx, value)
             except Exception as exc:
-                errors.append(f"{key.title()} error:\n{type(exc).__name__} - {str(exc)}")
+                errors.append(f"{key.title()} error: {type(exc).__name__} - {str(exc)}")
             else:
-                converted[key] = entity
+                if isinstance(entity, discord.Role) and str(entity.id) in self.binds:
+                    errors.append(f"Duplicate role ID: `{entity.id}`. Please set other role.")
+                ret[key] = entity
+
         if errors:
-            for error in errors:
-                await interaction.followup.send(error, ephemeral=True)
+            content = "\n".join(f"{n}. {error}" for n, error in enumerate(errors, start=1))
+            embed = error_embed(self.ctx.bot, description=content)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            self.current_input = converted
+            self.current_input = ret
             self.current_input["converted"] = True
         await self.update_view()
+
+
+class ReactionRoleButton(Button["ReactionRoleView"]):
+    def __init__(
+        self,
+        label: str,
+        *,
+        style: ButtonStyle = ButtonStyle.blurple,
+        callback: ButtonCallbackT = MISSING,
+        **kwargs,
+    ):
+        super().__init__(label=label, style=style, **kwargs)
+        self.callback_override: ButtonCallbackT = callback
+
+    async def callback(self, interaction: Interaction) -> None:
+        assert self.view is not None
+        await self.callback_override(interaction, self)
+
+
+class ReactionRoleView(View):
+
+    children: List[RoleManagerButton]
+
+    def __init__(self, cog: RoleManager, message: discord.Message, *, binds: Dict[str, Any]):
+        super().__init__(timeout=None)
+        self.cog: RoleManager = cog
+        self.binds: Dict[str, Any] = binds
+        self.message: discord.Message = message
+        self.model: ReactionRole = MISSING
+
+        for key, value in self.binds.items():
+            button = ReactionRoleButton(
+                label=value["label"],
+                emoji=value["emoji"],
+                style=_resolve_button_style(value["style"]),
+                callback=self.handle_interaction,
+                custom_id=f"reactrole:{self.message.id}-{key}",
+            )
+            self.add_item(button)
+
+    async def handle_interaction(self, interaction: Interaction, button: ReactionRoleButton) -> None:
+        role = self.message.guild.get_role(int(button.custom_id.split("-")[-1]))
+        await interaction.response.send_message(f"{role.mention}", ephemeral=True)
+        # TODO: do actual things
+
+    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
+        logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)

@@ -102,8 +102,9 @@ class ReactionRole:
     ----------
     message : Union[discord.PartialMessage, discord.Message]
         The message where the reactions are attached to.
-    binds : Dict[str, str]
-        Emoji role mapping.
+    binds : Dict[str, Any]
+        Role button mapping. Key would be role ID and value would be a dicttionary
+        of button values.
     rules : str
         The rules applied for the reactions.
     """
@@ -117,8 +118,9 @@ class ReactionRole:
     ):
         self.message: Union[discord.PartialMessage, discord.Message] = message
         self.channel: discord.TextChannel = message.channel
-        self.binds: Dict[str, str] = binds
+        self.binds: Dict[str, Any] = binds
         self.rules: str = rules
+        self.view = None
 
     def __hash__(self):
         return hash((self.message.id, self.channel.id))

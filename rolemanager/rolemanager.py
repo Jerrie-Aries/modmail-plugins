@@ -30,6 +30,7 @@ from .core.utils import (
     delete_quietly,
     guild_roughly_chunked,
 )
+from .core.views import ReactionRoleCreationPanel, ReactionRoleView
 
 
 if TYPE_CHECKING:
@@ -99,6 +100,26 @@ def get_audit_reason(moderator: discord.Member):
 YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
 NO_EMOJI = "\N{CROSS MARK}"
 
+# these probably will be used in couple of places so we define them outside
+_rule_session = (
+    "What is the rule for this reaction roles you want to set?\n\n"
+    "Available options:\n"
+    "`Normal` - Allow users to have multiple roles in group.\n"
+    "`Unique` - Remove existing role when assigning another role in group.\n"
+)
+_bind_session = (
+    "Choose a color for the button using the dropdown menu below. If not selected, defaults to Blurple.\n\n"
+    "__**Buttons:**__\n"
+    "- `Edit` to  set or edit the current set values.\n"
+    "- `Add` to bind a role to a button. This button only available if there were **no errors** when the values were submitted.\n"
+    "- `Clear` to reset all binds.\n\n"
+    "__**Available fields:**__\n"
+    "- **Emoji** - Emoji shown on the button. May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
+    "- **Label** - Button label. Must not exceed 80 characters.\n"
+    "- **Role** - The role to bind to the button. May be a role ID, name, or format of `<@&roleid>`.\n"
+)
+_done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
+
 
 class RoleManager(commands.Cog, name=__plugin_name__):
     __doc__ = __description__
@@ -124,6 +145,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.bot.wait_for_connected()
         _set_globals(self)
         await self.populate_config()
+        for entry in self.config.reactroles.entries:
+            entry.view = view = ReactionRoleView(self, entry.message, binds=entry.binds)
+            self.bot.add_view(view)
 
     async def populate_config(self):
         """
@@ -945,113 +969,53 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=embed)
 
     @reactrole.command(name="create")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_create(
         self,
         ctx: commands.Context,
-        emoji_role_groups: commands.Greedy[EmojiRoleGroup],
         channel: Optional[discord.TextChannel] = None,
-        color: Optional[discord.Color] = None,
         *,
-        name: str = None,
+        title: str = None,
     ):
         """
         Create a new reaction role menu.
 
-        Emoji and role groups should be seperated by a `;` and have no space.
-
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, will be the channel where the command is ran from.
-
-        `color` if specified, the following formats are accepted:
-        - `0x<hex>`
-        - `#<hex>`
-        - `0x#<hex>`
-        - `rgb(<number>,<number>,<number>)`
-        Like CSS, `<number>` can be either 0-255 or 0-100%.
-        `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).
-
-        __**Example:**__
-        - `{prefix}reactrole create 🎃;@SpookyRole 🅱️;MemeRole #role_channel rgb(120,85,255)`
         """
-        if not emoji_role_groups:
-            raise commands.BadArgument("Failed to parse emoji and role groups.")
-        channel = channel or ctx.channel
-        if not channel.permissions_for(ctx.me).send_messages:
-            raise commands.BadArgument(f"I do not have permission to send messages in {channel.mention}.")
-        if color is None:
-            color = self.bot.main_color
+        input_sessions = [
+            {"key": "rule", "description": _rule_session},
+            {"key": "bind", "description": _bind_session},
+            {"key": "done", "description": _done_session},
+        ]
+        view = ReactionRoleCreationPanel(ctx, input_sessions=input_sessions)
+        if title is None:
+            title = "Reaction Roles"
+        view.embed.title = title
+        view.original_output_description = "Press the following buttons to receive the corresponding roles:\n"
 
-        def check(msg: discord.Message):
-            return ctx.author == msg.author and ctx.channel == msg.channel and (len(msg.content) < 2000)
-
-        def cancel_check(msg: discord.Message):
-            return msg.content == "cancel" or msg.content == f"{ctx.prefix}cancel"
-
-        rules_msg = await ctx.send(
-            embed=self.base_embed(
-                "What is the rule for this reaction role you want to set?\n\n"
-                "Available options:\n"
-                "`Normal` - Allow users to have multiple roles in group.\n"
-                "`Unique` - Remove existing role when assigning another role in group.\n"
-            )
+        embed = discord.Embed(
+            title="Reaction Roles Creation",
+            color=self.bot.main_color,
+            description=view.session_description,
         )
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
 
-        try:
-            rules_resp = await self.bot.wait_for("message", check=check, timeout=60)
-        except asyncio.TimeoutError:
-            await delete_quietly(rules_msg)
-            raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
-        else:
-            await delete_quietly(rules_resp)
-            await delete_quietly(rules_msg)
-            if cancel_check(rules_resp) is True:
-                raise commands.BadArgument("Reaction Role creation cancelled.")
+        if channel is None:
+            channel = ctx.channel
+        message = await channel.send(embed=view.embed)
+        output_view = ReactionRoleView(self, message, binds=view.binds)
+        await message.edit(view=output_view)
 
-        rules = rules_resp.content.upper()
-        if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
-            raise commands.BadArgument(f"`{rules}` is not a valid option. Reaction Role creation cancelled.")
-
-        if name is None:
-            m = await ctx.send(
-                embed=self.base_embed("What would you like the reaction role menu name to be?")
-            )
-            try:
-                msg = await self.bot.wait_for("message", check=check, timeout=60)
-            except asyncio.TimeoutError:
-                await delete_quietly(m)
-                raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
-            else:
-                await delete_quietly(msg)
-                await delete_quietly(m)
-                if cancel_check(msg) is True:
-                    raise commands.BadArgument("Reaction Role creation cancelled.")
-                name = msg.content
-
-        description = "React to the following emoji to receive the corresponding role:\n"
-        for group in emoji_role_groups:
-            description += f"{group.emoji} - {group.role.mention}\n"
-        embed = discord.Embed(title=name[:256], color=color, description=description)
-        message = await channel.send(embed=embed)
-
-        duplicates = {}
-        binds = {}
-        for group in emoji_role_groups:
-            emoji_str = str(group.emoji)
-            if emoji_str in binds or group.role.id in binds.values():
-                duplicates[group.emoji] = group.role
-            else:
-                binds[emoji_str] = group.role.id
-                await message.add_reaction(group.emoji)
-        if duplicates:
-            dupes = "The following groups were duplicates and weren't added:\n"
-            for emoji, role in duplicates.items():
-                dupes += f"{emoji};{role}\n"
-            await ctx.send(embed=self.base_embed(dupes))
-
-        await ctx.message.add_reaction(YES_EMOJI)
-
-        self.config.reactroles.create_new(message, binds=binds, rules=rules, add=True)
+        hyperlink = f"[message]({message.jump_url})"
+        description = view.session_description.format(hyperlink)
+        embed = view.message.embeds[0]
+        embed.description = description
+        await view.message.edit(embed=embed, view=view)
+        output_view.model = self.config.reactroles.create_new(
+            message, binds=view.binds, rules=view.rule, add=True
+        )
         await self.config.update()
 
     @reactrole.command(name="add", aliases=["bind", "link"])
