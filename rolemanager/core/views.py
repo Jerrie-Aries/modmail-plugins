@@ -82,7 +82,6 @@ class DropdownMenu(Select):
         )
 
     async def callback(self, interaction: Interaction) -> None:
-        await interaction.response.defer()
         assert self.view is not None
         option = self.get_option(self.values[0])
         await self.after_callback(interaction, self, option)
@@ -104,11 +103,11 @@ class RoleManagerButton(Button["RoleManagerView"]):
         **kwargs,
     ):
         super().__init__(label=label, style=style, **kwargs)
-        self.callback_override: ButtonCallbackT = callback
+        self.__callback: ButtonCallbackT = callback
 
     async def callback(self, interaction: Interaction) -> None:
         assert self.view is not None
-        await self.callback_override(interaction, self)
+        await self.__callback(interaction, self)
 
 
 class RoleManagerView(View):
@@ -356,6 +355,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         select: DropdownMenu,
         option: discord.SelectOption,
     ) -> None:
+        await interaction.response.defer()
         select.placeholder = option.label
         category = select.category
         if category == "rule":
@@ -415,17 +415,15 @@ class ReactionRoleView(RoleManagerView):
 
     children: List[RoleManagerButton]
 
-    def __init__(
-        self, cog: RoleManager, message: discord.Message, *, model: ReactionRole, binds: Dict[str, Any]
-    ):
+    def __init__(self, cog: RoleManager, message: discord.Message, *, model: ReactionRole):
         if model.view is not MISSING:
             raise RuntimeError(
                 f"View `{type(model.view).__name__}` is already attached to `<{type(model).__name__} message={message.id}>`."
             )
         super().__init__(cog, timeout=None)
-        self.binds: Dict[str, Any] = binds
-        self.message: discord.Message = message
         self.model: ReactionRole = model
+        self.binds: Dict[str, Any] = model.binds
+        self.message: discord.Message = message
         model.view = self
 
         for key, value in self.binds.items():
@@ -437,6 +435,15 @@ class ReactionRoleView(RoleManagerView):
                 custom_id=f"reactrole:{self.message.id}-{key}",
             )
             self.add_item(button)
+
+    async def update_view(self) -> None:
+        for button in self.children:
+            if not isinstance(button, RoleManagerButton):
+                continue
+            custom_id = button.custom_id
+            if custom_id.split("-")[-1] not in self.binds:
+                self.remove_item(button)
+        await self.message.edit(view=self)
 
     async def handle_interaction(self, interaction: Interaction, button: RoleManagerButton) -> None:
         await interaction.response.defer()

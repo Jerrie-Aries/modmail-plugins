@@ -13,7 +13,7 @@ from .views import ReactionRoleView
 
 if TYPE_CHECKING:
     from ..rolemanager import RoleManager
-    from .views import ReactionRoleView, RoleManagerButton
+    from .views import RoleManagerButton
     from .types import AutoRoleConfigPayload, ReactRolePayload, ReactRoleConfigPayload
 
 
@@ -92,7 +92,7 @@ class AutoRoleManager:
 
     def to_dict(self) -> AutoRoleConfigPayload:
         return {
-            "roles": [r for r in self.roles],
+            "roles": list(self.roles),
             "enable": self.is_enabled(),
         }
 
@@ -152,9 +152,14 @@ class ReactionRole:
             binds=data.pop("binds"),
             rules=data.pop("rules"),
         )
-        instance.view = ReactionRoleView(manager.cog, message, model=instance, binds=instance.binds)
+        instance.view = ReactionRoleView(manager.cog, message, model=instance)
         manager.cog.bot.add_view(instance.view, message_id=message.id)
         return instance
+
+    def delete_set_roles(self, role_list: List[str]) -> None:
+        for role_id in role_list:
+            if role_id in self.binds:
+                del self.binds[role_id]
 
     def to_dict(self) -> ReactRolePayload:
         return {
@@ -297,23 +302,6 @@ class ReactionRoleManager:
             self.add(instance)
         return instance
 
-    def bulk_delete_set_roles(
-        self,
-        message: Union[discord.Message, discord.Object],
-        emoji_list: List[str],
-    ) -> None:
-        reactrole = self.find_entry(message.id)
-        if reactrole is None:
-            raise ValueError(f'Message ID "{message.id}" is not in cache.')
-
-        binds = reactrole.binds
-        if not binds:
-            self.remove(message.id)
-            return
-        for emoji_str in emoji_list:
-            if emoji_str in binds:
-                del binds[emoji_str]
-
     async def handle_interaction(
         self,
         reactrole: ReactionRole,
@@ -329,8 +317,9 @@ class ReactionRoleManager:
         role = guild.get_role(int(role_id))
         if not role:
             logger.error(f"Role with ID {role_id} was deleted.")
-            # self.bulk_delete_set_roles(discord.Object(payload.message_id), [emoji_str])
-            # await self.cog.config.update()
+            reactrole.delete_set_roles([role_id])
+            await self.cog.config.update()
+            await reactrole.view.update_view()
             return
 
         if not my_role_hierarchy(guild, role):

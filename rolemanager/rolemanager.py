@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import functools
 import json
 from collections import defaultdict
@@ -15,19 +14,18 @@ from discord.ext import commands
 from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
+from core.utils import human_join
 
 from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
 from .core.converters import (
     Args,
     AssignableRole,
-    EmojiRoleGroup,
     ObjectConverter,
     PERMS,
     UnionEmoji,
 )
 from .core.models import ReactRules
 from .core.utils import (
-    delete_quietly,
     guild_roughly_chunked,
 )
 from .core.views import ReactionRoleCreationPanel, ReactionRoleView
@@ -74,7 +72,7 @@ def _set_globals(cog: RoleManager) -> None:
     if not utils_cog:
         raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
 
-    global RoleManagerConfig, ConfirmView, human_join, humanize_roles, human_timedelta, paginate
+    global RoleManagerConfig, ConfirmView, humanize_roles, human_timedelta, paginate
 
     ConfirmView = utils_cog.views["ConfirmView"]
     humanize_roles = utils_cog.chat_formatting["humanize_roles"]
@@ -86,19 +84,15 @@ def _set_globals(cog: RoleManager) -> None:
     kwargs = {"Config": utils_cog.config["Config"]}
     vendors_globals(**kwargs)
 
-    from .core.config import RoleManagerConfig as RoleManagerConfig
+    from .core.config import RoleManagerConfig
 
 
 # <!-- ----- -->
 
 
-# TODO: Proper output
 def get_audit_reason(moderator: discord.Member):
     return f"Moderator: {moderator}."
 
-
-YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
-NO_EMOJI = "\N{CROSS MARK}"
 
 # these probably will be used in couple of places so we define them outside
 _rule_session = (
@@ -118,7 +112,6 @@ _bind_session = (
     "- **Label** - Button label. Must not exceed 80 characters.\n"
     "- **Role** - The role to bind to the button. May be a role ID, name, or format of `<@&roleid>`.\n"
 )
-_done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
 
 
 class RoleManager(commands.Cog, name=__plugin_name__):
@@ -624,7 +617,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         await self.super_massrole(
             ctx,
-            [member for member in target_role.members],
+            list(target_role.members),
             add_role,
             f"Every member of **{target_role}** has this role.",
         )
@@ -645,7 +638,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         await self.super_massrole(
             ctx,
-            [member for member in target_role.members],
+            list(target_role.members),
             remove_role,
             f"No one in **{target_role}** has this role.",
             False,
@@ -982,10 +975,11 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, will be the channel where the command is ran from.
         """
+        done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
         input_sessions = [
             {"key": "rule", "description": _rule_session},
             {"key": "bind", "description": _bind_session},
-            {"key": "done", "description": _done_session},
+            {"key": "done", "description": done_session},
         ]
         view = ReactionRoleCreationPanel(ctx, input_sessions=input_sessions)
         if title is None:
@@ -1005,7 +999,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             channel = ctx.channel
         message = await channel.send(embed=view.embed)
         model = self.config.reactroles.create_new(message, binds=view.binds, rules=view.rule, add=True)
-        output_view = ReactionRoleView(self, message, model=model, binds=view.binds)
+        output_view = ReactionRoleView(self, message, model=model)
         await message.edit(view=output_view)
 
         hyperlink = f"[message]({message.jump_url})"
@@ -1029,8 +1023,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         `message` may be a message ID or message link.
 
-        __**Note:**__
-        - This could be used if you want to create a reaction roles menu on a pre-existing message.
+        __**Notes:**__
+        - This can be used if you want to create a reaction roles menu on a pre-existing message.
         """
         new = False
         reactrole = self.config.reactroles.find_entry(message.id)
@@ -1134,7 +1128,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         message: Union[discord.Message, ObjectConverter, int],
     ):
         """
-        Delete an entire reaction role for a message.
+        Delete entire reaction role buttons from a message.
 
         `message` may be a message ID or message link.
         """
@@ -1192,13 +1186,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         except KeyError:
             raise commands.BadArgument("That wasn't a valid emoji for that message.")
         await self.config.update()
-        await ctx.send(embed=self.base_embed(f"That emoji role bind was deleted."))
+        await ctx.send(embed=self.base_embed("That emoji role bind was deleted."))
 
     @reactrole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def react_list(self, ctx: commands.Context):
         """
-        View the reaction roles on this server.
+        Show a list of reaction roles set on this server.
         """
         reactroles = self.config.reactroles
         reactroles.resolve_broken()
@@ -1206,25 +1200,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not entries:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
-        to_delete_message_buttons = {}
         react_roles = []
         for index, entry in enumerate(entries, start=1):
-            to_delete_emojis = []
             message = entry.message
             rules = entry.rules
-            reactions = [f"[Reaction Role #{index}]({message.jump_url}) - `{rules}`"]
+            output = [f"[Reaction Role #{index}]({message.jump_url}) - `{rules}`"]
             for role_id, button in entry.binds.items():
-                role = ctx.guild.get_role(int(role_id))
                 emoji = button.get("emoji")
                 identifier = f"{emoji} " if emoji else "" + button.get("label", "")
-                if role:
-                    reactions.append(f"**{identifier}**: {role.mention}")
-            #     else:
-            #         to_delete_emojis.append(button)
-            # if to_delete_emojis:
-            #     to_delete_message_buttons[entry.message_id] = to_delete_emojis
-            if len(reactions) > 1:
-                react_roles.append("\n".join(reactions))
+                output.append(f"**{identifier}** : <@&{role_id}>")
+            if len(output) > 1:
+                react_roles.append("\n".join(output))
         if not react_roles:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
@@ -1242,16 +1228,59 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
 
-        if to_delete_message_buttons:
-            for message_id, emojis in to_delete_message_buttons.items():
-                reactroles.bulk_delete_set_roles(discord.Object(message_id), emojis)
-            await self.config.update()
-
-    @reactrole.command(name="refresh", aliases=["repair"])
+    @reactrole.command(name="refresh")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_refresh(self, ctx: commands.Context):
         """
-        Refreshes unresolved Reaction Role data.
+        Refresh buttons on all reaction roles messages.
+        This will remove buttons with broken data from the reaction roles messages.
+
+        __**Notes:**__
+        - The buttons are considered broken if they are linked to deleted roles.
+        """
+        reactroles = self.config.reactroles
+        reactroles.resolve_broken()
+        entries = reactroles.entries
+        if not entries:
+            raise commands.BadArgument("There are no reaction roles set up here!")
+
+        to_remove = {}
+        for entry in entries:
+            roles = []
+            for role_id in entry.binds:
+                if entry.channel.guild.get_role(int(role_id)) is None:
+                    roles.append(role_id)
+            if roles:
+                to_remove[entry] = roles
+        embed = discord.Embed(
+            title="Refresh",
+            color=self.bot.main_color,
+        )
+        if to_remove:
+            n = 1
+            output = "__**Resolved:**__\n"
+            for entry, roles in to_remove.items():
+                output += f"{n}. [Message]({entry.message.jump_url}) - " + ", ".join(
+                    f"`{role}`" for role in roles
+                )
+                output += "\n"
+                entry.delete_set_roles(roles)
+                await entry.view.update_view()
+                n += 1
+            await self.config.update()
+        else:
+            output = "No broken components."
+        embed.description = output
+        await ctx.send(embed=embed)
+
+    @reactrole.command(name="repair")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def reactrole_repair(self, ctx: commands.Context):
+        """
+        Repair unresolved Reaction Roles data.
+
+        __**Notes:**__
+        - Usually the data cannot be resolved due to the bot is missing permissions, or the message or channel was deleted.
         """
         reactroles = self.config.reactroles
         unresolved = reactroles.get_unresolved()
@@ -1272,6 +1301,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     async def reactrole_clear(self, ctx: commands.Context):
         """
         Clear all Reaction Role data.
+        This will wipe all reaction roles data from the database, and the buttons attached to the messages will be removed.
+
+        This operation cannot be undone.
         """
         view = ConfirmView(bot=self.bot, user=ctx.author)
         view.message = await ctx.send(
@@ -1682,7 +1714,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             else:
                 embed = discord.Embed(
                     title="Targeting complete",
-                    description=f"Found no matches.",
+                    description="Found no matches.",
                     color=self.bot.error_color,
                 )
                 m = False
