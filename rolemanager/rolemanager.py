@@ -141,18 +141,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         self.bot.loop.create_task(self.initialize())
 
+    async def cog_unload(self) -> None:
+        for entry in self.config.reactroles.entries:
+            entry.view.stop()
+        self.config.reactroles.entries.clear()
+
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         _set_globals(self)
         await self.populate_config()
-        for entry in self.config.reactroles.entries:
-            entry.view = view = ReactionRoleView(self, entry.message, binds=entry.binds)
-            self.bot.add_view(view)
 
     async def populate_config(self):
-        """
-        Initial tasks when loading the cog.
-        """
         config = RoleManagerConfig(self, self.db)
         await config.fetch()
         self.config = config
@@ -1005,7 +1004,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if channel is None:
             channel = ctx.channel
         message = await channel.send(embed=view.embed)
-        output_view = ReactionRoleView(self, message, binds=view.binds)
+        model = self.config.reactroles.create_new(message, binds=view.binds, rules=view.rule, add=True)
+        output_view = ReactionRoleView(self, message, model=model, binds=view.binds)
         await message.edit(view=output_view)
 
         hyperlink = f"[message]({message.jump_url})"
@@ -1013,9 +1013,6 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         embed = view.message.embeds[0]
         embed.description = description
         await view.message.edit(embed=embed, view=view)
-        output_view.model = self.config.reactroles.create_new(
-            message, binds=view.binds, rules=view.rule, add=True
-        )
         await self.config.update()
 
     @reactrole.command(name="add", aliases=["bind", "link"])
@@ -1162,7 +1159,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
 
+        message = reactrole.message
         self.config.reactroles.remove(message.id)
+        await message.edit(view=None)
         await self.config.update()
         await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
 
@@ -1207,21 +1206,23 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not entries:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
-        to_delete_message_emojis = {}
+        to_delete_message_buttons = {}
         react_roles = []
         for index, entry in enumerate(entries, start=1):
             to_delete_emojis = []
             message = entry.message
             rules = entry.rules
             reactions = [f"[Reaction Role #{index}]({message.jump_url}) - `{rules}`"]
-            for emoji_str, role_id in entry.binds.items():
-                role = ctx.guild.get_role(role_id)
+            for role_id, button in entry.binds.items():
+                role = ctx.guild.get_role(int(role_id))
+                emoji = button.get("emoji")
+                identifier = f"{emoji} " if emoji else "" + button.get("label", "")
                 if role:
-                    reactions.append(f"{emoji_str}: {role.mention}")
-                else:
-                    to_delete_emojis.append(emoji_str)
-            if to_delete_emojis:
-                to_delete_message_emojis[entry.message_id] = to_delete_emojis
+                    reactions.append(f"**{identifier}**: {role.mention}")
+            #     else:
+            #         to_delete_emojis.append(button)
+            # if to_delete_emojis:
+            #     to_delete_message_buttons[entry.message_id] = to_delete_emojis
             if len(reactions) > 1:
                 react_roles.append("\n".join(reactions))
         if not react_roles:
@@ -1241,8 +1242,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
 
-        if to_delete_message_emojis:
-            for message_id, emojis in to_delete_message_emojis.items():
+        if to_delete_message_buttons:
+            for message_id, emojis in to_delete_message_buttons.items():
                 reactroles.bulk_delete_set_roles(discord.Object(message_id), emojis)
             await self.config.update()
 
@@ -1283,15 +1284,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not view.value:
             # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
-
+        for entry in self.config.reactroles.entries:
+            entry.view.stop()
+            await entry.message.edit(view=None)
         self.config.reactroles.entries.clear()
         await ctx.send(embed=self.base_embed("Data cleared."))
         await self.config.update()
-
-    @commands.Cog.listener("on_raw_reaction_add")
-    @commands.Cog.listener("on_raw_reaction_remove")
-    async def on_raw_reaction_add_or_remove(self, payload: discord.RawReactionActionEvent):
-        await self.config.reactroles.handle_reaction(payload)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):

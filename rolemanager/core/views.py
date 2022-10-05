@@ -115,28 +115,18 @@ class RoleManagerView(View):
 
     children: List[RoleManagerButton]
 
-    def __init__(self, ctx: commands.Context, *, timeout: float = 600.0):
+    def __init__(self, cog: RoleManager, *, timeout: float = 600.0):
         super().__init__(timeout=timeout)
-        self.ctx: commands.Context = ctx
-        self.user: discord.Member = ctx.author
-        self.cog: RoleManager = ctx.cog
+        self.cog: RoleManager = cog
         self.message: discord.Message = MISSING
-
-    async def update_view(self) -> None:
-        self.refresh()
-        await self.message.edit(embed=self.message.embeds[0], view=self)
-
-    async def interaction_check(self, interaction: Interaction) -> bool:
-        if self.user.id == interaction.user.id:
-            return True
-        await interaction.response.send_message(
-            "This panel cannot be controlled by you!",
-            ephemeral=True,
-        )
-        return False
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
+
+    async def update_view(self) -> None:
+        self.refresh()
+        if self.message:
+            await self.message.edit(embed=self.message.embeds[0], view=self)
 
     def disable_and_stop(self) -> None:
         for child in self.children:
@@ -159,6 +149,8 @@ class ReactionRoleCreationPanel(RoleManagerView):
         rule: str = MISSING,
         binds: Dict[str, Any] = MISSING,
     ):
+        self.ctx: commands.Context = ctx
+        self.user: discord.Member = ctx.author
         self.input_sessions: List[Tuple[[str, Any]]] = input_sessions
         self.current_input: Dict[str, Any] = {}  # keys would be emoji, label, role, color
         self.current_index: int = 0
@@ -166,7 +158,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.embed: discord.Embed = discord.Embed(color=ctx.bot.main_color)
         self.original_output_description: str = MISSING
         self.binds: Dict[str, Any] = binds if binds else {}
-        super().__init__(ctx)
+        super().__init__(ctx.cog)
         self.add_menu()
         self.add_buttons()
         self.refresh()
@@ -277,6 +269,15 @@ class ReactionRoleCreationPanel(RoleManagerView):
             )
             buttons.append(button)
         return buttons
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if self.user.id == interaction.user.id:
+            return True
+        await interaction.response.send_message(
+            "This panel cannot be controlled by you!",
+            ephemeral=True,
+        )
+        return False
 
     async def _action_add(self, interaction: Interaction, *args) -> None:
         # need to store raw inputs for the database later
@@ -410,36 +411,25 @@ class ReactionRoleCreationPanel(RoleManagerView):
         await self.update_view()
 
 
-class ReactionRoleButton(Button["ReactionRoleView"]):
-    def __init__(
-        self,
-        label: str,
-        *,
-        style: ButtonStyle = ButtonStyle.blurple,
-        callback: ButtonCallbackT = MISSING,
-        **kwargs,
-    ):
-        super().__init__(label=label, style=style, **kwargs)
-        self.callback_override: ButtonCallbackT = callback
-
-    async def callback(self, interaction: Interaction) -> None:
-        assert self.view is not None
-        await self.callback_override(interaction, self)
-
-
-class ReactionRoleView(View):
+class ReactionRoleView(RoleManagerView):
 
     children: List[RoleManagerButton]
 
-    def __init__(self, cog: RoleManager, message: discord.Message, *, binds: Dict[str, Any]):
-        super().__init__(timeout=None)
-        self.cog: RoleManager = cog
+    def __init__(
+        self, cog: RoleManager, message: discord.Message, *, model: ReactionRole, binds: Dict[str, Any]
+    ):
+        if model.view is not MISSING:
+            raise RuntimeError(
+                f"View `{type(model.view).__name__}` is already attached to `<{type(model).__name__} message={message.id}>`."
+            )
+        super().__init__(cog, timeout=None)
         self.binds: Dict[str, Any] = binds
         self.message: discord.Message = message
-        self.model: ReactionRole = MISSING
+        self.model: ReactionRole = model
+        model.view = self
 
         for key, value in self.binds.items():
-            button = ReactionRoleButton(
+            button = RoleManagerButton(
                 label=value["label"],
                 emoji=value["emoji"],
                 style=_resolve_button_style(value["style"]),
@@ -448,10 +438,6 @@ class ReactionRoleView(View):
             )
             self.add_item(button)
 
-    async def handle_interaction(self, interaction: Interaction, button: ReactionRoleButton) -> None:
-        role = self.message.guild.get_role(int(button.custom_id.split("-")[-1]))
-        await interaction.response.send_message(f"{role.mention}", ephemeral=True)
-        # TODO: do actual things
-
-    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
-        logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
+    async def handle_interaction(self, interaction: Interaction, button: RoleManagerButton) -> None:
+        await interaction.response.defer()
+        await self.model.manager.handle_interaction(self.model, interaction, button)
