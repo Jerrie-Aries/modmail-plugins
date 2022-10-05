@@ -984,8 +984,11 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         view = ReactionRoleCreationPanel(ctx, input_sessions=input_sessions)
         if title is None:
             title = "Reaction Roles"
-        view.embed.title = title
-        view.original_output_description = "Press the following buttons to receive the corresponding roles:\n"
+        view.output_embed = discord.Embed(
+            title=title,
+            color=self.bot.main_color,
+        )
+        view.placeholder_description = "Press the following buttons to receive the corresponding roles:\n"
 
         embed = discord.Embed(
             title="Reaction Roles Creation",
@@ -994,10 +997,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
+        if not view.value:
+            return
 
         if channel is None:
             channel = ctx.channel
-        message = await channel.send(embed=view.embed)
+        message = await channel.send(embed=view.output_embed)
         model = self.config.reactroles.create_new(message, binds=view.binds, rules=view.rule, add=True)
         output_view = ReactionRoleView(self, message, model=model)
         await message.edit(view=output_view)
@@ -1011,15 +1016,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     @reactrole.command(name="add", aliases=["bind", "link"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def reactrole_add(
-        self,
-        ctx: commands.Context,
-        message: discord.Message,
-        emoji: UnionEmoji,
-        role: AssignableRole,
-    ):
+    async def reactrole_add(self, ctx: commands.Context, message: discord.Message):
         """
-        Bind a reaction role to an emoji on a message that already exists.
+        Bind a reaction role to a button on a message that already exists.
 
         `message` may be a message ID or message link.
 
@@ -1032,42 +1031,34 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             new = True
             reactrole = self.config.reactroles.create_new(message)
 
-        for emo_id, role_id in reactrole.binds.items():
-            if role.id == role_id:
-                raise commands.BadArgument(
-                    f"Role {role.mention} is already binded to emoji {emo_id} on that message."
-                )
-
-        emoji_str = str(emoji)
-        old_role = ctx.guild.get_role(reactrole.binds.get(emoji_str))
-        if old_role:
-            view = ConfirmView(bot=self.bot, user=ctx.author)
-            view.message = await ctx.send(
-                embed=self.base_embed(
-                    f"Emoji {emoji} is already binded to role {old_role.mention} on that message.\n"
-                    "Would you like to override it?"
-                ),
-                view=view,
-            )
-
-            await view.wait()
-
-            if not view.value:
-                # cancelled or timed out
-                raise commands.BadArgument("Bind cancelled.")
-
-        reactrole.binds[emoji_str] = role.id
-
-        if str(emoji) not in [str(e) for e in message.reactions]:
-            await message.add_reaction(emoji)
-        await ctx.send(
-            embed=self.base_embed(
-                f"Role {role.mention} has been binded to emoji {emoji} on [this message]({message.jump_url})."
-            )
+        done_session = "Updated and linked {} to reaction roles {}."
+        input_sessions = [
+            {"key": "bind", "description": _bind_session},
+            {"key": "done", "description": done_session},
+        ]
+        view = ReactionRoleCreationPanel(ctx, binds=reactrole.binds, input_sessions=input_sessions)
+        view.placeholder_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
+        embed = discord.Embed(
+            title="Reaction Roles Add",
+            color=self.bot.main_color,
+            description=view.session_description,
         )
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if not view.value:
+            return
 
+        roles_fmt = ", ".join(f"<@&{key}>" for key in view.binds)
+        hyperlink = f"[message]({message.jump_url})"
+        description = view.session_description.format(roles_fmt, hyperlink)
+        embed = view.message.embeds[0]
+        embed.description = description
+        await view.message.edit(embed=embed, view=view)
         if new:
+            output_view = ReactionRoleView(self, message, model=reactrole)
             self.config.reactroles.add(reactrole)
+        reactrole.view.rebind()
+        await reactrole.view.update_view()
         await self.config.update()
 
     @reactrole.command(name="rule")
@@ -1165,12 +1156,14 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         self,
         ctx: commands.Context,
         message: Union[discord.Message, ObjectConverter, int],
-        emoji: Union[UnionEmoji, ObjectConverter],
+        *,
+        role: discord.Role,
     ):
         """
-        Delete an emoji-role bind for a reaction role.
+        Delete a role-button bind from reaction roles message.
 
         `message` may be a message ID or message link.
+        `role` may be a role ID, mention, or name.
         """
         if isinstance(message, int):
             message_id = message
@@ -1182,11 +1175,14 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         try:
-            del reactrole.binds[str(emoji)]
+            del reactrole.binds[str(role.id)]
         except KeyError:
-            raise commands.BadArgument("That wasn't a valid emoji for that message.")
+            raise commands.BadArgument(
+                f"Role {role.mention} is not binded to any button on the message specified."
+            )
+        await reactrole.view.update_view()
         await self.config.update()
-        await ctx.send(embed=self.base_embed("That emoji role bind was deleted."))
+        await ctx.send(embed=self.base_embed("That role-button bind was deleted."))
 
     @reactrole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)

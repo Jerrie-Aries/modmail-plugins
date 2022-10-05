@@ -118,6 +118,7 @@ class RoleManagerView(View):
         super().__init__(timeout=timeout)
         self.cog: RoleManager = cog
         self.message: discord.Message = MISSING
+        self.value: Optional[bool] = None
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
@@ -154,8 +155,8 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.current_input: Dict[str, Any] = {}  # keys would be emoji, label, role, color
         self.current_index: int = 0
         self.rule: Optional[str] = rule
-        self.embed: discord.Embed = discord.Embed(color=ctx.bot.main_color)
-        self.original_output_description: str = MISSING
+        self.output_embed: discord.Embed = MISSING
+        self.placeholder_description: str = MISSING
         self.binds: Dict[str, Any] = binds if binds else {}
         super().__init__(ctx.cog)
         self.add_menu()
@@ -220,13 +221,10 @@ class ReactionRoleCreationPanel(RoleManagerView):
             label = child.label.lower()
             if label == "cancel":
                 continue
-            if not self.rule:
-                child.disabled = True
-                continue
             if label in ("done", "clear"):
                 child.disabled = len(self.binds) < 1
-            elif label == "preview":
-                child.disabled = len(self.embed) < 1
+            # elif label == "preview":
+            #     child.disabled = not self.output_embed or len(self.output_embed) < 1
             elif label == "add":
                 child.disabled = not self.current_input.get("converted", False)
             else:
@@ -241,7 +239,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         return self.input_sessions[self.current_index]["description"]
 
     def _parse_output_description(self, *, buttons: List[Button] = None) -> str:
-        desc = self.original_output_description
+        desc = self.placeholder_description
         if not buttons:
             return desc
         for button in buttons:
@@ -328,9 +326,18 @@ class ReactionRoleCreationPanel(RoleManagerView):
         else:
             view = MISSING
 
-        self.embed.description = self._parse_output_description(buttons=buttons)
+        description = self._parse_output_description(buttons=buttons)
+        if self.output_embed:
+            embed = self.output_embed
+            embed.description = description
+        else:
+            embed = discord.Embed(
+                title="Preview",
+                color=self.ctx.bot.main_color,
+                description=description,
+            )
         try:
-            await interaction.response.send_message(embed=self.embed, view=view, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         except discord.HTTPException as exc:
             description = f"```py\n{type(exc).__name__}: {str(exc)}\n```"
             embed = error_embed(self.ctx.bot, description=description)
@@ -339,13 +346,16 @@ class ReactionRoleCreationPanel(RoleManagerView):
     async def _action_done(self, interaction: Interaction, *args) -> None:
         await interaction.response.defer()
         self.current_index += 1
-        self.embed.description = self._parse_output_description(buttons=self.get_output_buttons())
+        if self.output_embed:
+            self.output_embed.description = self._parse_output_description(buttons=self.get_output_buttons())
         self.clear_items()
+        self.value = True
         self.stop()
 
     async def _action_cancel(self, interaction: Interaction, *args) -> None:
         self.current_input.clear()
         self.binds.clear()
+        self.value = False
         self.disable_and_stop()
         await interaction.response.edit_message(view=self)
 
@@ -425,7 +435,13 @@ class ReactionRoleView(RoleManagerView):
         self.binds: Dict[str, Any] = model.binds
         self.message: discord.Message = message
         model.view = self
+        self.add_buttons()
 
+    def rebind(self) -> None:
+        self.clear_items()
+        self.add_buttons()
+
+    def add_buttons(self) -> None:
         for key, value in self.binds.items():
             button = RoleManagerButton(
                 label=value["label"],
