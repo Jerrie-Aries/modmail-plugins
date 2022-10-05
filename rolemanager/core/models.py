@@ -106,7 +106,7 @@ class ReactionRole:
     message : Union[discord.PartialMessage, discord.Message]
         The message where the reactions are attached to.
     binds : Dict[str, Any]
-        Role button mapping. Key would be role ID and value would be a dicttionary
+        Role button mapping. Key would be role ID and value would be a dictionary
         of button values.
     rules : str
         The rules applied for the reactions.
