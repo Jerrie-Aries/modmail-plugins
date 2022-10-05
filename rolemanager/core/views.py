@@ -223,8 +223,6 @@ class ReactionRoleCreationPanel(RoleManagerView):
                 continue
             if label in ("done", "clear"):
                 child.disabled = len(self.binds) < 1
-            # elif label == "preview":
-            #     child.disabled = not self.output_embed or len(self.output_embed) < 1
             elif label == "add":
                 child.disabled = not self.current_input.get("converted", False)
             else:
