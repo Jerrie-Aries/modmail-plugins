@@ -308,7 +308,11 @@ class ReactionRoleManager:
         button: RoleManagerButton,
     ) -> None:
         if not self.is_enabled():
-            await interaction.followup.send("Reaction roles feature is currently disabled.")
+            embed = discord.Embed(
+                color=self.cog.bot.error_color,
+                description="Reaction roles feature is currently disabled.",
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         guild = reactrole.channel.guild
         member = guild.get_member(interaction.user.id)
@@ -325,8 +329,10 @@ class ReactionRoleManager:
             logger.error(f"Role {role} outranks me.")
             return
 
+        embed = discord.Embed(color=self.cog.bot.main_color)
         if role not in member.roles:
             await member.add_roles(role, reason="Reaction role.")
+            embed.description = f"Role {role.mention} has been added to you.\n\n"
             if reactrole.rules == ReactRules.UNIQUE:
                 to_remove = []
                 for _id in reactrole.binds:
@@ -335,13 +341,14 @@ class ReactionRoleManager:
                     _role = guild.get_role(int(_id))
                     if _role is not None and _role in member.roles:
                         to_remove.append(_role)
-                if not to_remove:
-                    return
-                await member.remove_roles(*to_remove, reason="Reaction role.")
-            await interaction.followup.send(f"Added role {role.mention}.", ephemeral=True)
+                if to_remove:
+                    await member.remove_roles(*to_remove, reason="Reaction role.")
+                    embed.description += "__**Removed:**__\n" + "\n".join(r.mention for r in to_remove)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             await member.remove_roles(role, reason="Reaction role.")
-            await interaction.followup.send(f"Removed role {role.mention}.", ephemeral=True)
+            embed.description = f"Role {role.mention} is now removed from you."
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     def to_dict(self) -> ReactRoleConfigPayload:
         message_cache = {str(entry.message.id): entry.to_dict() for entry in self.entries}

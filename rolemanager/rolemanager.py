@@ -104,7 +104,7 @@ _rule_session = (
 _bind_session = (
     "Choose a color for the button using the dropdown menu below. If not selected, defaults to Blurple.\n\n"
     "__**Buttons:**__\n"
-    "- `Edit` to  set or edit the current set values.\n"
+    "- `Set` to  set or edit the current set values.\n"
     "- `Add` to bind a role to a button. This button only available if there were **no errors** when the values were submitted.\n"
     "- `Clear` to reset all binds.\n\n"
     "__**Available fields:**__\n"
@@ -988,7 +988,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             title=title,
             color=self.bot.main_color,
         )
-        view.placeholder_description = "Press the following buttons to receive the corresponding roles:\n"
+        view.placeholder_description = "Press the following buttons to receive the corresponding roles:\n\n"
 
         embed = discord.Embed(
             title="Reaction Roles Creation",

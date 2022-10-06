@@ -241,7 +241,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             return desc
         for button in buttons:
             prefix = f"{str(button.emoji)} " if button.emoji else ""
-            desc += f"> **{prefix}{button.label}** - <@&{button.custom_id}>\n"
+            desc += f"- **{prefix}{button.label}** : <@&{button.custom_id}>\n"
         return desc
 
     def get_output_buttons(self) -> List[Button]:
