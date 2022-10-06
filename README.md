@@ -11,6 +11,14 @@ Custom plugins for [Modmail bot](https://github.com/kyb3r/modmail).
 
 Checkout the [wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki) for latest news and additional info.
 
+__**Important:**__
+Plugins with `*` mark after their names in the table below require `Extended Utils` plugin to work.
+It must be installed before the ones with `*` mark, otherwise you have to reload those plugins.
+To install it, use command:
+```
+?plugin add Jerrie-Aries/modmail-plugins/utils
+```
+
 ## How to install
 
 Use the format of `?plugin add Jerrie-Aries/modmail-plugins/<plugin_name><@branch>` where `<plugin_name>` (use without `<` and `>`) is the name of the plugin file. `<@branch>` is optional, defaults to `master`.
@@ -25,6 +33,7 @@ to add the trivia plugin.
 ## List of plugins
 | Name | Name for command | Description |
 | --- | --- | --- |
+| Announcement | `announcement` | Post announcements on your server with this plugin. Publishing announcements to subscribed channels is also supported. |
 | Embed Manager`*` | `embedmanager` | Manage, post, edit, store embeds with this plugin. This plugin is a modified version of `embedutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n). Any credits must go to original developer of this cog. Original repository can be found [here](https://github.com/phenom4n4n/phen-cogs/tree/master/embedutils). |
 | Extended Utils | `utils` | Entended utils from various sources to work with other plugins. |
 | Giveaway | `giveaway` | Host giveaways on your server with this plugin. The source code was from [officialpiyush/modmail-plugins/giveaway](https://github.com/officialpiyush/modmail-plugins/tree/master/giveaway). |
@@ -41,3 +50,4 @@ to add the trivia plugin.
 
 ## Reporting bugs and errors
 If you encounter any bugs or errors, just open a new issue [here](https://github.com/Jerrie-Aries/modmail-plugins/issues/new) and report it.
+Or you can report it on Modmail's [support](https://discord.gg/j5e9p8w) server in [`#plugin-support`](https://discord.com/channels/515071617815019520/543040188541042699) channel.
