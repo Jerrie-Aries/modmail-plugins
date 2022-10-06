@@ -24,7 +24,7 @@ _default_config: ConfigPayload = {
 
 
 # TODO: Deprecate
-def _resolve_migration(data) -> bool:
+def _resolve_migration(data: Dict[str, Any]) -> bool:
     update = False
     for key, elems in list(data.items()):
         if not isinstance(elems, dict):
