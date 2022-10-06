@@ -11,6 +11,7 @@ from discord.utils import MISSING
 from core.models import getLogger
 
 from .converters import AssignableRole, UnionEmoji
+from .models import TriggerType
 from .utils import error_embed
 
 
@@ -153,6 +154,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.input_sessions: List[Tuple[[str, Any]]] = input_sessions
         self.current_input: Dict[str, Any] = {}  # keys would be emoji, label, role, color
         self.__index: int = 0
+        self.trigger_type: str = MISSING
         self.rule: str = MISSING
         self.output_embed: discord.Embed = MISSING
         self.placeholder_description: str = MISSING
@@ -163,8 +165,15 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.refresh()
 
     def add_menu(self) -> None:
-        options = []
-        if self.session_key == "rule":
+        attrs = None
+        if self.session_key == "type":
+            attrs = {
+                "reaction": "Legacy reaction with emojies.",
+                "interaction": "Interaction with new discord buttons.",
+            }
+            category = "type"
+            placeholder = "Choose a trigger type"
+        elif self.session_key == "rule":
             attrs = {
                 "normal": "Allow users to have multiple roles in group.",
                 "unique": "Remove existing role when assigning another role in group.",
@@ -172,16 +181,20 @@ class ReactionRoleCreationPanel(RoleManagerView):
             category = "rule"
             placeholder = "Choose a rule"
         elif self.session_key == "bind":
-            attrs = {
-                "blurple": None,
-                "green": None,
-                "red": None,
-                "grey": None,
-            }
-            category = "style"
-            placeholder = "Choose a color style"
+            if self.trigger_type and self.trigger_type == TriggerType.INTERACTION:
+                attrs = {
+                    "blurple": None,
+                    "green": None,
+                    "red": None,
+                    "grey": None,
+                }
+                category = "style"
+                placeholder = "Choose a color style"
         else:
             raise KeyError(f"Session key `{self.session_key}` is not recognized for menu.")
+        if not attrs:
+            return
+        options = []
         for key, value in attrs.items():
             option = discord.SelectOption(label=key.title(), description=value, value=key)
             options.append(option)
@@ -235,16 +248,27 @@ class ReactionRoleCreationPanel(RoleManagerView):
     def session_description(self) -> str:
         return self.input_sessions[self.__index]["description"]
 
-    def _parse_output_description(self, *, buttons: List[Button] = None) -> str:
+    def _parse_output_description(self) -> str:
         desc = self.placeholder_description
-        if not buttons:
-            return desc
-        for button in buttons:
-            prefix = f"{str(button.emoji)} " if button.emoji else ""
-            desc += f"- **{prefix}{button.label}** : <@&{button.custom_id}>\n"
+        for key, value in self.binds.items():
+            emoji = value.get("emoji")
+            label = value.get("label")
+            if label is None:
+                label = ""
+            prefix = f"{emoji} " if emoji else ""
+            desc += f"- **{emoji}{label}** : <@&{key}>\n"
+        if self.current_input.get("converted", False):
+            emoji = self.current_input["emoji"]
+            label = self.current_input.get("label")
+            if label is None:
+                label = ""
+            prefix = f"{emoji} " if emoji else ""
+            desc += f"- **{emoji}{label}** : <@&{self.current_input['role'].id}>\n"
         return desc
 
     def get_output_buttons(self) -> List[Button]:
+        if not self.trigger_type or self.trigger_type == TriggerType.REACTION:
+            return []
         buttons = []
         for key, value in self.binds.items():
             button = Button(
@@ -276,11 +300,15 @@ class ReactionRoleCreationPanel(RoleManagerView):
     async def _action_add(self, interaction: Interaction, *args) -> None:
         # need to store raw inputs for the database later
         role = self.current_input.pop("role")
-        self.binds[str(role.id)] = {
-            "emoji": self.current_input.pop("emoji"),
-            "label": self.current_input.pop("label"),
-            "style": self.current_input.pop("style", "blurple"),
-        }
+        emoji = self.current_input.pop("emoji")
+        binds = {"emoji": str(emoji) if emoji else None}
+        if self.trigger_type == TriggerType.INTERACTION:
+            binds.update(
+                label=self.current_input.pop("label"),
+                style=self.current_input.pop("style", "blurple"),
+            )
+
+        self.binds[str(role.id)] = binds
         self.current_input.clear()
         await interaction.response.send_message(f"Added role {role.mention}.", ephemeral=True)
         self.clear_items()
@@ -290,21 +318,22 @@ class ReactionRoleCreationPanel(RoleManagerView):
 
     async def _action_set(self, interaction: Interaction, *args) -> None:
         options = {
+            "role": {
+                "label": "Role",
+                "max_length": _short_length,
+            },
             "emoji": {
                 "label": "Emoji",
                 "required": False,
                 "max_length": _short_length,
             },
-            "label": {
+        }
+        if self.trigger_type == TriggerType.INTERACTION:
+            options["label"] = {
                 "label": "Label",
                 "required": False,
                 "max_length": _button_label_length,
-            },
-            "role": {
-                "label": "Role",
-                "max_length": _short_length,
-            },
-        }
+            }
         modal = RoleManagerModal(self, options)
         await interaction.response.send_modal(modal)
         await modal.wait()
@@ -323,7 +352,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         else:
             view = MISSING
 
-        description = self._parse_output_description(buttons=buttons)
+        description = self._parse_output_description()
         if self.output_embed:
             embed = self.output_embed
             embed.description = description
@@ -344,7 +373,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         await interaction.response.defer()
         self.__index += 1
         if self.output_embed:
-            self.output_embed.description = self._parse_output_description(buttons=self.get_output_buttons())
+            self.output_embed.description = self._parse_output_description()
         self.clear_items()
         self.value = True
         self.stop()
@@ -365,9 +394,11 @@ class ReactionRoleCreationPanel(RoleManagerView):
         await interaction.response.defer()
         select.placeholder = option.label
         category = select.category
-        if category == "rule":
-            select.disabled = True
-            self.rule = option.value
+        if category in ("type", "rule"):
+            if category == "rule":
+                self.rule = option.value.upper()
+            else:
+                self.trigger_type = option.value.upper()
             self.__index += 1
             embed = self.message.embeds[0]
             embed.description = self.session_description

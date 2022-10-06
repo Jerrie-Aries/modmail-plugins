@@ -24,7 +24,7 @@ from .core.converters import (
     PERMS,
     UnionEmoji,
 )
-from .core.models import ReactRules
+from .core.models import ReactRules, TriggerType
 from .core.utils import (
     guild_roughly_chunked,
 )
@@ -95,22 +95,28 @@ def get_audit_reason(moderator: discord.Member):
 
 
 # these probably will be used in couple of places so we define them outside
+_type_session = (
+    "Choose a trigger type for this reaction roles\n\n"
+    "__**Available options:**__\n"
+    "- `Reaction` - Legacy reaction with emojies.\n"
+    "- `Interaction` - Interaction with new Discord buttons.\n"
+)
 _rule_session = (
     "What is the rule for this reaction roles you want to set?\n\n"
-    "Available options:\n"
-    "`Normal` - Allow users to have multiple roles in group.\n"
-    "`Unique` - Remove existing role when assigning another role in group.\n"
+    "__**Available options:**__\n"
+    "- `Normal` - Allow users to have multiple roles in group.\n"
+    "- `Unique` - Remove existing role when assigning another role in group.\n"
 )
 _bind_session = (
     "Choose a color for the button using the dropdown menu below. If not selected, defaults to Blurple.\n\n"
     "__**Buttons:**__\n"
+    "- `Add` to bind a role to a button or emoji. This button only available if there were **no errors** when the values were submitted.\n"
     "- `Set` to  set or edit the current set values.\n"
-    "- `Add` to bind a role to a button. This button only available if there were **no errors** when the values were submitted.\n"
     "- `Clear` to reset all binds.\n\n"
     "__**Available fields:**__\n"
-    "- **Emoji** - Emoji shown on the button. May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
-    "- **Label** - Button label. Must not exceed 80 characters.\n"
-    "- **Role** - The role to bind to the button. May be a role ID, name, or format of `<@&roleid>`.\n"
+    "- **Role** - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
+    "- **Emoji** - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
+    "- **Label** - Button label (only available for button). Must not exceed 80 characters.\n"
 )
 
 
@@ -981,6 +987,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
         input_sessions = [
+            {"key": "type", "description": _type_session},
             {"key": "rule", "description": _rule_session},
             {"key": "bind", "description": _bind_session},
             {"key": "done", "description": done_session},
@@ -1007,9 +1014,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if channel is None:
             channel = ctx.channel
         message = await channel.send(embed=view.output_embed)
-        model = self.config.reactroles.create_new(message, binds=view.binds, rules=view.rule, add=True)
-        output_view = ReactionRoleView(self, message, model=model)
-        await message.edit(view=output_view)
+        trigger = view.trigger_type
+        binds = view.binds
+        model = self.config.reactroles.create_new(
+            message, trigger_type=trigger, binds=binds, rules=view.rule, add=True
+        )
+        if trigger == TriggerType.REACTION:
+            for key, value in binds.items():
+                await message.add_reaction(value["emoji"])
+        else:
+            output_view = ReactionRoleView(self, message, model=model)
+            await message.edit(view=output_view)
 
         hyperlink = f"[message]({message.jump_url})"
         description = view.session_description.format(hyperlink)
@@ -1323,6 +1338,11 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         self.config.reactroles.entries.clear()
         await ctx.send(embed=self.base_embed("Data cleared."))
         await self.config.update()
+
+    @commands.Cog.listener("on_raw_reaction_add")
+    @commands.Cog.listener("on_raw_reaction_remove")
+    async def on_raw_reaction_add_or_remove(self, payload: discord.RawReactionActionEvent):
+        await self.config.reactroles.handle_reaction(payload)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
