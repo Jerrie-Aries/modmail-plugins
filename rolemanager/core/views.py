@@ -146,15 +146,14 @@ class ReactionRoleCreationPanel(RoleManagerView):
         ctx: commands.Context,
         *,
         input_sessions: List[Tuple[[str, Any]]],
-        rule: str = MISSING,
         binds: Dict[str, Any] = MISSING,
     ):
         self.ctx: commands.Context = ctx
         self.user: discord.Member = ctx.author
         self.input_sessions: List[Tuple[[str, Any]]] = input_sessions
         self.current_input: Dict[str, Any] = {}  # keys would be emoji, label, role, color
-        self.current_index: int = 0
-        self.rule: Optional[str] = rule
+        self.__index: int = 0
+        self.rule: str = MISSING
         self.output_embed: discord.Embed = MISSING
         self.placeholder_description: str = MISSING
         self.binds: Dict[str, Any] = binds if binds else {}
@@ -230,11 +229,11 @@ class ReactionRoleCreationPanel(RoleManagerView):
 
     @property
     def session_key(self) -> str:
-        return self.input_sessions[self.current_index]["key"]
+        return self.input_sessions[self.__index]["key"]
 
     @property
     def session_description(self) -> str:
-        return self.input_sessions[self.current_index]["description"]
+        return self.input_sessions[self.__index]["description"]
 
     def _parse_output_description(self, *, buttons: List[Button] = None) -> str:
         desc = self.placeholder_description
@@ -343,7 +342,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
 
     async def _action_done(self, interaction: Interaction, *args) -> None:
         await interaction.response.defer()
-        self.current_index += 1
+        self.__index += 1
         if self.output_embed:
             self.output_embed.description = self._parse_output_description(buttons=self.get_output_buttons())
         self.clear_items()
@@ -369,7 +368,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         if category == "rule":
             select.disabled = True
             self.rule = option.value
-            self.current_index += 1
+            self.__index += 1
             embed = self.message.embeds[0]
             embed.description = self.session_description
             self.clear_items()

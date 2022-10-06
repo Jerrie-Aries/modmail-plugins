@@ -18,14 +18,13 @@ _default_config: ConfigPayload = {
     },
     "reactroles": {
         "message_cache": {},
-        "channels": [],
         "enable": True,
     },
 }
 
 
 # TODO: Deprecate
-def _resolve_migration(data: Dict[str, Any]) -> bool:
+def _resolve_migration(data) -> bool:
     update = False
     for key, elems in list(data.items()):
         if not isinstance(elems, dict):
@@ -42,6 +41,11 @@ def _resolve_migration(data: Dict[str, Any]) -> bool:
                         update = True
         if key == "autorole":
             data["autoroles"] = data.pop("autorole")
+        if key == "reactroles":
+            if data[key].get("channels", None) is not None:
+                data[key]["message_cache"] = {}
+                data[key].pop("channels")
+                update = True
     return update
 
 
@@ -59,7 +63,7 @@ class RoleManagerConfig(Config):
         data = await super().fetch()
         if data is None:
             data = self.deepcopy(_default_config)
-        identifier = "autorole" in data
+        identifier = "autorole" in data or data["reactroles"].get("channels", None) is not None
         if identifier:
             _resolve_migration(data)
             await self.update(data=data)

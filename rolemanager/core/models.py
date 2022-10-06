@@ -177,7 +177,6 @@ class ReactionRoleManager:
 
     def __init__(self, cog: RoleManager, *, data: ReactRoleConfigPayload):
         self.cog: RoleManager = cog
-        self.channels: List[str] = data.pop("channels", [])
         self._enable: bool = data.pop("enable", True)
         self.entries: Set[ReactionRole] = set()
 
@@ -354,7 +353,6 @@ class ReactionRoleManager:
         if unresolved:
             message_cache.update(unresolved)
         return {
-            "channels": self.channels,
             "enable": self.is_enabled(),
             "message_cache": message_cache,
         }
