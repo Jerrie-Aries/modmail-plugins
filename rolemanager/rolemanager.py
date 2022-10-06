@@ -204,7 +204,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def role_members(self, ctx: commands.Context, *, role: discord.Role):
         """
-        Sends a list of members in a role.
+        Show a list of members in a role.
 
         `role` may be a role ID, mention, or name.
         """
@@ -254,7 +254,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def role_colors(self, ctx: commands.Context):
         """
-        Sends the server's roles, ordered by color.
+        Show a list of server's roles, ordered by color.
         """
         roles = defaultdict(list)
         for r in ctx.guild.roles:
@@ -277,7 +277,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         return await session.run()
 
     @role_.command(name="create")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_create(
         self,
         ctx: commands.Context,
@@ -287,7 +287,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         name: str = None,
     ):
         """
-        Creates a role.
+        Create a role.
 
         Color and whether it is hoisted can be specified.
 
@@ -383,7 +383,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send(f"Removed **{role.name}** from **{member}**.")
 
     @role_.command(require_var_positional=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def addmulti(self, ctx: commands.Context, role: AssignableRole, *members: discord.Member):
         """
         Add a role to multiple members.
@@ -412,7 +412,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send("\n".join(msg))
 
     @role_.command(require_var_positional=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def removemulti(self, ctx: commands.Context, role: AssignableRole, *members: discord.Member):
         """
         Remove a role from multiple members.
@@ -519,7 +519,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send("\n".join(msg))
 
     @role_.command(name="all")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_all(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Add a role to all members of the server.
@@ -529,7 +529,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.super_massrole(ctx, ctx.guild.members, role)
 
     @role_.command(name="rall", aliases=["removeall"])
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rall(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Remove a role from all members of the server.
@@ -540,7 +540,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.super_massrole(ctx, member_list, role, "No one on the server has this role.", False)
 
     @role_.command(name="humans")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_humans(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Add a role to all humans (non-bots) in the server.
@@ -555,7 +555,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="rhumans")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rhumans(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Remove a role from all humans (non-bots) in the server.
@@ -571,7 +571,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="bots")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_bots(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Add a role to all bots in the server.
@@ -586,7 +586,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="rbots")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rbots(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Remove a role from all bots in the server.
@@ -602,7 +602,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="in")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_in(
         self,
         ctx: commands.Context,
@@ -623,7 +623,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="rin")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rin(
         self,
         ctx: commands.Context,
@@ -645,7 +645,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.group(name="target", invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_target(self, ctx: commands.Context):
         """
         Modify roles using 'targeting' args.
@@ -655,7 +655,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send_help(ctx.command)
 
     @role_target.command(name="add")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def target_add(self, ctx: commands.Context, role: AssignableRole, *, args: str):
         """
         Add a role to members using targeting args.
@@ -673,7 +673,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_target.command(name="remove")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def target_remove(self, ctx: commands.Context, role: AssignableRole, *, args: str):
         """
         Remove a role from members using targeting args.
@@ -929,7 +929,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send_help(ctx.command)
 
     @reactrole.command(name="enable")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_enable(self, ctx: commands.Context, mode: bool = None):
         """
         Toggle reaction roles on or off.
@@ -974,6 +974,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, will be the channel where the command is ran from.
+        `title` is the title for the embed. Must not exceed 256 characters.
+
+        __**Notes:**__
+        - This command will instantiate the button and text input interactive session.
         """
         done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
         input_sessions = [
@@ -1015,15 +1019,16 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.config.update()
 
     @reactrole.command(name="add", aliases=["bind", "link"])
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_add(self, ctx: commands.Context, message: discord.Message):
         """
-        Bind a reaction role to a button on a message that already exists.
+        Add role-button binds to a message that already exists.
+        This can be used if you want to create a reaction roles menu on a pre-existing message.
 
         `message` may be a message ID or message link.
 
         __**Notes:**__
-        - This can be used if you want to create a reaction roles menu on a pre-existing message.
+        - This command will instantiate the button and text input interactive session.
         """
         new = False
         reactrole = self.config.reactroles.find_entry(message.id)
@@ -1062,7 +1067,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.config.update()
 
     @reactrole.command(name="rule")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_rule(
         self,
         ctx: commands.Context,
@@ -1112,14 +1117,14 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @reactrole.group(name="delete", aliases=["remove"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_delete(
         self,
         ctx: commands.Context,
         message: Union[discord.Message, ObjectConverter, int],
     ):
         """
-        Delete entire reaction role buttons from a message.
+        Delete entire reaction roles buttons from a message.
 
         `message` may be a message ID or message link.
         """
@@ -1151,7 +1156,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
 
     @reactrole_delete.command(name="bind", aliases=["link"])
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def delete_bind(
         self,
         ctx: commands.Context,
@@ -1273,7 +1278,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_repair(self, ctx: commands.Context):
         """
-        Repair unresolved Reaction Roles data.
+        Repair unresolved reaction roles data.
 
         __**Notes:**__
         - Usually the data cannot be resolved due to the bot is missing permissions, or the message or channel was deleted.
@@ -1296,10 +1301,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_clear(self, ctx: commands.Context):
         """
-        Clear all Reaction Role data.
+        Clear all reaction roles data.
         This will wipe all reaction roles data from the database, and the buttons attached to the messages will be removed.
 
-        This operation cannot be undone.
+        This operation **cannot** be undone.
         """
         view = ConfirmView(bot=self.bot, user=ctx.author)
         view.message = await ctx.send(
