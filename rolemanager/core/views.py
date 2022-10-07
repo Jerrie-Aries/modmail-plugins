@@ -120,6 +120,7 @@ class RoleManagerView(View):
         self.cog: RoleManager = cog
         self.message: discord.Message = MISSING
         self.value: Optional[bool] = None
+        self._underlying_modals: List[RoleManagerModal] = []
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
@@ -132,6 +133,9 @@ class RoleManagerView(View):
     def disable_and_stop(self) -> None:
         for child in self.children:
             child.disabled = True
+        for modal in self._underlying_modals:
+            if modal.is_dispatching() or not modal.is_finished():
+                modal.stop()
         if not self.is_finished():
             self.stop()
 
@@ -335,6 +339,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
                 "max_length": _button_label_length,
             }
         modal = RoleManagerModal(self, options)
+        self._underlying_modals.append(modal)
         await interaction.response.send_modal(modal)
         await modal.wait()
 
@@ -376,7 +381,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             self.output_embed.description = self._parse_output_description()
         self.clear_items()
         self.value = True
-        self.stop()
+        self.disable_and_stop()
 
     async def _action_cancel(self, interaction: Interaction, *args) -> None:
         self.current_input.clear()
