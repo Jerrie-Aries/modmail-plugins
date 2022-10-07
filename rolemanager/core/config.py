@@ -76,7 +76,7 @@ class RoleManagerConfig(Config):
         identifier = (
             "autorole" in data
             or data["reactroles"].get("channels", None) is not None
-            or any(val.get("type", None) is None for val in data["reactroles"]["message_cache"])
+            or any(val.get("type", None) is None for _, val in data["reactroles"]["message_cache"].items())
         )
         if identifier:
             _resolve_migration(data)
