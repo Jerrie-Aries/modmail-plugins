@@ -48,6 +48,14 @@ def _resolve_migration(data: Dict[str, Any]) -> bool:
             if data[key].get("channels", None) is not None:
                 data[key].pop("channels")
                 update = True
+            rr_msgs = data[key]["message_cache"]
+            for msg_id in list(rr_msgs):
+                binds = rr_msgs[msg_id].get("binds", {})
+                flipped = None
+                if any(not k.isdigit() for k, _ in binds.items()):
+                    flipped = {str(v): {"emoji": k} for k, v in binds.items()}
+                if flipped is not None:
+                    data[key]["message_cache"][msg_id]["binds"] = flipped
     return update
 
 
@@ -65,7 +73,11 @@ class RoleManagerConfig(Config):
         data = await super().fetch()
         if data is None:
             data = self.deepcopy(_default_config)
-        identifier = "autorole" in data or data["reactroles"].get("channels", None) is not None
+        identifier = (
+            "autorole" in data
+            or data["reactroles"].get("channels", None) is not None
+            or any(val.get("type", None) is None for val in data["reactroles"]["message_cache"])
+        )
         if identifier:
             _resolve_migration(data)
             await self.update(data=data)
