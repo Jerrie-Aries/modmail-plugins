@@ -1067,6 +1067,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         view = ReactionRoleCreationPanel(ctx, binds=reactrole.binds, input_sessions=input_sessions)
         if not new:
             view.trigger_type = reactrole.trigger_type
+            view.rule = reactrole.rules
         elif message.author.id != self.bot.user.id:
             view.trigger_type = TriggerType.REACTION
         view.placeholder_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
