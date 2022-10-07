@@ -15,21 +15,21 @@ from discord.ext import commands
 from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
+from core.utils import human_join
 
 from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
 from .core.converters import (
     Args,
     AssignableRole,
-    EmojiRoleGroup,
     ObjectConverter,
     PERMS,
     UnionEmoji,
 )
-from .core.models import ReactRules
+from .core.models import ReactRules, TriggerType
 from .core.utils import (
-    delete_quietly,
     guild_roughly_chunked,
 )
+from .core.views import ReactionRoleCreationPanel, ReactionRoleView
 
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def _set_globals(cog: RoleManager) -> None:
     if not utils_cog:
         raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
 
-    global RoleManagerConfig, ConfirmView, human_join, humanize_roles, human_timedelta, paginate
+    global RoleManagerConfig, ConfirmView, humanize_roles, human_timedelta, paginate
 
     ConfirmView = utils_cog.views["ConfirmView"]
     humanize_roles = utils_cog.chat_formatting["humanize_roles"]
@@ -85,19 +85,40 @@ def _set_globals(cog: RoleManager) -> None:
     kwargs = {"Config": utils_cog.config["Config"]}
     vendors_globals(**kwargs)
 
-    from .core.config import RoleManagerConfig as RoleManagerConfig
+    from .core.config import RoleManagerConfig
 
 
 # <!-- ----- -->
 
 
-# TODO: Proper output
 def get_audit_reason(moderator: discord.Member):
     return f"Moderator: {moderator}."
 
 
-YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
-NO_EMOJI = "\N{CROSS MARK}"
+# these probably will be used in couple of places so we define them outside
+_type_session = (
+    "Choose a trigger type for this reaction roles.\n\n"
+    "__**Available options:**__\n"
+    "- `Reaction` - Legacy reaction with emojies.\n"
+    "- `Interaction` - Interaction with new Discord buttons.\n"
+)
+_rule_session = (
+    "What is the rule for this reaction roles you want to set?\n\n"
+    "__**Available options:**__\n"
+    "- `Normal` - Allow users to have multiple roles in group.\n"
+    "- `Unique` - Remove existing role when assigning another role in group.\n"
+)
+_bind_session = (
+    "Choose a color for the button using the dropdown menu below. If not selected, defaults to Blurple.\n\n"
+    "__**Buttons:**__\n"
+    "- **Add** - Add a role-button or role-emoji bind to internal list. This only available if there were **no errors** when the values were submitted.\n"
+    "- **Set** - Set or edit the current set values.\n"
+    "- **Clear** - Reset all binds.\n\n"
+    "__**Available fields:**__\n"
+    "- `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
+    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
+    "- `Label` - Button label (only available for button). Must not exceed 80 characters.\n"
+)
 
 
 class RoleManager(commands.Cog, name=__plugin_name__):
@@ -120,15 +141,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         self.bot.loop.create_task(self.initialize())
 
+    async def cog_unload(self) -> None:
+        for entry in self.config.reactroles.entries:
+            entry.view.stop()
+        self.config.reactroles.entries.clear()
+
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         _set_globals(self)
         await self.populate_config()
 
     async def populate_config(self):
-        """
-        Initial tasks when loading the cog.
-        """
         config = RoleManagerConfig(self, self.db)
         await config.fetch()
         self.config = config
@@ -188,7 +211,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def role_members(self, ctx: commands.Context, *, role: discord.Role):
         """
-        Sends a list of members in a role.
+        Show a list of members in a role.
 
         `role` may be a role ID, mention, or name.
         """
@@ -238,7 +261,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def role_colors(self, ctx: commands.Context):
         """
-        Sends the server's roles, ordered by color.
+        Show a list of server's roles, ordered by color.
         """
         roles = defaultdict(list)
         for r in ctx.guild.roles:
@@ -261,7 +284,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         return await session.run()
 
     @role_.command(name="create")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_create(
         self,
         ctx: commands.Context,
@@ -271,7 +294,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         name: str = None,
     ):
         """
-        Creates a role.
+        Create a role.
 
         Color and whether it is hoisted can be specified.
 
@@ -367,7 +390,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send(f"Removed **{role.name}** from **{member}**.")
 
     @role_.command(require_var_positional=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def addmulti(self, ctx: commands.Context, role: AssignableRole, *members: discord.Member):
         """
         Add a role to multiple members.
@@ -396,7 +419,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send("\n".join(msg))
 
     @role_.command(require_var_positional=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def removemulti(self, ctx: commands.Context, role: AssignableRole, *members: discord.Member):
         """
         Remove a role from multiple members.
@@ -503,7 +526,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send("\n".join(msg))
 
     @role_.command(name="all")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_all(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Add a role to all members of the server.
@@ -513,7 +536,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.super_massrole(ctx, ctx.guild.members, role)
 
     @role_.command(name="rall", aliases=["removeall"])
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rall(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Remove a role from all members of the server.
@@ -524,7 +547,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await self.super_massrole(ctx, member_list, role, "No one on the server has this role.", False)
 
     @role_.command(name="humans")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_humans(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Add a role to all humans (non-bots) in the server.
@@ -539,7 +562,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="rhumans")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rhumans(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Remove a role from all humans (non-bots) in the server.
@@ -555,7 +578,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="bots")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_bots(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Add a role to all bots in the server.
@@ -570,7 +593,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="rbots")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rbots(self, ctx: commands.Context, *, role: AssignableRole):
         """
         Remove a role from all bots in the server.
@@ -586,7 +609,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_.command(name="in")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_in(
         self,
         ctx: commands.Context,
@@ -601,13 +624,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         await self.super_massrole(
             ctx,
-            [member for member in target_role.members],
+            list(target_role.members),
             add_role,
             f"Every member of **{target_role}** has this role.",
         )
 
     @role_.command(name="rin")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_rin(
         self,
         ctx: commands.Context,
@@ -622,14 +645,14 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         await self.super_massrole(
             ctx,
-            [member for member in target_role.members],
+            list(target_role.members),
             remove_role,
             f"No one in **{target_role}** has this role.",
             False,
         )
 
     @role_.group(name="target", invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def role_target(self, ctx: commands.Context):
         """
         Modify roles using 'targeting' args.
@@ -639,7 +662,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send_help(ctx.command)
 
     @role_target.command(name="add")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def target_add(self, ctx: commands.Context, role: AssignableRole, *, args: str):
         """
         Add a role to members using targeting args.
@@ -657,7 +680,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @role_target.command(name="remove")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def target_remove(self, ctx: commands.Context, role: AssignableRole, *, args: str):
         """
         Remove a role from members using targeting args.
@@ -908,12 +931,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def reactrole(self, ctx: commands.Context):
         """
-        Base command for Reaction Role management.
+        Base command for Reaction Roles management.
         """
         await ctx.send_help(ctx.command)
 
     @reactrole.command(name="enable")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_enable(self, ctx: commands.Context, mode: bool = None):
         """
         Toggle reaction roles on or off.
@@ -945,178 +968,147 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=embed)
 
     @reactrole.command(name="create")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_create(
         self,
         ctx: commands.Context,
-        emoji_role_groups: commands.Greedy[EmojiRoleGroup],
         channel: Optional[discord.TextChannel] = None,
-        color: Optional[discord.Color] = None,
         *,
-        name: str = None,
+        title: str = None,
     ):
         """
-        Create a new reaction role menu.
-
-        Emoji and role groups should be seperated by a `;` and have no space.
+        Create a new reaction roles menu.
 
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, will be the channel where the command is ran from.
+        `title` is the title for the embed. Must not exceed 256 characters.
 
-        `color` if specified, the following formats are accepted:
-        - `0x<hex>`
-        - `#<hex>`
-        - `0x#<hex>`
-        - `rgb(<number>,<number>,<number>)`
-        Like CSS, `<number>` can be either 0-255 or 0-100%.
-        `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).
-
-        __**Example:**__
-        - `{prefix}reactrole create 🎃;@SpookyRole 🅱️;MemeRole #role_channel rgb(120,85,255)`
+        __**Notes:**__
+        - This command will initiate the button and text input interactive session.
         """
-        if not emoji_role_groups:
-            raise commands.BadArgument("Failed to parse emoji and role groups.")
-        channel = channel or ctx.channel
-        if not channel.permissions_for(ctx.me).send_messages:
-            raise commands.BadArgument(f"I do not have permission to send messages in {channel.mention}.")
-        if color is None:
-            color = self.bot.main_color
-
-        def check(msg: discord.Message):
-            return ctx.author == msg.author and ctx.channel == msg.channel and (len(msg.content) < 2000)
-
-        def cancel_check(msg: discord.Message):
-            return msg.content == "cancel" or msg.content == f"{ctx.prefix}cancel"
-
-        rules_msg = await ctx.send(
-            embed=self.base_embed(
-                "What is the rule for this reaction role you want to set?\n\n"
-                "Available options:\n"
-                "`Normal` - Allow users to have multiple roles in group.\n"
-                "`Unique` - Remove existing role when assigning another role in group.\n"
-            )
+        done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
+        input_sessions = [
+            {"key": "type", "description": _type_session},
+            {"key": "rule", "description": _rule_session},
+            {"key": "bind", "description": _bind_session},
+            {"key": "done", "description": done_session},
+        ]
+        view = ReactionRoleCreationPanel(ctx, input_sessions=input_sessions)
+        if title is None:
+            title = "Reaction Roles"
+        view.output_embed = discord.Embed(
+            title=title,
+            color=self.bot.main_color,
         )
+        view.placeholder_description = "Press the following buttons to receive the corresponding roles:\n\n"
 
-        try:
-            rules_resp = await self.bot.wait_for("message", check=check, timeout=60)
-        except asyncio.TimeoutError:
-            await delete_quietly(rules_msg)
-            raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
+        embed = discord.Embed(
+            title="Reaction Roles Creation",
+            color=self.bot.main_color,
+            description=view.session_description,
+        )
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if not view.value:
+            return
+
+        if channel is None:
+            channel = ctx.channel
+        message = await channel.send(embed=view.output_embed)
+        trigger_type = view.trigger_type
+        binds = view.binds
+        model = self.config.reactroles.create_new(
+            message, trigger_type=trigger_type, binds=binds, rules=view.rule, add=True
+        )
+        if trigger_type == TriggerType.REACTION:
+            for key, value in binds.items():
+                await message.add_reaction(value["emoji"])
+                await asyncio.sleep(0.2)
         else:
-            await delete_quietly(rules_resp)
-            await delete_quietly(rules_msg)
-            if cancel_check(rules_resp) is True:
-                raise commands.BadArgument("Reaction Role creation cancelled.")
+            output_view = ReactionRoleView(self, message, model=model)
+            await message.edit(view=output_view)
 
-        rules = rules_resp.content.upper()
-        if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
-            raise commands.BadArgument(f"`{rules}` is not a valid option. Reaction Role creation cancelled.")
-
-        if name is None:
-            m = await ctx.send(
-                embed=self.base_embed("What would you like the reaction role menu name to be?")
-            )
-            try:
-                msg = await self.bot.wait_for("message", check=check, timeout=60)
-            except asyncio.TimeoutError:
-                await delete_quietly(m)
-                raise commands.BadArgument("Time out. Reaction Role creation cancelled.")
-            else:
-                await delete_quietly(msg)
-                await delete_quietly(m)
-                if cancel_check(msg) is True:
-                    raise commands.BadArgument("Reaction Role creation cancelled.")
-                name = msg.content
-
-        description = "React to the following emoji to receive the corresponding role:\n"
-        for group in emoji_role_groups:
-            description += f"{group.emoji} - {group.role.mention}\n"
-        embed = discord.Embed(title=name[:256], color=color, description=description)
-        message = await channel.send(embed=embed)
-
-        duplicates = {}
-        binds = {}
-        for group in emoji_role_groups:
-            emoji_str = str(group.emoji)
-            if emoji_str in binds or group.role.id in binds.values():
-                duplicates[group.emoji] = group.role
-            else:
-                binds[emoji_str] = group.role.id
-                await message.add_reaction(group.emoji)
-        if duplicates:
-            dupes = "The following groups were duplicates and weren't added:\n"
-            for emoji, role in duplicates.items():
-                dupes += f"{emoji};{role}\n"
-            await ctx.send(embed=self.base_embed(dupes))
-
-        await ctx.message.add_reaction(YES_EMOJI)
-
-        self.config.reactroles.create_new(message, binds=binds, rules=rules, add=True)
+        hyperlink = f"[message]({message.jump_url})"
+        description = view.session_description.format(hyperlink)
+        embed = view.message.embeds[0]
+        embed.description = description
+        await view.message.edit(embed=embed, view=view)
         await self.config.update()
 
-    @reactrole.command(name="add", aliases=["bind", "link"])
-    @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def reactrole_add(
-        self,
-        ctx: commands.Context,
-        message: discord.Message,
-        emoji: UnionEmoji,
-        role: AssignableRole,
-    ):
+    @reactrole.command(name="edit", aliases=["add"])
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def reactrole_edit(self, ctx: commands.Context, message: discord.Message):
         """
-        Bind a reaction role to an emoji on a message that already exists.
+        Edit by adding role-button or role-emoji binds to a message specified.
+        This can be used if you want to create a reaction roles menu on a pre-existing message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
 
-        __**Note:**__
-        - This could be used if you want to create a reaction roles menu on a pre-existing message.
+        __**Notes:**__
+        - This command will initiate the button and text input interactive session.
+        - Buttons can only be added on messages that were sent from this bot.
         """
         new = False
         reactrole = self.config.reactroles.find_entry(message.id)
+        input_sessions = []
         if reactrole is None:
             new = True
             reactrole = self.config.reactroles.create_new(message)
+            if message.author.id == self.bot.user.id:
+                input_sessions.append({"key": "type", "description": _type_session})
+            input_sessions.append({"key": "rule", "description": _rule_session})
 
-        for emo_id, role_id in reactrole.binds.items():
-            if role.id == role_id:
-                raise commands.BadArgument(
-                    f"Role {role.mention} is already binded to emoji {emo_id} on that message."
-                )
-
-        emoji_str = str(emoji)
-        old_role = ctx.guild.get_role(reactrole.binds.get(emoji_str))
-        if old_role:
-            view = ConfirmView(bot=self.bot, user=ctx.author)
-            view.message = await ctx.send(
-                embed=self.base_embed(
-                    f"Emoji {emoji} is already binded to role {old_role.mention} on that message.\n"
-                    "Would you like to override it?"
-                ),
-                view=view,
-            )
-
-            await view.wait()
-
-            if not view.value:
-                # cancelled or timed out
-                raise commands.BadArgument("Bind cancelled.")
-
-        reactrole.binds[emoji_str] = role.id
-
-        if str(emoji) not in [str(e) for e in message.reactions]:
-            await message.add_reaction(emoji)
-        await ctx.send(
-            embed=self.base_embed(
-                f"Role {role.mention} has been binded to emoji {emoji} on [this message]({message.jump_url})."
-            )
+        done_session = "Updated and linked {} to reaction roles {}."
+        abs_sessions = [
+            {"key": "bind", "description": _bind_session},
+            {"key": "done", "description": done_session},
+        ]
+        input_sessions.extend(abs_sessions)
+        view = ReactionRoleCreationPanel(ctx, binds=reactrole.binds, input_sessions=input_sessions)
+        if message.author.id != self.bot.user.id:
+            view.trigger_type = TriggerType.REACTION
+        view.placeholder_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
+        embed = discord.Embed(
+            title="Reaction Roles Add",
+            color=self.bot.main_color,
+            description=view.session_description,
         )
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if not view.value:
+            return
+
+        roles_fmt = ", ".join(f"<@&{key}>" for key in view.binds)
+        hyperlink = f"[message]({message.jump_url})"
+        description = view.session_description.format(roles_fmt, hyperlink)
+        embed = view.message.embeds[0]
+        embed.description = description
+        await view.message.edit(embed=embed, view=view)
+
+        reactrole.binds = view.binds
+        reactrole.rules = view.rule
+        reactrole.trigger_type = view.trigger_type
+
+        if reactrole.trigger_type == TriggerType.REACTION:
+            reactions = [str(r) for r in message.reactions]
+            for key, value in reactrole.binds.items():
+                emoji = value["emoji"]
+                if emoji in reactions:
+                    continue
+                await message.add_reaction(emoji)
+                await asyncio.sleep(0.2)
+        else:
+            if new:
+                ReactionRoleView(self, message, model=reactrole)
+            reactrole.view.rebind()
+            await reactrole.view.update_view()
 
         if new:
             self.config.reactroles.add(reactrole)
         await self.config.update()
 
     @reactrole.command(name="rule")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_rule(
         self,
         ctx: commands.Context,
@@ -1124,9 +1116,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         rules: str.upper = None,
     ):
         """
-        Set rule for an existing reaction role message.
+        Set a rule for an existing reaction roles message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
 
         Available options for `rule`:
         `Normal` - Allow users to have multiple roles in group.
@@ -1166,16 +1158,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
 
     @reactrole.group(name="delete", aliases=["remove"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_delete(
         self,
         ctx: commands.Context,
         message: Union[discord.Message, ObjectConverter, int],
     ):
         """
-        Delete an entire reaction role for a message.
+        Delete reaction roles data from a message.
+        If the set trigger type is `Interaction` (i.e. buttons), the buttons will be cleared from the message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
         """
         if isinstance(message, int):
             message_id = message
@@ -1198,22 +1191,27 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
 
+        message = reactrole.message
         self.config.reactroles.remove(message.id)
+        if reactrole.view:
+            await message.edit(view=None)
         await self.config.update()
         await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
 
     @reactrole_delete.command(name="bind", aliases=["link"])
-    @checks.has_permissions(PermissionLevel.MODERATOR)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def delete_bind(
         self,
         ctx: commands.Context,
         message: Union[discord.Message, ObjectConverter, int],
-        emoji: Union[UnionEmoji, ObjectConverter],
+        *,
+        role: discord.Role,
     ):
         """
-        Delete an emoji-role bind for a reaction role.
+        Delete a role-button bind from reaction roles message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
+        `role` may be a role ID, mention, or name.
         """
         if isinstance(message, int):
             message_id = message
@@ -1225,17 +1223,23 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         try:
-            del reactrole.binds[str(emoji)]
+            del reactrole.binds[str(role.id)]
         except KeyError:
-            raise commands.BadArgument("That wasn't a valid emoji for that message.")
+            raise commands.BadArgument(
+                f"Role {role.mention} is not binded to any button or emoji on that message."
+            )
+        if reactrole.view:
+            await reactrole.view.update_view()
         await self.config.update()
-        await ctx.send(embed=self.base_embed(f"That emoji role bind was deleted."))
+        await ctx.send(
+            embed=self.base_embed("That role bind to a button or emoji on that message is now deleted.")
+        )
 
     @reactrole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def react_list(self, ctx: commands.Context):
         """
-        View the reaction roles on this server.
+        Show a list of reaction roles set on this server.
         """
         reactroles = self.config.reactroles
         reactroles.resolve_broken()
@@ -1243,23 +1247,18 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not entries:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
-        to_delete_message_emojis = {}
         react_roles = []
         for index, entry in enumerate(entries, start=1):
-            to_delete_emojis = []
             message = entry.message
             rules = entry.rules
-            reactions = [f"[Reaction Role #{index}]({message.jump_url}) - `{rules}`"]
-            for emoji_str, role_id in entry.binds.items():
-                role = ctx.guild.get_role(role_id)
-                if role:
-                    reactions.append(f"{emoji_str}: {role.mention}")
-                else:
-                    to_delete_emojis.append(emoji_str)
-            if to_delete_emojis:
-                to_delete_message_emojis[entry.message_id] = to_delete_emojis
-            if len(reactions) > 1:
-                react_roles.append("\n".join(reactions))
+            trigger_type = entry.trigger_type
+            output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
+            for role_id, payload in entry.binds.items():
+                emoji = payload.get("emoji")
+                identifier = f"{emoji} " if emoji else "" + payload.get("label", "")
+                output.append(f"**{identifier}** : <@&{role_id}>")
+            if len(output) > 1:
+                react_roles.append("\n".join(output))
         if not react_roles:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
@@ -1277,16 +1276,61 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
 
-        if to_delete_message_emojis:
-            for message_id, emojis in to_delete_message_emojis.items():
-                reactroles.bulk_delete_set_roles(discord.Object(message_id), emojis)
-            await self.config.update()
-
-    @reactrole.command(name="refresh", aliases=["repair"])
+    @reactrole.command(name="refresh")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_refresh(self, ctx: commands.Context):
         """
-        Refreshes unresolved Reaction Role data.
+        Refresh all reaction roles data.
+        This will look for non-existing linked roles and remove the necessary binds linked to the roles.
+        This will also remove buttons with broken data from the reaction roles messages.
+
+        __**Notes:**__
+        - The reaction roles binds are considered broken if they are linked to deleted roles.
+        """
+        reactroles = self.config.reactroles
+        reactroles.resolve_broken()
+        entries = reactroles.entries
+        if not entries:
+            raise commands.BadArgument("There are no reaction roles set up here!")
+
+        to_remove = {}
+        for entry in entries:
+            roles = []
+            for role_id in entry.binds:
+                if entry.channel.guild.get_role(int(role_id)) is None:
+                    roles.append(role_id)
+            if roles:
+                to_remove[entry] = roles
+        embed = discord.Embed(
+            title="Refresh",
+            color=self.bot.main_color,
+        )
+        if to_remove:
+            n = 1
+            output = "__**Resolved:**__\n"
+            for entry, roles in to_remove.items():
+                output += f"{n}. [Message]({entry.message.jump_url}) - " + ", ".join(
+                    f"`{role}`" for role in roles
+                )
+                output += "\n"
+                entry.delete_set_roles(roles)
+                if entry.view:
+                    await entry.view.update_view()
+                n += 1
+            await self.config.update()
+        else:
+            output = "No broken data or components."
+        embed.description = output
+        await ctx.send(embed=embed)
+
+    @reactrole.command(name="repair")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def reactrole_repair(self, ctx: commands.Context):
+        """
+        Repair unresolved reaction roles data.
+
+        __**Notes:**__
+        - Usually the data cannot be resolved due to the bot is missing permissions, or the message or channel was deleted.
         """
         reactroles = self.config.reactroles
         unresolved = reactroles.get_unresolved()
@@ -1306,7 +1350,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_clear(self, ctx: commands.Context):
         """
-        Clear all Reaction Role data.
+        Clear all reaction roles data.
+        This will wipe all reaction roles data from the database, and the buttons attached to the messages will be removed.
+
+        This operation **cannot** be undone.
         """
         view = ConfirmView(bot=self.bot, user=ctx.author)
         view.message = await ctx.send(
@@ -1319,7 +1366,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not view.value:
             # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
-
+        for entry in self.config.reactroles.entries:
+            if entry.view:
+                entry.view.stop()
+                await entry.message.edit(view=None)
         self.config.reactroles.entries.clear()
         await ctx.send(embed=self.base_embed("Data cleared."))
         await self.config.update()
@@ -1720,7 +1770,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             else:
                 embed = discord.Embed(
                     title="Targeting complete",
-                    description=f"Found no matches.",
+                    description="Found no matches.",
                     color=self.bot.error_color,
                 )
                 m = False
