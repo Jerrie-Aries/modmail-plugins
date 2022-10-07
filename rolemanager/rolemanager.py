@@ -1224,11 +1224,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             del reactrole.binds[str(role.id)]
         except KeyError:
             raise commands.BadArgument(
-                f"Role {role.mention} is not binded to any button on the message specified."
+                f"Role {role.mention} is not binded to any button or emoji on that message."
             )
-        await reactrole.view.update_view()
+        if reactrole.view:
+            await reactrole.view.update_view()
         await self.config.update()
-        await ctx.send(embed=self.base_embed("That role-button bind was deleted."))
+        await ctx.send(embed=self.base_embed("That role bind to a button or emoji on that message is now deleted."))
 
     @reactrole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -1246,10 +1247,11 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         for index, entry in enumerate(entries, start=1):
             message = entry.message
             rules = entry.rules
-            output = [f"[Reaction Role #{index}]({message.jump_url}) - `{rules}`"]
-            for role_id, button in entry.binds.items():
-                emoji = button.get("emoji")
-                identifier = f"{emoji} " if emoji else "" + button.get("label", "")
+            trigger_type = entry.trigger_type
+            output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
+            for role_id, payload in entry.binds.items():
+                emoji = payload.get("emoji")
+                identifier = f"{emoji} " if emoji else "" + payload.get("label", "")
                 output.append(f"**{identifier}** : <@&{role_id}>")
             if len(output) > 1:
                 react_roles.append("\n".join(output))
