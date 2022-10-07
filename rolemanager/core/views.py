@@ -306,15 +306,23 @@ class ReactionRoleCreationPanel(RoleManagerView):
         role = self.current_input.pop("role")
         emoji = self.current_input.pop("emoji")
         binds = {"emoji": str(emoji) if emoji else None}
+        label = self.current_input.pop("label", None)
         if self.trigger_type == TriggerType.INTERACTION:
             binds.update(
-                label=self.current_input.pop("label"),
+                label=label,
                 style=self.current_input.pop("style", "blurple"),
             )
 
         self.binds[str(role.id)] = binds
         self.current_input.clear()
-        await interaction.response.send_message(f"Added role {role.mention}.", ephemeral=True)
+        prefix = f"{emoji} " if emoji else ""
+        if label is None:
+            label = ""
+        embed = discord.Embed(
+            color=self.ctx.bot.main_color,
+            description=f"Added '{prefix}{label} : {role.mention}' bind to the list.",
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         self.clear_items()
         self.add_menu()
         self.add_buttons()
