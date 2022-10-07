@@ -1087,7 +1087,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         reactrole.binds = view.binds
         reactrole.rules = view.rule
-        reactrole.trigger_type = view.trigger_type
+        if new:
+            reactrole.trigger_type = view.trigger_type
 
         if reactrole.trigger_type == TriggerType.REACTION:
             reactions = [str(r) for r in message.reactions]
