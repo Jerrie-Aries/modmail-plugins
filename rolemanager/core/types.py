@@ -16,7 +16,6 @@ MessageCachePayload = Dict[str, ReactRolePayload]
 
 class ReactRoleConfigPayload(TypedDict):
     message_cache: MessageCachePayload
-    channels: List[int]
     enable: bool
 
 
