@@ -450,6 +450,14 @@ class ReactionRoleCreationPanel(RoleManagerView):
             else:
                 if isinstance(entity, discord.Role) and str(entity.id) in self.binds:
                     errors.append(f"Duplicate role ID: `{entity.id}`. Please set other role.")
+                if key == "emoji" and self.trigger_type == TriggerType.REACTION:
+                    # check emoji
+                    for role_id, payload in self.binds.items():
+                        if str(entity) == payload.get("emoji"):
+                            errors.append(
+                                f"Emoji {entity} has already linked to <@&{role_id}> on this message."
+                            )
+                            break
                 ret[key] = entity
 
         if errors:
