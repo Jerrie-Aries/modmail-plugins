@@ -1229,7 +1229,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if reactrole.view:
             await reactrole.view.update_view()
         await self.config.update()
-        await ctx.send(embed=self.base_embed("That role bind to a button or emoji on that message is now deleted."))
+        await ctx.send(
+            embed=self.base_embed("That role bind to a button or emoji on that message is now deleted.")
+        )
 
     @reactrole.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
