@@ -271,7 +271,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Post an embed from a message.
 
-        `message` may be a message ID or message link of the embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the embed.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
@@ -285,7 +285,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Download a JSON file from a message's embed.
 
-        `message` may be a message ID or message link of the embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the embed.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
@@ -347,7 +347,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message sent by Bot's embeds.
 
-        `message` may be a message ID or message link of the bot's embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
         """
         color = color or self.bot.main_color
         embed = discord.Embed(color=color, title=title, description=description)
@@ -360,7 +360,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message's embed using valid JSON.
 
-        `message` may be a message ID or message link of the bot's embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
         """
         await message.edit(embed=data)
         await ctx.message.add_reaction(YES_EMOJI)
@@ -371,7 +371,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message's embed using a valid JSON file.
 
-        `message` may be a message ID or message link of the bot's embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
         """
         data = await self.get_file_from_message(ctx, file_types=("json", "txt"))
         embed = await JSON_CONVERTER.convert(ctx, data)
@@ -390,8 +390,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message's embed using another message's embed.
 
-        `source` may be a message ID or message link of the source embed.
-        `target` may be a message ID or message link of the bot's embed you want to edit.
+        `source` may be a message ID, message link, or format of `channelid-messageid` of the source embed.
+        `target` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed you want to edit.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
@@ -459,7 +459,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Store an embed from a message.
 
-        `message` may be a message ID or message link of the embed you want to store.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the embed you want to store.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
