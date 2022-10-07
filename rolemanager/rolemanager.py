@@ -111,13 +111,13 @@ _rule_session = (
 _bind_session = (
     "Choose a color for the button using the dropdown menu below. If not selected, defaults to Blurple.\n\n"
     "__**Buttons:**__\n"
-    "- `Add` to bind a role to a button or emoji. This button only available if there were **no errors** when the values were submitted.\n"
-    "- `Set` to  set or edit the current set values.\n"
-    "- `Clear` to reset all binds.\n\n"
+    "- **Add** - Add a role-button or role-emoji bind to internal list. This only available if there were **no errors** when the values were submitted.\n"
+    "- **Set** - Set or edit the current set values.\n"
+    "- **Clear** - Reset all binds.\n\n"
     "__**Available fields:**__\n"
-    "- **Role** - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
-    "- **Emoji** - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
-    "- **Label** - Button label (only available for button). Must not exceed 80 characters.\n"
+    "- `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
+    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
+    "- `Label` - Button label (only available for button). Must not exceed 80 characters.\n"
 )
 
 
@@ -931,7 +931,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def reactrole(self, ctx: commands.Context):
         """
-        Base command for Reaction Role management.
+        Base command for Reaction Roles management.
         """
         await ctx.send_help(ctx.command)
 
@@ -977,7 +977,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         title: str = None,
     ):
         """
-        Create a new reaction role menu.
+        Create a new reaction roles menu.
 
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, will be the channel where the command is ran from.
@@ -1035,17 +1035,18 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await view.message.edit(embed=embed, view=view)
         await self.config.update()
 
-    @reactrole.command(name="edit")
+    @reactrole.command(name="edit", aliases=["add"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def reactrole_edit(self, ctx: commands.Context, message: discord.Message):
         """
-        Edit by adding role-button or role-emoji binds to a message that already exists.
+        Edit by adding role-button or role-emoji binds to a message specified.
         This can be used if you want to create a reaction roles menu on a pre-existing message.
 
         `message` may be a message ID, message link, or format of `channelid-messageid`.
 
         __**Notes:**__
         - This command will initiate the button and text input interactive session.
+        - Buttons can only be added on messages that were sent from this bot.
         """
         new = False
         reactrole = self.config.reactroles.find_entry(message.id)
@@ -1115,7 +1116,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         rules: str.upper = None,
     ):
         """
-        Set rule for an existing reaction role message.
+        Set a rule for an existing reaction roles message.
 
         `message` may be a message ID, message link, or format of `channelid-messageid`.
 
@@ -1164,7 +1165,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         message: Union[discord.Message, ObjectConverter, int],
     ):
         """
-        Delete entire reaction roles buttons from a message.
+        Delete reaction roles data from a message.
+        If the set trigger type is `Interaction` (i.e. buttons), the buttons will be cleared from the message.
 
         `message` may be a message ID, message link, or format of `channelid-messageid`.
         """
@@ -1278,8 +1280,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def reactrole_refresh(self, ctx: commands.Context):
         """
-        Refresh buttons on all reaction roles messages.
-        This will remove buttons with broken data from the reaction roles messages.
+        Refresh all reaction roles data.
+        This will look for non-existing linked roles and remove the necessary binds linked to the roles.
+        This will also remove buttons with broken data from the reaction roles messages.
 
         __**Notes:**__
         - The reaction roles binds are considered broken if they are linked to deleted roles.
@@ -1316,7 +1319,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 n += 1
             await self.config.update()
         else:
-            output = "No broken components."
+            output = "No broken data or components."
         embed.description = output
         await ctx.send(embed=embed)
 
