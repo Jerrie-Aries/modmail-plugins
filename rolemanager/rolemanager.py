@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 from collections import defaultdict
@@ -96,7 +97,7 @@ def get_audit_reason(moderator: discord.Member):
 
 # these probably will be used in couple of places so we define them outside
 _type_session = (
-    "Choose a trigger type for this reaction roles\n\n"
+    "Choose a trigger type for this reaction roles.\n\n"
     "__**Available options:**__\n"
     "- `Reaction` - Legacy reaction with emojies.\n"
     "- `Interaction` - Interaction with new Discord buttons.\n"
@@ -983,7 +984,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         `title` is the title for the embed. Must not exceed 256 characters.
 
         __**Notes:**__
-        - This command will instantiate the button and text input interactive session.
+        - This command will initiate the button and text input interactive session.
         """
         done_session = "The reaction roles {} has been posted."  # format hyperlink message.jump_url
         input_sessions = [
@@ -1014,14 +1015,15 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if channel is None:
             channel = ctx.channel
         message = await channel.send(embed=view.output_embed)
-        trigger = view.trigger_type
+        trigger_type = view.trigger_type
         binds = view.binds
         model = self.config.reactroles.create_new(
-            message, trigger_type=trigger, binds=binds, rules=view.rule, add=True
+            message, trigger_type=trigger_type, binds=binds, rules=view.rule, add=True
         )
-        if trigger == TriggerType.REACTION:
+        if trigger_type == TriggerType.REACTION:
             for key, value in binds.items():
                 await message.add_reaction(value["emoji"])
+                await asyncio.sleep(0.2)
         else:
             output_view = ReactionRoleView(self, message, model=model)
             await message.edit(view=output_view)
@@ -1033,30 +1035,37 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         await view.message.edit(embed=embed, view=view)
         await self.config.update()
 
-    @reactrole.command(name="add", aliases=["bind", "link"])
+    @reactrole.command(name="edit")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def reactrole_add(self, ctx: commands.Context, message: discord.Message):
+    async def reactrole_edit(self, ctx: commands.Context, message: discord.Message):
         """
-        Add role-button binds to a message that already exists.
+        Edit by adding role-button or role-emoji binds to a message that already exists.
         This can be used if you want to create a reaction roles menu on a pre-existing message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
 
         __**Notes:**__
-        - This command will instantiate the button and text input interactive session.
+        - This command will initiate the button and text input interactive session.
         """
         new = False
         reactrole = self.config.reactroles.find_entry(message.id)
+        input_sessions = []
         if reactrole is None:
             new = True
             reactrole = self.config.reactroles.create_new(message)
+            if message.author.id == self.bot.user.id:
+                input_sessions.append({"key": "type", "description": _type_session})
+            input_sessions.append({"key": "rule", "description": _rule_session})
 
         done_session = "Updated and linked {} to reaction roles {}."
-        input_sessions = [
+        abs_sessions = [
             {"key": "bind", "description": _bind_session},
             {"key": "done", "description": done_session},
         ]
+        input_sessions.extend(abs_sessions)
         view = ReactionRoleCreationPanel(ctx, binds=reactrole.binds, input_sessions=input_sessions)
+        if message.author.id != self.bot.user.id:
+            view.trigger_type = TriggerType.REACTION
         view.placeholder_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
         embed = discord.Embed(
             title="Reaction Roles Add",
@@ -1074,11 +1083,27 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         embed = view.message.embeds[0]
         embed.description = description
         await view.message.edit(embed=embed, view=view)
+
+        reactrole.binds = view.binds
+        reactrole.rules = view.rule
+        reactrole.trigger_type = view.trigger_type
+
+        if reactrole.trigger_type == TriggerType.REACTION:
+            reactions = [str(r) for r in message.reactions]
+            for key, value in reactrole.binds.items():
+                emoji = value["emoji"]
+                if emoji in reactions:
+                    continue
+                await message.add_reaction(emoji)
+                await asyncio.sleep(0.2)
+        else:
+            if new:
+                ReactionRoleView(self, message, model=reactrole)
+            reactrole.view.rebind()
+            await reactrole.view.update_view()
+
         if new:
-            output_view = ReactionRoleView(self, message, model=reactrole)
             self.config.reactroles.add(reactrole)
-        reactrole.view.rebind()
-        await reactrole.view.update_view()
         await self.config.update()
 
     @reactrole.command(name="rule")
@@ -1092,7 +1117,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Set rule for an existing reaction role message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
 
         Available options for `rule`:
         `Normal` - Allow users to have multiple roles in group.
@@ -1141,7 +1166,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Delete entire reaction roles buttons from a message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
         """
         if isinstance(message, int):
             message_id = message
@@ -1166,7 +1191,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         message = reactrole.message
         self.config.reactroles.remove(message.id)
-        await message.edit(view=None)
+        if reactrole.view:
+            await message.edit(view=None)
         await self.config.update()
         await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
 
@@ -1182,7 +1208,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Delete a role-button bind from reaction roles message.
 
-        `message` may be a message ID or message link.
+        `message` may be a message ID, message link, or format of `channelid-messageid`.
         `role` may be a role ID, mention, or name.
         """
         if isinstance(message, int):
@@ -1252,7 +1278,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         This will remove buttons with broken data from the reaction roles messages.
 
         __**Notes:**__
-        - The buttons are considered broken if they are linked to deleted roles.
+        - The reaction roles binds are considered broken if they are linked to deleted roles.
         """
         reactroles = self.config.reactroles
         reactroles.resolve_broken()
@@ -1281,7 +1307,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 )
                 output += "\n"
                 entry.delete_set_roles(roles)
-                await entry.view.update_view()
+                if entry.view:
+                    await entry.view.update_view()
                 n += 1
             await self.config.update()
         else:
@@ -1333,8 +1360,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
         for entry in self.config.reactroles.entries:
-            entry.view.stop()
-            await entry.message.edit(view=None)
+            if entry.view:
+                entry.view.stop()
+                await entry.message.edit(view=None)
         self.config.reactroles.entries.clear()
         await ctx.send(embed=self.base_embed("Data cleared."))
         await self.config.update()

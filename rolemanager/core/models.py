@@ -111,6 +111,9 @@ class ReactionRole:
     ----------
     message : Union[discord.PartialMessage, discord.Message]
         The message where the reactions are attached to.
+    trigger_type: str
+        The type of trigger that this reaction roles response to.
+        Should be reaction or interaction.
     binds : Dict[str, Any]
         Role button mapping. Key would be role ID and value would be a dictionary
         of button values.
@@ -148,20 +151,24 @@ class ReactionRole:
     @classmethod
     def from_data(cls, manager: ReactionRoleManager, *, data: ReactRolePayload) -> ReactionRole:
         """
-        Instantiate this class from raw data. This will automatically add the persistent view to the bot.
+        Instantiate this class from raw data. This will automatically add persistent
+        view to the bot if the trigger type is interaction.
         """
         channel_id = data.pop("channel")
         channel = manager.cog.bot.get_channel(channel_id)
         if channel is None:
             raise ValueError(f"Channel with ID {channel_id} not found.")
         message = discord.PartialMessage(id=data.pop("message"), channel=channel)
+        trigger_type = data.pop("type", TriggerType.REACTION)
         instance = cls(
             message,
+            trigger_type=trigger_type,
             binds=data.pop("binds"),
             rules=data.pop("rules"),
         )
-        instance.view = ReactionRoleView(manager.cog, message, model=instance)
-        manager.cog.bot.add_view(instance.view, message_id=message.id)
+        if trigger_type == TriggerType.INTERACTION:
+            instance.view = ReactionRoleView(manager.cog, message, model=instance)
+            manager.cog.bot.add_view(instance.view, message_id=message.id)
         return instance
 
     def delete_set_roles(self, role_list: List[str]) -> None:
@@ -178,6 +185,21 @@ class ReactionRole:
             if _role is not None and _role in member.roles:
                 ret.append(_role)
         return ret
+
+    async def resolve_role(self, role_id: int) -> Option[discord.Role]:
+        role = self.channel.guild.get_role(role_id)
+        if not role:
+            logger.error(f"Role with ID {role_id} was deleted.")
+            self.delete_set_roles([str(role_id)])
+            await self.manager.cog.config.update()
+            if self.view:
+                await self.view.update_view()
+            return None
+
+        if not my_role_hierarchy(self.channel.guild, role):
+            logger.error(f"Role {role} outranks me.")
+            return None
+        return role
 
     def to_dict(self) -> ReactRolePayload:
         return {
@@ -311,7 +333,8 @@ class ReactionRoleManager:
         message : Union[discord.PartialMessage, discord.Message]
             The message where the reactions are attached to.
         trigger_type: str
-            The reaction type. Whether reaction or interaction.
+            The type of trigger that this reaction roles response to.
+            Should be reaction or interaction.
         binds : Dict[str, Any]
             Emoji-role or role-button mapping.
         rules : str
@@ -339,19 +362,14 @@ class ReactionRoleManager:
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
-        guild = reactrole.channel.guild
-        member = guild.get_member(interaction.user.id)
-        role_id = button.custom_id.split("-")[-1]
-        role = guild.get_role(int(role_id))
-        if not role:
-            logger.error(f"Role with ID {role_id} was deleted.")
-            reactrole.delete_set_roles([role_id])
-            await self.cog.config.update()
-            await reactrole.view.update_view()
+
+        if reactrole.trigger_type != TriggerType.INTERACTION or interaction.user.bot:
             return
 
-        if not my_role_hierarchy(guild, role):
-            logger.error(f"Role {role} outranks me.")
+        member = reactrole.channel.guild.get_member(interaction.user.id)
+        role_id = button.custom_id.split("-")[-1]
+        role = await reactrole.resolve_role(int(role_id))
+        if role is None:
             return
 
         embed = discord.Embed(color=self.cog.bot.main_color)
@@ -374,7 +392,7 @@ class ReactionRoleManager:
             return
 
         reactrole = self.find_entry(payload.message_id)
-        if not reactrole:
+        if not reactrole or reactrole.trigger_type != TriggerType.REACTION:
             return
 
         guild = self.cog.bot.get_guild(payload.guild_id)
@@ -392,15 +410,8 @@ class ReactionRoleManager:
         else:
             return
 
-        role = guild.get_role(int(role_id))
-        if not role:
-            logger.error(f"Role with ID {role_id} was deleted.")
-            reactrole.delete_set_roles(discord.Object(payload.message_id), [role_id])
-            await self.cog.config.update()
-            return
-
-        if not my_role_hierarchy(guild, role):
-            logger.error(f"Role {role} outranks me.")
+        role = await reactrole.resolve_role(int(role_id))
+        if role is None:
             return
 
         if payload.event_type == "REACTION_ADD":
@@ -416,7 +427,6 @@ class ReactionRoleManager:
 
     def to_dict(self) -> ReactRoleConfigPayload:
         message_cache = {str(entry.message.id): entry.to_dict() for entry in self.entries}
-
         # store the unresolved data back in the database
         # in case there were permissions issue that made the data couldn't be resolved
         # TODO: Timeout for unresolved, then purge

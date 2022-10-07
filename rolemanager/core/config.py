@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 _default_config: ConfigPayload = {
-    "autorole": {
+    "autoroles": {
         "roles": [],
         "enable": False,
     },
@@ -39,11 +39,13 @@ def _resolve_migration(data: Dict[str, Any]) -> bool:
                     if g in v[msg_id]:
                         v[msg_id]["binds"] = v[msg_id].pop(g)
                         update = True
+                    trigger_type = v[msg_id].get("type")
+                    if not trigger_type:
+                        v[msg_id]["type"] = "REACTION"
         if key == "autorole":
             data["autoroles"] = data.pop("autorole")
         if key == "reactroles":
             if data[key].get("channels", None) is not None:
-                data[key]["message_cache"] = {}
                 data[key].pop("channels")
                 update = True
     return update

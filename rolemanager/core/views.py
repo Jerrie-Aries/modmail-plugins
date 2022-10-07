@@ -324,7 +324,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             },
             "emoji": {
                 "label": "Emoji",
-                "required": False,
+                "required": self.trigger_type == TriggerType.REACTION,
                 "max_length": _short_length,
             },
         }
@@ -421,7 +421,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             "role": AssignableRole,
         }
         errors = []
-        if self.current_input["emoji"] is None and self.current_input["label"] is None:
+        if self.current_input["emoji"] is None and self.current_input.get("label") is None:
             errors.append("ValueError: Emoji and Label cannot both be None.")
 
         ret = {}
