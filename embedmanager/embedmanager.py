@@ -271,7 +271,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Post an embed from a message.
 
-        `message` may be a message ID or message link of the embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the embed.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
@@ -285,7 +285,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Download a JSON file from a message's embed.
 
-        `message` may be a message ID or message link of the embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the embed.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
@@ -333,26 +333,35 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @embed_group.group(name="edit", usage="<option>", invoke_without_command=True)
+    @embed_group.group(name="edit", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_edit(
-        self,
-        ctx: commands.Context,
-        message: BotMessage,
-        color: Optional[discord.Color],
-        title: str,
-        *,
-        description: str,
-    ):
+    async def embed_edit(self, ctx: commands.Context, message: BotMessage, index: int = 0):
         """
-        Edit a message sent by Bot's embeds.
+        Edit a message's embed sent by the bot.
+        This will initiate the Embed Editor panel with interactive buttons and text inputs session.
+        The values for the input fields are pre-defined based on the source embed.
 
-        `message` may be a message ID or message link of the bot's embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
+
+        __**Note:**__
+        If the message has multiple embeds, you can pass a number to `index` to specify which embed.
         """
-        color = color or self.bot.main_color
-        embed = discord.Embed(color=color, title=title, description=description)
-        await message.edit(embed=embed)
-        await ctx.message.add_reaction(YES_EMOJI)
+        source_embed = await self.get_embed_from_message(message, index)
+        view = EmbedBuilderView.from_embed(ctx.author, embed=source_embed)
+        description = "Select the category and press the button below respectively to start creating/editing your embed."
+        embed = discord.Embed(
+            title="Embed Editor",
+            description=description,
+            color=self.bot.main_color,
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.set_footer(text="This panel will time out after 10 minutes.")
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+
+        if view.embed:
+            await message.edit(embed=view.embed)
+            await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -360,7 +369,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message's embed using valid JSON.
 
-        `message` may be a message ID or message link of the bot's embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
         """
         await message.edit(embed=data)
         await ctx.message.add_reaction(YES_EMOJI)
@@ -371,7 +380,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message's embed using a valid JSON file.
 
-        `message` may be a message ID or message link of the bot's embed.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
         """
         data = await self.get_file_from_message(ctx, file_types=("json", "txt"))
         embed = await JSON_CONVERTER.convert(ctx, data)
@@ -390,8 +399,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Edit a message's embed using another message's embed.
 
-        `source` may be a message ID or message link of the source embed.
-        `target` may be a message ID or message link of the bot's embed you want to edit.
+        `source` may be a message ID, message link, or format of `channelid-messageid` of the source embed.
+        `target` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed you want to edit.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
@@ -459,7 +468,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Store an embed from a message.
 
-        `message` may be a message ID or message link of the embed you want to store.
+        `message` may be a message ID, message link, or format of `channelid-messageid` of the embed you want to store.
 
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.

@@ -194,7 +194,7 @@ class EmbedBuilderView(View):
 
     children: List[EmbedBuilderButton]
 
-    def __init__(self, user: discord.Member, *, timeout: float = 600.0):
+    def __init__(self, user: discord.Member, *, timeout: float = 600.0, add_items: bool = True):
         super().__init__(timeout=timeout)
         self.user: discord.Member = user
         self.message: discord.Message = MISSING
@@ -284,9 +284,10 @@ class EmbedBuilderView(View):
                 },
             },
         }
-        self._add_menu()
-        self._generate_buttons()
-        self.refresh()
+        if add_items:
+            self._add_menu()
+            self._generate_buttons()
+            self.refresh()
 
     def _add_menu(self) -> None:
         options = []
@@ -452,6 +453,39 @@ class EmbedBuilderView(View):
             self.embed.add_field(**data)
         self.embed.timestamp = discord.utils.utcnow()
         return self.embed
+
+    @classmethod
+    def from_embed(cls, user: discord.Member, *, embed: discord.Embed) -> EmbedBuilderView:
+        self = cls(user, add_items=False)
+        self.embed = embed
+        data = embed.to_dict()
+        title = data.get("title")
+        self.input_map["title"]["title"]["default"] = title
+        url = data.get("url")
+        if url:
+            self.input_map["title"]["url"]["default"] = embed.url
+        self.input_map["body"]["description"]["default"] = data.get("description")
+        self.input_map["color"]["value"]["default"] = data.get("color")
+        images = ["thumbnail", "image"]
+        elems = ["author", "footer"]
+        for elem in images + elems:
+            elem_data = data.get(elem)
+            if elem_data:
+                for key, val in elem_data.items():
+                    if elem in images:
+                        if key != "url":
+                            continue
+                        key = elem
+                        elem = "body"
+                    try:
+                        self.input_map[elem][key]["default"] = val
+                    except KeyError:
+                        continue
+
+        self._add_menu()
+        self._generate_buttons()
+        self.refresh()
+        return self
 
     def disable_and_stop(self) -> None:
         for child in self.children:
