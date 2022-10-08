@@ -1021,8 +1021,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             message, trigger_type=trigger_type, binds=binds, rules=view.rule, add=True
         )
         if trigger_type == TriggerType.REACTION:
-            for key, value in binds.items():
-                await message.add_reaction(value["emoji"])
+            for bind in binds:
+                await message.add_reaction(bind["emoji"])
                 await asyncio.sleep(0.2)
         else:
             output_view = ReactionRoleView(self, message, model=model)
@@ -1081,7 +1081,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        roles_fmt = ", ".join(f"<@&{key}>" for key in view.binds)
+        roles_fmt = ", ".join(f"<@&{bind['role']}>" for bind in view.binds)
         hyperlink = f"[message]({message.jump_url})"
         description = view.session_description.format(roles_fmt, hyperlink)
         embed = view.message.embeds[0]
@@ -1095,8 +1095,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         if reactrole.trigger_type == TriggerType.REACTION:
             reactions = [str(r) for r in message.reactions]
-            for key, value in reactrole.binds.items():
-                emoji = value["emoji"]
+            for bind in reactrole.binds:
+                emoji = bind["emoji"]
                 if emoji in reactions:
                     continue
                 await message.add_reaction(emoji)
@@ -1226,9 +1226,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if reactrole is None:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
-        try:
-            del reactrole.binds[str(role.id)]
-        except KeyError:
+        # we just do this manually here
+        for bind in reactrole.binds:
+            if bind["role"] == str(role.id):
+                reactrole.binds.remove(bind)
+                break
+        else:
             raise commands.BadArgument(
                 f"Role {role.mention} is not binded to any button or emoji on that message."
             )
@@ -1257,10 +1260,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             rules = entry.rules
             trigger_type = entry.trigger_type
             output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
-            for role_id, payload in entry.binds.items():
-                emoji = payload.get("emoji")
-                identifier = f"{emoji} " if emoji else "" + payload.get("label", "")
-                output.append(f"**{identifier}** : <@&{role_id}>")
+            for bind in entry.binds:
+                emoji = bind.get("emoji") or bind.get("button", {}).get("emoji")
+                identifier = f"{emoji} " if emoji else ""
+                if trigger_type == TriggerType.INTERACTION:
+                    identifier += bind["button"].get("label", "")
+                output.append(f"**{identifier}** : <@&{bind['role']}>")
             if len(output) > 1:
                 react_roles.append("\n".join(output))
         if not react_roles:
@@ -1300,7 +1305,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         to_remove = {}
         for entry in entries:
             roles = []
-            for role_id in entry.binds:
+            for bind in entry.binds:
+                role_id = bind["role"]
                 if entry.channel.guild.get_role(int(role_id)) is None:
                     roles.append(role_id)
             if roles:

@@ -151,7 +151,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         ctx: commands.Context,
         *,
         input_sessions: List[Tuple[[str, Any]]],
-        binds: Dict[str, Any] = MISSING,
+        binds: List[Dict[str, Any]] = MISSING,
     ):
         self.ctx: commands.Context = ctx
         self.user: discord.Member = ctx.author
@@ -162,7 +162,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.rule: str = MISSING
         self.output_embed: discord.Embed = MISSING
         self.placeholder_description: str = MISSING
-        self.binds: Dict[str, Any] = binds if binds else {}
+        self.binds: List[Dict[str, Any]] = binds if binds else []
         super().__init__(ctx.cog)
         self.add_menu()
         self.add_buttons()
@@ -254,13 +254,13 @@ class ReactionRoleCreationPanel(RoleManagerView):
 
     def _parse_output_description(self) -> str:
         desc = self.placeholder_description
-        for key, value in self.binds.items():
-            emoji = value.get("emoji")
-            label = value.get("label")
+        for bind in self.binds:
+            emoji = bind.get("emoji")
+            label = bind.get("label")
             if label is None:
                 label = ""
             prefix = f"{emoji} " if emoji else ""
-            desc += f"- **{emoji}{label}** : <@&{key}>\n"
+            desc += f"- **{emoji}{label}** : <@&{bind['role']}>\n"
         if self.current_input.get("converted", False):
             emoji = self.current_input["emoji"]
             label = self.current_input.get("label")
@@ -274,12 +274,13 @@ class ReactionRoleCreationPanel(RoleManagerView):
         if not self.trigger_type or self.trigger_type == TriggerType.REACTION:
             return []
         buttons = []
-        for key, value in self.binds.items():
+        for bind in self.binds:
+            payload = bind["button"]
             button = Button(
-                label=value["label"],
-                emoji=value["emoji"],
-                style=_resolve_button_style(value["style"]),
-                custom_id=key,
+                label=payload["label"],
+                emoji=payload["emoji"],
+                style=_resolve_button_style(payload["style"]),
+                custom_id=bind["role"],
             )
             buttons.append(button)
         if self.current_input.get("converted", False):
@@ -304,16 +305,23 @@ class ReactionRoleCreationPanel(RoleManagerView):
     async def _action_add(self, interaction: Interaction, *args) -> None:
         # need to store raw inputs for the database later
         role = self.current_input.pop("role")
-        emoji = self.current_input.pop("emoji")
-        binds = {"emoji": str(emoji) if emoji else None}
+        emoji = self.current_input.pop("emoji", None)
+        emoji = str(emoji) if emoji else None
         label = self.current_input.pop("label", None)
+        bind = {"role": str(role.id)}
         if self.trigger_type == TriggerType.INTERACTION:
-            binds.update(
-                label=label,
-                style=self.current_input.pop("style", "blurple"),
-            )
+            payload = {
+                "emoji": emoji,
+                "label": label,
+                "style": self.current_input.pop("style", "blurple"),
+            }
+            bind["button"] = payload
+        elif self.trigger_type == TriggerType.REACTION:
+            bind["emoji"] = emoji
+        else:
+            raise TypeError(f"`{self.trigger_type}` is invalid for reaction roles trigger type.")
 
-        self.binds[str(role.id)] = binds
+        self.binds.append(bind)
         self.current_input.clear()
         prefix = f"{emoji} " if emoji else ""
         if label is None:
@@ -448,14 +456,15 @@ class ReactionRoleCreationPanel(RoleManagerView):
             except Exception as exc:
                 errors.append(f"{key.title()} error: {type(exc).__name__} - {str(exc)}")
             else:
-                if isinstance(entity, discord.Role) and str(entity.id) in self.binds:
-                    errors.append(f"Duplicate role ID: `{entity.id}`. Please set other role.")
+                if isinstance(entity, discord.Role):
+                    if any(str(entity.id) == bind["role"] for bind in self.binds):
+                        errors.append(f"Duplicate role ID: `{entity.id}`. Please set other role.")
                 if key == "emoji" and self.trigger_type == TriggerType.REACTION:
                     # check emoji
-                    for role_id, payload in self.binds.items():
-                        if str(entity) == payload.get("emoji"):
+                    for bind in self.binds:
+                        if str(entity) == bind.get("emoji"):
                             errors.append(
-                                f"Emoji {entity} has already linked to <@&{role_id}> on this message."
+                                f"Emoji {entity} has already linked to <@&{bind['role']}> on this message."
                             )
                             break
                 ret[key] = entity
@@ -481,7 +490,7 @@ class ReactionRoleView(RoleManagerView):
             )
         super().__init__(cog, timeout=None)
         self.model: ReactionRole = model
-        self.binds: Dict[str, Any] = model.binds
+        self.binds: List[Dict[str, Any]] = model.binds
         self.message: discord.Message = message
         model.view = self
         self.add_buttons()
@@ -491,13 +500,14 @@ class ReactionRoleView(RoleManagerView):
         self.add_buttons()
 
     def add_buttons(self) -> None:
-        for key, value in self.binds.items():
+        for bind in self.binds:
+            payload = bind["button"]
             button = RoleManagerButton(
-                label=value["label"],
-                emoji=value["emoji"],
-                style=_resolve_button_style(value["style"]),
+                label=payload["label"],
+                emoji=payload["emoji"],
+                style=_resolve_button_style(payload["style"]),
                 callback=self.handle_interaction,
-                custom_id=f"reactrole:{self.message.id}-{key}",
+                custom_id=f"reactrole:{self.message.id}-{bind['role']}",
             )
             self.add_item(button)
 
@@ -506,7 +516,7 @@ class ReactionRoleView(RoleManagerView):
             if not isinstance(button, RoleManagerButton):
                 continue
             custom_id = button.custom_id
-            if custom_id.split("-")[-1] not in self.binds:
+            if not any(custom_id.split("-")[-1] == bind["role"] for bind in self.binds):
                 self.remove_item(button)
         await self.message.edit(view=self)
 

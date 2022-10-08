@@ -114,9 +114,8 @@ class ReactionRole:
     trigger_type: str
         The type of trigger that this reaction roles response to.
         Should be reaction or interaction.
-    binds : Dict[str, Any]
-        Role button mapping. Key would be role ID and value would be a dictionary
-        of button values.
+    binds : List[Dict[str, Any]]
+        List of bind data attached to the message.
     rules : str
         The rules applied for the reactions.
     """
@@ -126,13 +125,13 @@ class ReactionRole:
         message: Union[discord.PartialMessage, discord.Message],
         *,
         trigger_type: str = TriggerType.REACTION,
-        binds: Dict[str, Any],
+        binds: List[Dict[str, Any]],
         rules: str = ReactRules.NORMAL,
     ):
         self.message: Union[discord.PartialMessage, discord.Message] = message
         self.channel: discord.TextChannel = message.channel
         self.trigger_type: str = trigger_type
-        self.binds: Dict[str, Any] = binds
+        self.binds: List[Dict[str, Any]] = binds
         self.rules: str = rules
         self.manager: ReactionRoleManager = MISSING
         self.view: ReactionRoleView = MISSING
@@ -173,12 +172,14 @@ class ReactionRole:
 
     def delete_set_roles(self, role_list: List[str]) -> None:
         for role_id in role_list:
-            if role_id in self.binds:
-                del self.binds[role_id]
+            for bind in self.binds:
+                if role_id == bind["role"]:
+                    self.binds.remove(bind)
 
-    async def resolve_unique(self, member: discord.Member, role: discord.Role) -> List[discord.Role]:
+    def resolve_unique(self, member: discord.Member, role: discord.Role) -> List[discord.Role]:
         ret = []
-        for role_id in self.binds:
+        for bind in self.binds:
+            role_id = bind["role"]
             if role_id == str(role.id):
                 continue
             _role = member.guild.get_role(int(role_id))
@@ -221,23 +222,22 @@ class ReactionRoleManager:
         self._enable: bool = data.pop("enable", True)
         self.entries: Set[ReactionRole] = set()
 
-        self._unresolved: Dict[str, Any] = {}
-        self._populate_entries_from_data(data=data.pop("message_cache"))
+        self._unresolved: List[ReactRolePayload] = []
+        self._populate_entries_from_data(data=data.pop("data"))
 
-    def _populate_entries_from_data(self, *, data: Dict[str, ReactRolePayload]) -> None:
+    def _populate_entries_from_data(self, *, data: List[ReactRolePayload]) -> None:
         global ReactionRoleView
         from .views import ReactionRoleView  # circular
 
-        for key in list(data.keys()):
-            entry = data.pop(key)
+        for entry in data:
             try:
                 reactrole = ReactionRole.from_data(self, data=entry)
             except ValueError:
-                self._unresolved[key] = entry
+                self._unresolved.append(entry)
                 continue
             self.add(reactrole)
 
-    def get_unresolved(self) -> Dict[str, ReactRolePayload]:
+    def get_unresolved(self) -> List[ReactRolePayload]:
         """
         Gets unresolved reaction role data.
         """
@@ -248,12 +248,12 @@ class ReactionRoleManager:
         A helper to resolve the unresolved data.
         """
         fixed = 0
-        for key, data in list(self._unresolved.items()):
+        for data in self._unresolved:
             try:
                 reactrole = ReactionRole.from_data(self, data=data)
             except ValueError:
                 continue
-            self._unresolved.pop(key)
+            self._unresolved.remove(data)
             self.add(reactrole)
             fixed += 1
         return fixed
@@ -321,7 +321,7 @@ class ReactionRoleManager:
         message: Union[discord.PartialMessage, discord.Message],
         *,
         trigger_type: str = TriggerType.REACTION,
-        binds: Dict[str, Any] = None,
+        binds: List[Dict[str, Any]] = None,
         rules: str = ReactRules.NORMAL,
         add: bool = False,
     ) -> ReactionRole:
@@ -335,15 +335,15 @@ class ReactionRoleManager:
         trigger_type: str
             The type of trigger that this reaction roles response to.
             Should be reaction or interaction.
-        binds : Dict[str, Any]
-            Emoji-role or role-button mapping.
+        binds : List[Dict[str, Any]]
+            List of bind data attached to the message.
         rules : str
             The rules applied for the reactions.
         add : bool
             Whether or not the instance created should be added to the entries.
         """
         if binds is None:
-            binds = {}
+            binds = []
         instance = ReactionRole(message, trigger_type=trigger_type, binds=binds, rules=rules)
         if add:
             self.add(instance)
@@ -400,12 +400,11 @@ class ReactionRoleManager:
         if member is None or member.bot or not guild.me.guild_permissions.manage_roles:
             return
 
-        binds = reactrole.binds
         role_id = None
-        for key, val in binds.items():
-            emoji = val.get("emoji")
+        for bind in reactrole.binds:
+            emoji = bind.get("emoji")
             if emoji and str(payload.emoji) == emoji:
-                role_id = key
+                role_id = bind["role"]
                 break
         else:
             return
@@ -426,14 +425,14 @@ class ReactionRoleManager:
                 await member.remove_roles(role, reason="Reaction role.")
 
     def to_dict(self) -> ReactRoleConfigPayload:
-        message_cache = {str(entry.message.id): entry.to_dict() for entry in self.entries}
+        data = [entry.to_dict() for entry in self.entries]
         # store the unresolved data back in the database
         # in case there were permissions issue that made the data couldn't be resolved
         # TODO: Timeout for unresolved, then purge
         unresolved = self.get_unresolved()
         if unresolved:
-            message_cache.update(unresolved)
+            data.extend(unresolved)
         return {
             "enable": self.is_enabled(),
-            "message_cache": message_cache,
+            "data": data,
         }
