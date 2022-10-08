@@ -333,7 +333,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @embed_group.group(name="edit", usage="<option>", invoke_without_command=True)
+    @embed_group.group(name="edit", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_edit(self, ctx: commands.Context, message: BotMessage, index: int = 0):
         """
