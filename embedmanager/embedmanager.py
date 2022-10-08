@@ -338,6 +338,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
     async def embed_edit(self, ctx: commands.Context, message: BotMessage, index: int = 0):
         """
         Edit a message's embed sent by the bot.
+        This will initiate the Embed Editor panel with interactive buttons and text inputs session.
+        The values for the input fields are pre-defined based on the source embed.
 
         `message` may be a message ID, message link, or format of `channelid-messageid` of the bot's embed.
 
@@ -348,7 +350,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         view = EmbedBuilderView.from_embed(ctx.author, embed=source_embed)
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
-            title="Edit Embed",
+            title="Embed Editor",
             description=description,
             color=self.bot.main_color,
             timestamp=discord.utils.utcnow(),
