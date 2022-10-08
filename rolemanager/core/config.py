@@ -109,7 +109,7 @@ class RoleManagerConfig(Config):
         if data is None:
             data = self.deepcopy(_default_config)
         if data["reactroles"].get("message_cache") is not None:
-             data = _resolve_migration(data)
+            data = _resolve_migration(data)
             await self.update(data=data)
 
         self._resolve_attributes(data)
