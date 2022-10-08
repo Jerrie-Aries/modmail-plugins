@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import re
 import shlex
 from collections import Counter
@@ -24,6 +25,7 @@ from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
 from core.time import UserFriendlyTime
+from core.utils import strtobool
 
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
@@ -98,6 +100,7 @@ class Moderation(commands.Cog):
         self.blurple: discord.Color = discord.Color.blurple()
         self.db: AsyncIOMotorCollection = MISSING  # implemented in `initialize()`
         self.config_cache: Dict[str, Any] = {}
+        self.massban_enabled: bool = strtobool(os.environ.get("MODERATION_MASSBAN_ENABLE", False))
         self.bot.loop.create_task(self.initialize())
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
@@ -923,8 +926,9 @@ class Moderation(commands.Cog):
         `--embeds`: Checks if the message has embeds (no arguments).
 
         **Note(s):**
-        - This command is disabled due to too powerful outcome. **It will not actually ban the users.**
+        - By default, this command is disabled due to too powerful outcome. **It will not actually ban the users.**
         It is put here only for educational purpose for you to familiarize yourself with the custom syntax.
+        To enable it, set the envinronment config variable `MODERATION_MASSBAN_ENABLE` to `True`.
         """
 
         # For some reason there are cases due to caching that ctx.author
@@ -1084,11 +1088,16 @@ class Moderation(commands.Cog):
             return
 
         count = 0
+        if not self.massban_enabled:
+            logger.info(
+                "`massban` feature is disabled. To enable it set the environment config variable `MODERATION_MASSBAN_ENABLE` to `True`."
+            )
         for member in members:
             try:
                 if member and reason:
-                    pass
-                # await ctx.guild.ban(member, reason=reason)
+                    if not self.massban_enabled:
+                        continue
+                    await ctx.guild.ban(member, reason=reason)
             except discord.HTTPException:
                 pass
             else:
