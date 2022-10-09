@@ -39,7 +39,7 @@ def _resolve_migration(data: Dict[str, Any]) -> Dict[str, Any]:
         rr_data.pop("channels")
 
     # step 3, this will be the data type conversion and reorder
-    if rr_data.get("message_cache"):
+    if rr_data.get("message_cache") is not None:
         # handle msg cache
         msg_cache = rr_data.pop("message_cache")
         # very old key name, the current one would be 'binds'
