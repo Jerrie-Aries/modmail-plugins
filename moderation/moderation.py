@@ -1463,11 +1463,8 @@ class Moderation(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, *args, **kwargs) -> None:
-        pass
+        await self.logging.on_member_update(*args, **kwargs)
 
-    # this will be triggered everytime a user leaves the server
-    # however we are only looking for kicked members
-    # since discord.py does not provide the on_member_kick event we have to filter them manually
     @commands.Cog.listener()
     async def on_member_remove(self, *args, **kwargs) -> None:
         await self.logging.on_member_remove(*args, **kwargs)
@@ -1479,6 +1476,14 @@ class Moderation(commands.Cog):
     @commands.Cog.listener()
     async def on_member_unban(self, *args, **kwargs) -> None:
         await self.logging.on_member_unban(*args, **kwargs)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, *args, **kwargs) -> None:
+        await self.logging.on_guild_channel_create(*args, **kwargs)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, *args, **kwargs) -> None:
+        await self.logging.on_guild_channel_delete(*args, **kwargs)
 
 
 async def setup(bot: ModmailBot) -> None:

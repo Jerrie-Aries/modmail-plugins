@@ -34,9 +34,9 @@ class ModerationLogging:
         *,
         action: str,
         target: Union[discord.Member, discord.User, List[discord.Member]],
-        moderator: discord.Member,
-        reason: str,
+        moderator: Optional[discord.Member],
         description: str,
+        reason: Optional[str] = None,
         **kwargs,
     ) -> None:
         """
@@ -87,14 +87,16 @@ class ModerationLogging:
         else:
             raise TypeError("Invalid type of parameter `target`. Expected type: `Member`, `User`, or `List`.")
 
-        embed.add_field(name="Reason", value=reason or "No reason as provided.")
+        if reason is not None:
+            embed.add_field(name="Reason", value=reason)
 
         # extra info
         for key, value in kwargs.items():
             name = key.replace("_", " ").capitalize()
             embed.add_field(name=name, value=value)
 
-        embed.add_field(name="Moderator", value=moderator.mention, inline=False)
+        if moderator is not None:
+            embed.add_field(name="Moderator", value=moderator.mention, inline=False)
         return await channel.send(embed=embed)
 
     async def _get_or_create_webhook(self, channel: discord.TextChannel) -> Optional[discord.Webhook]:
@@ -133,6 +135,94 @@ class ModerationLogging:
         return wh
 
     async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        if before.guild_avatar != after.guild_avatar:
+            return await self.on_member_guild_avatar_update(before, after)
+
+        audit_logs = after.guild.audit_logs(limit=10)
+        found = False
+        async for entry in audit_logs:
+            if int(entry.target.id) == after.id:
+                action = entry.action
+                if action == discord.AuditLogAction.member_update:
+                    if hasattr(entry.after, "nick"):
+                        found = True
+                        await self.on_member_nick_update(before, after, entry.user, reason=entry.reason)
+                    elif hasattr(entry.after, "timed_out_until"):
+                        found = True
+                        await self.on_member_timed_out_update(before, after, entry.user, reason=entry.reason)
+                elif action == discord.AuditLogAction.member_role_update:
+                    found = True
+                    await self.on_member_role_update(before, after, entry.user, reason=entry.reason)
+                if found:
+                    return
+
+    async def on_member_guild_avatar_update(self, before: discord.Member, after: discord.Member) -> None:
+        action = "updated" if after.guild_avatar is not None else "removed"
+        description = f"{after} {action} their guild avatar."
+        await self.send_log(
+            after.guild,
+            action="avatar_update",
+            target=after,
+            moderator=None,
+        )
+
+    async def on_member_nick_update(
+        self,
+        before: discord.Member,
+        after: discord.Member,
+        moderator: discord.Member,
+        *,
+        reason: Optional[str] = None,
+    ) -> None:
+        action = "set" if before.nick is None else "removed" if after.nick is None else "updated"
+        description = f"{after}'s nickname was {action}"
+        description += "." if after.nick is None else f" to {after.nick}."
+        await self.send_log(
+            after.guild,
+            action="nickname",
+            target=after,
+            moderator=moderator if moderator != after else None,
+            reason=reason if reason else "None",
+            description=description,
+            before=str(before.nick),
+            after=str(after.nick),
+        )
+
+    async def on_member_role_update(
+        self,
+        before: discord.Member,
+        after: discord.Member,
+        moderator: discord.Member,
+        *,
+        reason: Optional[str] = None,
+    ) -> None:
+        description = f"{after}'s roles were updated."
+        added = [role for role in after.roles if role not in before.roles]
+        removed = [role for role in before.roles if role not in after.roles]
+        kwargs = {}
+        if added:
+            kwargs["added"] = "\n".join(r.mention for r in added)
+        if removed:
+            kwargs["removed"] = "\n".join(r.mention for r in removed)
+
+        await self.send_log(
+            after.guild,
+            action="role_update",
+            target=after,
+            moderator=moderator if moderator != after else None,
+            reason=reason if reason else "None",
+            description=description,
+            **kwargs,
+        )
+
+    async def on_member_timed_out_update(
+        self,
+        before: discord.Member,
+        after: discord.Member,
+        moderator: discord.Member,
+        *,
+        reason: Optional[str] = None,
+    ) -> None:
         pass
 
     async def on_member_remove(self, member: discord.Member) -> None:
@@ -165,7 +255,7 @@ class ModerationLogging:
             if int(entry.target.id) == user.id:
                 break
         else:
-            logger.debug("Cannot find the audit log entry for user ban of %d, guild %s.", user, guild)
+            logger.error("Cannot find the audit log entry for user ban of %d, guild %s.", user, guild)
             return
 
         mod = entry.user
@@ -191,7 +281,7 @@ class ModerationLogging:
             if int(entry.target.id) == user.id:
                 break
         else:
-            logger.debug("Cannot find the audit log entry for user unban of %d, guild %s.", user, guild)
+            logger.error("Cannot find the audit log entry for user unban of %d, guild %s.", user, guild)
             return
 
         mod = entry.user
@@ -206,3 +296,25 @@ class ModerationLogging:
             reason=entry.reason,
             description=f"{user} is now unbanned.",
         )
+
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
+        async for entry in audit_logs:
+            if int(entry.target.id) == channel.id:
+                break
+        else:
+            logger.error(
+                "Cannot find the audit log entry for channel creation of %d, guild %s.", channel, guild
+            )
+            return
+
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
+        async for entry in audit_logs:
+            if int(entry.target.id) == channel.id:
+                break
+        else:
+            logger.error(
+                "Cannot find the audit log entry for channel deletion of %d, guild %s.", channel, guild
+            )
+            return
