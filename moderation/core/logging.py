@@ -161,7 +161,7 @@ class ModerationLogging:
         description = f"{after} {action} their guild avatar."
         await self.send_log(
             after.guild,
-            action="avatar_update",
+            action="avatar update",
             target=after,
             moderator=None,
         )
@@ -207,7 +207,7 @@ class ModerationLogging:
 
         await self.send_log(
             after.guild,
-            action="role_update",
+            action="role update",
             target=after,
             moderator=moderator if moderator != after else None,
             reason=reason if reason else "None",
