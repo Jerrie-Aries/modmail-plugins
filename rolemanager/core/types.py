@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, TypedDict, Optional
+from typing import Any, Dict, List, TypedDict, Optional
 
 import discord
 
@@ -7,15 +7,13 @@ import discord
 class ReactRolePayload(TypedDict):
     message: int
     channel: int
-    binds: Dict[str, int]
+    binds: List[Dict[str, Any]]
     rules: str
-
-
-MessageCachePayload = Dict[str, ReactRolePayload]
+    type: str
 
 
 class ReactRoleConfigPayload(TypedDict):
-    message_cache: MessageCachePayload
+    data: List[ReactRolePayload]
     enable: bool
 
 

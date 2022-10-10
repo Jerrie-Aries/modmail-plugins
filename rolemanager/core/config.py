@@ -17,46 +17,81 @@ _default_config: ConfigPayload = {
         "enable": False,
     },
     "reactroles": {
-        "message_cache": {},
+        "data": [],
         "enable": True,
     },
 }
 
 
 # TODO: Deprecate
-def _resolve_migration(data: Dict[str, Any]) -> bool:
-    update = False
-    for key, elems in list(data.items()):
-        if not isinstance(elems, dict):
+def _resolve_migration(data: Dict[str, Any]) -> Dict[str, Any]:
+    # step 1
+    if data.get("autorole"):
+        data["autoroles"] = data.pop("autorole")
+    for key in data:
+        if not isinstance(data[key], dict):
             continue
-        for k, v in list(elems.items()):
-            if k == "enabled":
-                data[key]["enable"] = data[key].pop(k)
+        if "enabled" in data[key]:
+            data[key]["enable"] = data[key].pop("enabled")
+    # step 2
+    rr_data = data["reactroles"]
+    if rr_data.get("channels") is not None:
+        rr_data.pop("channels")
+
+    # step 3, this will be the data type conversion and reorder
+    if rr_data.get("message_cache") is not None:
+        # handle msg cache
+        msg_cache = rr_data.pop("message_cache")
+        # very old key name, the current one would be 'binds'
+        g = "emoji_role_groups"
+        for msg_id in list(msg_cache):
+            if g in msg_cache[msg_id]:
+                msg_cache[msg_id]["binds"] = msg_cache[msg_id].pop(g)
                 update = True
-            if key == "reactroles" and k == "message_cache":
-                g = "emoji_role_groups"
-                for msg_id in list(v.keys()):
-                    if g in v[msg_id]:
-                        v[msg_id]["binds"] = v[msg_id].pop(g)
-                        update = True
-                    trigger_type = v[msg_id].get("type")
-                    if not trigger_type:
-                        v[msg_id]["type"] = "REACTION"
-        if key == "autorole":
-            data["autoroles"] = data.pop("autorole")
-        if key == "reactroles":
-            if data[key].get("channels", None) is not None:
-                data[key].pop("channels")
-                update = True
-            rr_msgs = data[key]["message_cache"]
-            for msg_id in list(rr_msgs):
-                binds = rr_msgs[msg_id].get("binds", {})
-                flipped = None
-                if any(not k.isdigit() for k, _ in binds.items()):
-                    flipped = {str(v): {"emoji": k} for k, v in binds.items()}
-                if flipped is not None:
-                    data[key]["message_cache"][msg_id]["binds"] = flipped
-    return update
+            trigger_type = msg_cache[msg_id].get("type")
+            if not trigger_type:
+                msg_cache[msg_id]["type"] = "REACTION"
+        # loop again
+        for msg_id in list(msg_cache):
+            # handle old 'emoji':'role_id' format
+            binds = msg_cache[msg_id].get("binds", {})
+            flipped = None
+            if any(not k.isdigit() for k, _ in binds.items()):
+                flipped = {str(v): {"emoji": k} for k, v in binds.items()}
+            if flipped is not None:
+                msg_cache[msg_id]["binds"] = flipped
+
+        # the last part of migration, here we'll update the type of data
+        # and reorder for easier access later on
+        for msg_id in list(msg_cache):
+            binds = msg_cache[msg_id].get("binds", {})
+            if not binds:
+                continue
+            updated_binds = []
+            trigger_type = msg_cache[msg_id].get("type")
+            if trigger_type == "INTERACTION":
+                # buttons stuff
+                for role_id in list(binds):
+                    bind_data = {
+                        "role": role_id,
+                        "button": {k: v for k, v in binds[role_id].items()},
+                    }
+                    updated_binds.append(bind_data)
+            else:
+                # normal reaction
+                for role_id in list(binds):
+                    bind_data = {
+                        "role": role_id,
+                        "emoji": binds[role_id]["emoji"],
+                    }
+                updated_binds.append(bind_data)
+            msg_cache[msg_id]["binds"] = updated_binds
+
+        # finally convert this to a list
+        rr_data["data"] = [msg_cache.pop(msg_id) for msg_id in list(msg_cache)]
+    data["reactroles"] = rr_data
+
+    return data
 
 
 class RoleManagerConfig(Config):
@@ -73,13 +108,8 @@ class RoleManagerConfig(Config):
         data = await super().fetch()
         if data is None:
             data = self.deepcopy(_default_config)
-        identifier = (
-            "autorole" in data
-            or data["reactroles"].get("channels", None) is not None
-            or any(val.get("type", None) is None for _, val in data["reactroles"]["message_cache"].items())
-        )
-        if identifier:
-            _resolve_migration(data)
+        if data["reactroles"].get("message_cache") is not None:
+            data = _resolve_migration(data)
             await self.update(data=data)
 
         self._resolve_attributes(data)
