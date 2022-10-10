@@ -29,6 +29,7 @@ from core.utils import strtobool
 
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
+from .core.logging import ModerationLogging
 from .core.utils import parse_delete_message_days
 
 
@@ -100,7 +101,10 @@ class Moderation(commands.Cog):
         self.blurple: discord.Color = discord.Color.blurple()
         self.db: AsyncIOMotorCollection = MISSING  # implemented in `initialize()`
         self.config_cache: Dict[str, Any] = {}
+        self.logging: ModerationLogging = ModerationLogging(self)
         self.massban_enabled: bool = strtobool(os.environ.get("MODERATION_MASSBAN_ENABLE", False))
+
+    async def cog_load(self) -> None:
         self.bot.loop.create_task(self.initialize())
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
@@ -194,15 +198,15 @@ class Moderation(commands.Cog):
         return config
 
     # Logging
-    @commands.group(invoke_without_command=True)
+    @commands.group(name="logging", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging(self, ctx: commands.Context):
+    async def logging_group(self, ctx: commands.Context):
         """
         Sets the logging feature for moderation commands.
         """
         await ctx.send_help(ctx.command)
 
-    @logging.command(name="channel")
+    @logging_group.command(name="channel")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_channel(self, ctx: commands.Context, channel: discord.TextChannel):
         """
@@ -217,7 +221,7 @@ class Moderation(commands.Cog):
         await ctx.send(embed=embed)
         await config.update()
 
-    @logging.command(name="enable")
+    @logging_group.command(name="enable")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_enable(self, ctx: commands.Context, mode: bool):
         """
@@ -231,78 +235,6 @@ class Moderation(commands.Cog):
         )
         await ctx.send(embed=embed)
         await config.update()
-
-    async def send_log(
-        self,
-        guild: discord.Guild,
-        action: str,
-        target: Union[discord.Member, discord.User, List[discord.Member]],
-        moderator: discord.Member,
-        reason: str,
-        message: str,
-        **kwargs,
-    ):
-        """
-        Sends logs to the log channel.
-
-        Parameters
-        ----------
-        guild: discord.Guild
-            Guild object. This is to fetch the guild config.
-        action: str
-            The moderation action.
-        target: discord.Member or discord.User or List
-            Target that was executed from this moderation action.
-            Could be a list of "Member" or "User" especially if the action is "multiban".
-        moderator: discord.Member
-            Moderator that executed this moderation action.
-        reason: str
-            Reason for this moderation action.
-        message: str
-            A message to be put in the Embed description.
-        """
-        config = self.guild_config(str(guild.id))
-
-        if not config.get("logging"):
-            return
-        channel = config.log_channel
-        if channel is None:
-            return
-
-        # Parsing args and kwargs, and sending embed.
-        embed = discord.Embed(
-            title=action.title(),
-            description=message,
-            color=discord.Color.blue() if action not in ("ban", "multiban") else discord.Color.red(),
-            timestamp=discord.utils.utcnow(),
-        )
-
-        if isinstance(target, (discord.Member, discord.User)):
-            embed.set_thumbnail(url=target.display_avatar.url)
-            embed.add_field(name="User", value=target.mention)
-            embed.set_footer(text=f"User ID: {target.id}")
-        elif isinstance(target, List):
-            embed.add_field(
-                name="User" if len(target) == 1 else "Users",
-                value="\n".join(str(m) for m in target),
-            )
-        else:
-            raise ValueError(
-                "Invalid type of parameter `target`. Expected type: `Member`, `User`, or `List`."
-            )
-
-        embed.add_field(name="Reason", value=reason)
-
-        if action == "mute":
-            duration = kwargs.pop("duration")
-            embed.add_field(name="Duration", value=duration)
-
-        if action == "unban":
-            ban_reason = kwargs.pop("ban_reason")
-            embed.add_field(name="Previously banned for", value=ban_reason)
-
-        embed.add_field(name="Moderator", value=moderator.mention, inline=False)
-        return await channel.send(embed=embed)
 
     # Mute commands
     @commands.command()
@@ -358,14 +290,14 @@ class Moderation(commands.Cog):
             ).add_field(name="Reason", value=reason)
         )
 
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             duration=human_delta,
             target=member,
             moderator=ctx.author,
             reason=reason,
-            message=f"{member} has been muted for **{human_delta}**.",
+            description=f"{member} has been muted for **{human_delta}**.",
         )
 
     @commands.command()
@@ -402,13 +334,13 @@ class Moderation(commands.Cog):
                 color=self.bot.main_color,
             )
         )
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
             reason=reason,
-            message=f"{member} is now unmuted.",
+            description=f"{member} is now unmuted.",
         )
 
     # Warn command
@@ -427,7 +359,7 @@ class Moderation(commands.Cog):
         `member` may be a member ID, mention, or name.
         `reason` is optional.
 
-        **Note(s):**
+        **Notes:**
         - A warn message will be sent to the member through DM's as well.
         """
         if not can_execute_action(ctx, ctx.author, member):
@@ -436,13 +368,13 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
 
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
             reason=reason,
-            message=f"{member} has been warned.",
+            description=f"{member} has been warned.",
         )
 
         dm_embed = discord.Embed(
@@ -499,7 +431,7 @@ class Moderation(commands.Cog):
 
         When the command is done doing its work, you will get a message detailing which users got removed and how many messages got removed.
 
-        **Note(s):**
+        **Notes:**
         - Pinned messages will be ignored. However, if you purge using any of this command's sub-commands pinned messages also will be purged.
         - To purge messages including the pinned messages, use command `{prefix}purge all <amount>` instead.
         """
@@ -805,13 +737,13 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
             reason=reason,
-            message=f"{member} has been kicked.",
+            description=f"{member} has been kicked.",
         )
 
     # Ban command
@@ -839,7 +771,7 @@ class Moderation(commands.Cog):
         - `{prefix}ban @User --2`
         - `{prefix}ban @User Posting server invites in DMs. --2`
 
-        **Note(s):**
+        **Notes:**
         - `message_days` if specified, must start with `--` (e.g. `--1`) for the bot to recognize the syntax.
         """
         if not ctx.me.guild_permissions.ban_members:
@@ -880,13 +812,13 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=user,
             moderator=ctx.author,
             reason=reason,
-            message=f"{user} has been banned.",
+            description=f"{user} has been banned.",
         )
 
     @ban.command(name="custom", aliases=["--massban"])
@@ -925,7 +857,7 @@ class Moderation(commands.Cog):
         `--files`: Checks if the message has attachments (no arguments).
         `--embeds`: Checks if the message has embeds (no arguments).
 
-        **Note(s):**
+        **Notes:**
         - By default, this command is disabled due to too powerful outcome. **It will not actually ban the users.**
         It is put here only for educational purpose for you to familiarize yourself with the custom syntax.
         To enable it, set the envinronment config variable `MODERATION_MASSBAN_ENABLE` to `True`.
@@ -1113,7 +1045,7 @@ class Moderation(commands.Cog):
 
         To fetch the list, the bot must have `Ban Members` permission.
 
-        **Note(s):**
+        **Notes:**
         - Depends on the quantity of banned members in the server, due to Discord limitation, this operation can be incredibly slow.
         """
         if not ctx.me.guild_permissions.ban_members:
@@ -1171,7 +1103,7 @@ class Moderation(commands.Cog):
         **Examples:**
         - `{prefix}multiban 204255221017214 159985870458322 Involved in server raid.`
 
-        **Note(s):**
+        **Notes:**
         - To prevent from being rate limited with Discord API, you can only ban up to 10 members with single command.
         """
         if len(members) > 10:
@@ -1230,13 +1162,13 @@ class Moderation(commands.Cog):
         if not success:
             return
 
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=success,
             moderator=ctx.author,
             reason=reason,
-            message=f"Banned **{len(success)}/{total_members}** "
+            description=f"Banned **{len(success)}/{total_members}** "
             + ("member." if len(success) == 1 else "members."),
         )
 
@@ -1267,7 +1199,7 @@ class Moderation(commands.Cog):
         - `{prefix}softban @User --2`
         - `{prefix}softban @User Posting server invites in DMs. --2`
 
-        **Note(s):**
+        **Notes:**
         - `message_days` if specified, must start with `--` (e.g. `--1`) for the bot to recognize the syntax.
         """
         message_days = 1
@@ -1293,13 +1225,13 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
             reason=reason,
-            message=f"{member} has been soft banned.",
+            description=f"{member} has been soft banned.",
         )
 
     # Unban command
@@ -1337,14 +1269,14 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.send_log(
+        await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
             target=ban_entry.user,
             moderator=ctx.author,
             reason=reason,
             ban_reason=ban_entry.ban_reason,
-            message=f"{ban_entry.user} is now unbanned.",
+            description=f"{ban_entry.user} is now unbanned.",
         )
 
     @commands.command(aliases=["nick"])
@@ -1357,7 +1289,7 @@ class Moderation(commands.Cog):
 
         In order for this to work, the bot must have `Manage Nicknames` permission.
 
-        **Note(s):**
+        **Notes:**
         - To remove nickname from user, just leave the `new_nickname`'s parameter empty.
         """
         if not ctx.me.guild_permissions.manage_nicknames:
@@ -1528,6 +1460,25 @@ class Moderation(commands.Cog):
                 color=self.bot.main_color,
             )
         )
+
+    @commands.Cog.listener()
+    async def on_member_update(self, *args, **kwargs) -> None:
+        pass
+
+    # this will be triggered everytime a user leaves the server
+    # however we are only looking for kicked members
+    # since discord.py does not provide the on_member_kick event we have to filter them manually
+    @commands.Cog.listener()
+    async def on_member_remove(self, *args, **kwargs) -> None:
+        await self.logging.on_member_remove(*args, **kwargs)
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, *args, **kwargs) -> None:
+        await self.logging.on_member_ban(*args, **kwargs)
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, *args, **kwargs) -> None:
+        await self.logging.on_member_unban(*args, **kwargs)
 
 
 async def setup(bot: ModmailBot) -> None:
