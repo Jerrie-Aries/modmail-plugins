@@ -285,7 +285,7 @@ class Moderation(commands.Cog):
         await ctx.send(
             embed=discord.Embed(
                 title="Success",
-                description=f"{member} is now muted for **{human_delta}**.",
+                description=f"`{member}` is now muted for **{human_delta}**.",
                 color=self.bot.main_color,
             ).add_field(name="Reason", value=reason)
         )
@@ -297,7 +297,7 @@ class Moderation(commands.Cog):
             target=member,
             moderator=ctx.author,
             reason=reason,
-            description=f"{member} has been muted for **{human_delta}**.",
+            description=f"`{member}` has been muted for **{human_delta}**.",
         )
 
     @commands.command()
@@ -330,7 +330,7 @@ class Moderation(commands.Cog):
         await ctx.send(
             embed=discord.Embed(
                 title="Success",
-                description=f"{member} is now unmuted.",
+                description=f"`{member}` is now unmuted.",
                 color=self.bot.main_color,
             )
         )
@@ -340,7 +340,7 @@ class Moderation(commands.Cog):
             target=member,
             moderator=ctx.author,
             reason=reason,
-            description=f"{member} is now unmuted.",
+            description=f"`{member}` is now unmuted.",
         )
 
     # Warn command
@@ -374,7 +374,7 @@ class Moderation(commands.Cog):
             target=member,
             moderator=ctx.author,
             reason=reason,
-            description=f"{member} has been warned.",
+            description=f"`{member}` has been warned.",
         )
 
         dm_embed = discord.Embed(
@@ -411,7 +411,7 @@ class Moderation(commands.Cog):
         await ctx.send(
             embed=discord.Embed(
                 title="Success",
-                description=f"{member} has been warned on DM's.",
+                description=f"`{member}` has been warned on DM's.",
                 color=self.bot.main_color,
             ).add_field(name="Reason", value=reason)
         )
@@ -743,7 +743,7 @@ class Moderation(commands.Cog):
             target=member,
             moderator=ctx.author,
             reason=reason,
-            description=f"{member} has been kicked.",
+            description=f"`{member}` has been kicked.",
         )
 
     # Ban command
@@ -807,7 +807,7 @@ class Moderation(commands.Cog):
 
         embed = discord.Embed(
             title="Ban",
-            description=f"{user} has been banned.",
+            description=f"`{user}` has been banned.",
             color=self.bot.main_color,
         )
         embed.add_field(name="Reason", value=reason)
@@ -818,7 +818,7 @@ class Moderation(commands.Cog):
             target=user,
             moderator=ctx.author,
             reason=reason,
-            description=f"{user} has been banned.",
+            description=f"`{user}` has been banned.",
         )
 
     @ban.command(name="custom", aliases=["--massban"])
@@ -1219,7 +1219,7 @@ class Moderation(commands.Cog):
 
         embed = discord.Embed(
             title="Ban",
-            description=f"{member} has been soft banned.",
+            description=f"`{member}` has been soft banned.",
             color=self.bot.main_color,
         )
         embed.add_field(name="Reason", value=reason)
@@ -1231,7 +1231,7 @@ class Moderation(commands.Cog):
             target=member,
             moderator=ctx.author,
             reason=reason,
-            description=f"{member} has been soft banned.",
+            description=f"`{member}` has been soft banned.",
         )
 
     # Unban command
@@ -1264,7 +1264,7 @@ class Moderation(commands.Cog):
 
         embed = discord.Embed(
             title="Unban",
-            description=f"{ban_entry.user} is now unbanned.",
+            description=f"`{ban_entry.user}` is now unbanned.",
             color=self.blurple,
         )
         embed.add_field(name="Reason", value=reason)
@@ -1276,7 +1276,7 @@ class Moderation(commands.Cog):
             moderator=ctx.author,
             reason=reason,
             ban_reason=ban_entry.ban_reason,
-            description=f"{ban_entry.user} is now unbanned.",
+            description=f"`{ban_entry.user}` is now unbanned.",
         )
 
     @commands.command(aliases=["nick"])
@@ -1308,9 +1308,9 @@ class Moderation(commands.Cog):
             )
         else:
             embed = discord.Embed(
-                description=f"{user.mention}'s nickname is now changed to {new_nickname}."
+                description=f"`{user}`'s nickname is now changed to `{new_nickname}`."
                 if new_nickname is not None
-                else f"Removed the nickname from {user.mention}.",
+                else f"Removed the nickname from `{user}`.",
                 color=self.blurple,
             )
             await ctx.send(embed=embed)

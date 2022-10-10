@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Union, TYPE_CHECKING
+from typing import List, Optional, Union, TYPE_CHECKING
 
 import discord
 
@@ -34,8 +34,8 @@ class ModerationLogging:
         *,
         action: str,
         target: Union[discord.Member, discord.User, List[discord.Member]],
-        moderator: Optional[discord.Member],
         description: str,
+        moderator: Optional[discord.Member] = None,
         reason: Optional[str] = None,
         **kwargs,
     ) -> None:
@@ -51,12 +51,12 @@ class ModerationLogging:
         target: discord.Member or discord.User or List
             Target that was executed from this moderation action.
             Could be a list of "Member" or "User" especially if the action is "multiban".
-        moderator: discord.Member
-            Moderator that executed this moderation action.
-        reason: str
-            Reason for this moderation action.
         description: str
             A message to be put in the Embed description.
+        moderator: Optional[discord.Member]
+            Moderator that executed this moderation action.
+        reason: Optional[str]
+            Reason for this moderation action.
         """
         config = self.cog.guild_config(str(guild.id))
 
@@ -65,6 +65,13 @@ class ModerationLogging:
         channel = config.log_channel
         if channel is None:
             return
+
+        webhook = config.webhook or await self._get_or_create_webhook(channel)
+        if webhook:
+            config.webhook = webhook
+            send_method = webhook.send
+        else:
+            send_method = channel.send
 
         # Parsing args and kwargs, and sending embed.
         color = action_colors.get(action, action_colors["normal"])
@@ -97,7 +104,8 @@ class ModerationLogging:
 
         if moderator is not None:
             embed.add_field(name="Moderator", value=moderator.mention, inline=False)
-        return await channel.send(embed=embed)
+
+        return await send_method(embed=embed)
 
     async def _get_or_create_webhook(self, channel: discord.TextChannel) -> Optional[discord.Webhook]:
         """
@@ -110,7 +118,7 @@ class ModerationLogging:
             The channel to get or create the webhook from.
         """
         # check bot permissions first
-        bot_me = channel.guild.get_member(self.bot.user.id)
+        bot_me = channel.guild.me
         if not bot_me or not channel.permissions_for(bot_me).manage_webhooks:
             return None
 
@@ -126,7 +134,7 @@ class ModerationLogging:
                 wh = await channel.create_webhook(
                     name=self.bot.user.name,
                     avatar=avatar,
-                    reason="Webhook for invite logs.",
+                    reason="Webhook for Moderation logs.",
                 )
             except Exception as e:
                 logger.error(f"{type(e).__name__}: {str(e)}")
@@ -158,12 +166,11 @@ class ModerationLogging:
 
     async def on_member_guild_avatar_update(self, before: discord.Member, after: discord.Member) -> None:
         action = "updated" if after.guild_avatar is not None else "removed"
-        description = f"{after} {action} their guild avatar."
+        description = f"`{after}` {action} their guild avatar."
         await self.send_log(
             after.guild,
             action="avatar update",
             target=after,
-            moderator=None,
         )
 
     async def on_member_nick_update(
@@ -175,8 +182,8 @@ class ModerationLogging:
         reason: Optional[str] = None,
     ) -> None:
         action = "set" if before.nick is None else "removed" if after.nick is None else "updated"
-        description = f"{after}'s nickname was {action}"
-        description += "." if after.nick is None else f" to {after.nick}."
+        description = f"`{after}`'s nickname was {action}"
+        description += "." if after.nick is None else f" to `{after.nick}`."
         await self.send_log(
             after.guild,
             action="nickname",
@@ -184,8 +191,8 @@ class ModerationLogging:
             moderator=moderator if moderator != after else None,
             reason=reason if reason else "None",
             description=description,
-            before=str(before.nick),
-            after=str(after.nick),
+            before=f"`{str(before.nick)}`",
+            after=f"`{str(after.nick)}`",
         )
 
     async def on_member_role_update(
@@ -196,7 +203,7 @@ class ModerationLogging:
         *,
         reason: Optional[str] = None,
     ) -> None:
-        description = f"{after}'s roles were updated."
+        description = f"`{after}`'s roles were updated."
         added = [role for role in after.roles if role not in before.roles]
         removed = [role for role in before.roles if role not in after.roles]
         kwargs = {}
@@ -223,7 +230,34 @@ class ModerationLogging:
         *,
         reason: Optional[str] = None,
     ) -> None:
-        pass
+        if moderator == self.bot:
+            # handled in mute/unmute command
+            return
+
+        kwargs = {}
+        description = f"`{after}`"
+        if after.timed_out_until is None:
+            action = "unmute"
+            description += " has been unmuted."
+        elif before.timed_out_until is None:
+            action = "mute"
+            description += " has been muted."
+            kwargs["expires"] = discord.utils.format_dt(after.timed_out_until, "R")
+        else:
+            action = "mute update"
+            description += "'s mute time out has been updated."
+            kwargs["before"] = discord.utils.format_dt(before.timed_out_until, "F")
+            kwargs["after"] = discord.utils.format_dt(after.timed_out_until, "F")
+
+        await self.send_log(
+            after.guild,
+            action=action,
+            target=after,
+            description=description,
+            moderator=moderator,
+            reason=reason,
+            **kwargs,
+        )
 
     async def on_member_remove(self, member: discord.Member) -> None:
         audit_logs = member.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick)
@@ -246,7 +280,7 @@ class ModerationLogging:
             target=member,
             moderator=mod,
             reason=entry.reason,
-            description=f"{member} has been kicked.",
+            description=f"`{member}` has been kicked.",
         )
 
     async def on_member_ban(self, guild: disocrd.Guild, user: Union[discord.User, discord.Member]) -> None:
@@ -272,7 +306,7 @@ class ModerationLogging:
             target=user,
             moderator=mod,
             reason=entry.reason,
-            description=f"{user} has been banned.",
+            description=f"`{user}` has been banned.",
         )
 
     async def on_member_unban(self, guild: disocrd.Guild, user: discord.User) -> None:
@@ -294,7 +328,7 @@ class ModerationLogging:
             target=user,
             moderator=mod,
             reason=entry.reason,
-            description=f"{user} is now unbanned.",
+            description=f"`{user}` is now unbanned.",
         )
 
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
