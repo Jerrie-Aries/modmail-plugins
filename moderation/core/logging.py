@@ -68,7 +68,8 @@ class ModerationLogging:
 
         webhook = config.webhook or await self._get_or_create_webhook(channel)
         if webhook:
-            config.webhook = webhook
+            if not config.webhook:
+                config.webhook = webhook
             send_method = webhook.send
         else:
             send_method = channel.send
