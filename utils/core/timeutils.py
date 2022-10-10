@@ -267,7 +267,7 @@ class datetime_formatter:
         str : str
             The formatted string.
         """
-        fmt = datetime_formatter.format_dt(date_time)
+        fmt = discord.utils.format_dt(date_time, "F")
         fmt_age = datetime_formatter.age(date_time)
         fmt += f"\n{fmt_age if fmt_age else '.....'} ago"
         return fmt
