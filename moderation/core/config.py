@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import discord
+from discord.utils import MISSING
 
 from .vendors import Config
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 DEFAULT_CONFIG = {
     "log_channel": str(int()),
     "logging": False,
+    "webhook": None,
 }
 
 
@@ -39,6 +41,7 @@ class ModConfig(Config):
         defaults = {k: v for k, v in DEFAULT_CONFIG.items()}
         super().__init__(cog, db, defaults=defaults)
         self._cache: Dict[str, Any] = data if data else self.copy(self.defaults)
+        self.webhook: discord.Webhook = MISSING
 
     async def update(self) -> None:
         """
