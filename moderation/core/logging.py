@@ -92,6 +92,9 @@ class ModerationLogging:
                 name="User" if len(target) == 1 else "Users",
                 value="\n".join(str(m) for m in target),
             )
+        elif isinstance(target, discord.abc.GuildChannel):
+            embed.add_field(name="Channel", value=f"# {target.name}")
+            embed.set_footer(text=f"Channel ID: {target.id}")
         else:
             raise TypeError("Invalid type of parameter `target`. Expected type: `Member`, `User`, or `List`.")
 
@@ -118,6 +121,17 @@ class ModerationLogging:
         channel : discord.TextChannel
             The channel to get or create the webhook from.
         """
+        config = self.cog.guild_config(str(channel.guild.id))
+        wh_url = config.get("webhook")
+        if wh_url:
+            wh = discord.Webhook.from_url(
+                wh_url,
+                session=self.bot.session,
+                bot_token=self.bot.token,
+            )
+            wh = await wh.fetch()
+            return wh
+
         # check bot permissions first
         bot_me = channel.guild.me
         if not bot_me or not channel.permissions_for(bot_me).manage_webhooks:
@@ -140,6 +154,10 @@ class ModerationLogging:
             except Exception as e:
                 logger.error(f"{type(e).__name__}: {str(e)}")
                 wh = None
+
+        if wh:
+            config.set("webhook", wh.url)
+            await config.update()
 
         return wh
 
@@ -333,7 +351,7 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
-        audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
+        audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
         async for entry in audit_logs:
             if int(entry.target.id) == channel.id:
                 break
@@ -343,8 +361,24 @@ class ModerationLogging:
             )
             return
 
+        mod = entry.user
+
+        kwargs = {}
+        if channel.category:
+            kwargs["category"] = channel.category.name
+
+        await self.send_log(
+            channel.guild,
+            action="channel created",
+            target=channel,
+            moderator=mod,
+            description=f"Channel {channel.mention} was created.",
+            reason=entry.reason,
+            **kwargs,
+        )
+
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
+        audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
         async for entry in audit_logs:
             if int(entry.target.id) == channel.id:
                 break
@@ -353,3 +387,19 @@ class ModerationLogging:
                 "Cannot find the audit log entry for channel deletion of %d, guild %s.", channel, guild
             )
             return
+
+        mod = entry.user
+
+        kwargs = {}
+        if channel.category:
+            kwargs["category"] = channel.category.name
+
+        await self.send_log(
+            channel.guild,
+            action="channel deleted",
+            target=channel,
+            moderator=mod,
+            description=f"Channel `# {channel.name}` was deleted.",
+            reason=entry.reason,
+            **kwargs,
+        )

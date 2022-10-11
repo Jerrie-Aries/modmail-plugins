@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 DEFAULT_CONFIG = {
     "log_channel": str(int()),
     "logging": False,
+    "webhook": None,
 }
 
 
