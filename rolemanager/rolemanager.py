@@ -116,7 +116,7 @@ _bind_session = (
     "- **Clear** - Reset all binds.\n\n"
     "__**Available fields:**__\n"
     "- `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
-    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<name:id>` or `<a:name:id>` (animated emoji).\n"
+    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
     "- `Label` - Button label (only available for button). Must not exceed 80 characters.\n"
 )
 
@@ -1051,12 +1051,18 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         new = False
         reactrole = self.config.reactroles.find_entry(message.id)
         input_sessions = []
+        params = {}
         if reactrole is None:
             new = True
             reactrole = self.config.reactroles.create_new(message)
             if message.author.id == self.bot.user.id:
                 input_sessions.append({"key": "type", "description": _type_session})
+            else:
+                params["trigger_type"] = TriggerType.REACTION
             input_sessions.append({"key": "rule", "description": _rule_session})
+        else:
+            params["trigger_type"] = reactrole.trigger_type
+            params["rule"] = reactrole.rules
 
         done_session = "Updated and linked {} to reaction roles {}."
         abs_sessions = [
@@ -1064,12 +1070,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             {"key": "done", "description": done_session},
         ]
         input_sessions.extend(abs_sessions)
-        view = ReactionRoleCreationPanel(ctx, binds=reactrole.binds, input_sessions=input_sessions)
-        if not new:
-            view.trigger_type = reactrole.trigger_type
-            view.rule = reactrole.rules
-        elif message.author.id != self.bot.user.id:
-            view.trigger_type = TriggerType.REACTION
+        view = ReactionRoleCreationPanel(
+            ctx,
+            binds=reactrole.binds,
+            input_sessions=input_sessions,
+            **params,
+        )
         view.placeholder_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
         embed = discord.Embed(
             title="Reaction Roles Add",
@@ -1262,12 +1268,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
             for bind in entry.binds:
                 emoji = bind.get("emoji") or bind.get("button", {}).get("emoji")
-                identifier = f"{emoji} " if emoji else ""
+                identifier = f"{emoji}" if emoji else ""
                 if trigger_type == TriggerType.INTERACTION:
+                    if emoji:
+                        identifier += "  "
                     identifier += bind["button"].get("label", "")
                 output.append(f"**{identifier}** : <@&{bind['role']}>")
-            if len(output) > 1:
-                react_roles.append("\n".join(output))
+            react_roles.append("\n".join(output))
         if not react_roles:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
