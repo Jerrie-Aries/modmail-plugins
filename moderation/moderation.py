@@ -81,6 +81,10 @@ def _set_globals(cog: Moderation) -> None:
 # <!-- ----- -->
 
 
+def moderation_reason(ctx: commands.Context, reason: str) -> str:
+    return f"Moderator - {ctx.author}\nReason - {reason}"
+
+
 # Checks
 def can_execute_action(ctx: commands.Context, user: discord.Member, target: discord.Member) -> bool:
     return user.id in ctx.bot.bot_owner_ids or user == ctx.guild.owner or user.top_role > target.top_role
@@ -280,7 +284,7 @@ class Moderation(commands.Cog):
 
         human_delta = human_timedelta(duration.dt)
 
-        await member.timeout(duration.dt, reason=reason)
+        await member.timeout(duration.dt, reason=moderation_reason(ctx, reason))
 
         await ctx.send(
             embed=discord.Embed(
@@ -325,7 +329,7 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
 
-        await member.timeout(None, reason=reason)
+        await member.timeout(None, reason=moderation_reason(ctx, reason))
 
         await ctx.send(
             embed=discord.Embed(
@@ -726,7 +730,7 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
         try:
-            await member.kick(reason=f"Moderator - {ctx.author}.\nReason - {reason}")
+            await member.kick(reason=moderation_reason(ctx, reason))
         except discord.Forbidden:
             raise commands.BadArgument("I don't have enough permissions to kick this user.")
 
@@ -799,7 +803,7 @@ class Moderation(commands.Cog):
         try:
             await ctx.guild.ban(
                 user,
-                reason=f"Moderator - {ctx.author}.\nReason - {reason}",
+                reason=moderation_reason(ctx, reason),
                 delete_message_days=message_days,
             )
         except discord.Forbidden:
@@ -860,7 +864,8 @@ class Moderation(commands.Cog):
         **Notes:**
         - By default, this command is disabled due to too powerful outcome. **It will not actually ban the users.**
         It is put here only for educational purpose for you to familiarize yourself with the custom syntax.
-        To enable it, set the envinronment config variable `MODERATION_MASSBAN_ENABLE` to `True`.
+        However if you want to enable it, set the envinronment config variable `MODERATION_MASSBAN_ENABLE` to `True`.
+        **Use it at your own risk.**
         """
 
         # For some reason there are cases due to caching that ctx.author
@@ -1024,16 +1029,19 @@ class Moderation(commands.Cog):
             logger.info(
                 "`massban` feature is disabled. To enable it set the environment config variable `MODERATION_MASSBAN_ENABLE` to `True`."
             )
-        for member in members:
-            try:
-                if member and reason:
-                    if not self.massban_enabled:
-                        continue
-                    await ctx.guild.ban(member, reason=reason)
-            except discord.HTTPException:
-                pass
-            else:
-                count += 1
+
+        async with ctx.typing():
+            for member in members:
+                try:
+                    if member and reason:
+                        if not self.massban_enabled:
+                            continue
+                        await ctx.guild.ban(member, reason=moderation_reason(ctx, reason))
+                except discord.HTTPException:
+                    pass
+                else:
+                    count += 1
+                await asyncio.sleep(0.5)
 
         await ctx.send(f"Banned {count}/{len(members)}")
 
@@ -1132,17 +1140,19 @@ class Moderation(commands.Cog):
         success = []
         failed = []
         done_embed = discord.Embed(title="Multiban", color=self.bot.main_color)
-        for member in members:
-            try:
-                await ctx.guild.ban(
-                    member,
-                    reason=f"Moderator - {ctx.author}.\nReason - {reason}",
-                    delete_message_days=0,
-                )
-            except discord.HTTPException:
-                failed.append(member)
-            else:
-                success.append(member)
+        async with ctx.typing():
+            for member in members:
+                try:
+                    await ctx.guild.ban(
+                        member,
+                        reason=moderation_reason(ctx, reason),
+                        delete_message_days=0,
+                    )
+                except discord.HTTPException:
+                    failed.append(member)
+                else:
+                    success.append(member)
+                await asyncio.sleep(0.5)
         done_embed.description = f"Banned **{len(success)}/{total_members}** " + (
             "member." if len(success) == 1 else "members."
         )
@@ -1164,7 +1174,7 @@ class Moderation(commands.Cog):
 
         await self.logging.send_log(
             guild=ctx.guild,
-            action=ctx.command.name,
+            action="multiban",
             target=success,
             moderator=ctx.author,
             reason=reason,
@@ -1212,10 +1222,10 @@ class Moderation(commands.Cog):
             reason = "No reason was provided."
         await ctx.guild.ban(
             member,
-            reason=f"Moderator - {ctx.author}.\nReason - {reason}",
+            reason=moderation_reason(ctx, reason),
             delete_message_days=message_days,
         )
-        await ctx.guild.unban(member, reason=f"Moderator - {ctx.author}.\nReason - {reason}")
+        await ctx.guild.unban(member, reason=moderation_reason(ctx, reason))
 
         embed = discord.Embed(
             title="Ban",
@@ -1260,7 +1270,7 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
 
-        await ban_entry.unban(reason=f"Moderator - {ctx.author}.\nReason - {reason}")
+        await ban_entry.unban(reason=moderation_reason(ctx, reason))
 
         embed = discord.Embed(
             title="Unban",
