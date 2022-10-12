@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction
@@ -12,7 +12,7 @@ from core.models import getLogger
 
 from .converters import AssignableRole, UnionEmoji
 from .models import TriggerType
-from .utils import error_embed
+from .utils import bind_string_format, error_embed
 
 
 if TYPE_CHECKING:
@@ -34,18 +34,6 @@ def _resolve_button_style(value: str) -> ButtonStyle:
         return ButtonStyle[value]
     except (KeyError, TypeError):
         return ButtonStyle.blurple
-
-
-def _emoji_label_role_fmt(emoji: Optional[str], label: Optional[str], role: str) -> str:
-    if not emoji:
-        emoji = ""
-    if not label:
-        label = ""
-    if emoji and label:
-        sep = "  "
-    else:
-        sep = ""
-    return f"**{emoji}{sep}{label}** : <@&{role}>"
 
 
 class RoleManagerTextInput(TextInput):
@@ -74,7 +62,7 @@ class RoleManagerModal(Modal):
 
         await interaction.response.defer()
         self.stop()
-        await self.view.on_modal_submit(interaction)
+        await self.view.resolve_inputs(interaction)
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in modal %r for item %r", self, item, exc_info=error)
@@ -123,6 +111,9 @@ class RoleManagerButton(Button["RoleManagerView"]):
 
 
 class RoleManagerView(View):
+    """
+    Base view class.
+    """
 
     children: List[RoleManagerButton]
 
@@ -157,18 +148,43 @@ class RoleManagerView(View):
 
 
 class ReactionRoleCreationPanel(RoleManagerView):
+    """
+    Represents the Reaction Roles creation view.
+    This view  will be used to create or edit reaction roles menu.
+
+    Parameters
+    -----------
+    ctx : commands.Context
+        The Context object.
+    input_sessions : List[Dict[[str, Any]]]
+        A list of dictionaries containing session keys and their description.
+        This will be used to switch the pages after the users choose or submit the values for current session.
+    binds : List[Dict[str, Any]]
+        The role-button or role-emoji bind data. This should be passed if this class is instantiated to
+        edit an existing reaction roles menu. Defaults to `MISSING`.
+    trigger_type : str
+        The reaction roles trigger type. Valid options are `REACTION` and `INTERACTION`.
+        This should be passed if this class is instantiated to edit an existing reaction roles menu.
+        Defaults to `MISSING`.
+    rule : str
+        The reaction roles rule.
+        This should be passed if this class is instantiated to edit an existing reaction roles menu.
+        Defaults to `MISSING`.
+    """
+
     def __init__(
         self,
         ctx: commands.Context,
         *,
-        input_sessions: List[Tuple[[str, Any]]],
+        input_sessions: List[Dict[[str, Any]]],
         binds: List[Dict[str, Any]] = MISSING,
         trigger_type: str = MISSING,
         rule: str = MISSING,
     ):
         self.ctx: commands.Context = ctx
         self.user: discord.Member = ctx.author
-        self.input_sessions: List[Tuple[[str, Any]]] = input_sessions
+        self.input_sessions: List[Dict[[str, Any]]] = input_sessions
+        self.binds: List[Dict[str, Any]] = binds if binds else []
         self.trigger_type: str = trigger_type
         self.rule: str = rule
         self.current_input: Dict[str, Any] = {}
@@ -176,7 +192,6 @@ class ReactionRoleCreationPanel(RoleManagerView):
         self.__index: int = 0
         self.output_embed: discord.Embed = MISSING
         self.placeholder_description: str = MISSING
-        self.binds: List[Dict[str, Any]] = binds if binds else []
         super().__init__(ctx.cog)
         self.add_menu()
         self.add_buttons()
@@ -277,7 +292,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             else:
                 emoji = bind.get("emoji")
                 label = None
-            desc += f"- {_emoji_label_role_fmt(emoji, label, bind['role'])}\n"
+            desc += f"- {bind_string_format(emoji, label, bind['role'])}\n"
         return desc
 
     def get_output_buttons(self) -> List[Button]:
@@ -307,7 +322,6 @@ class ReactionRoleCreationPanel(RoleManagerView):
         return False
 
     async def _action_add(self, interaction: Interaction, *args) -> None:
-        # need to store raw inputs for the database later
         role = self.__bind.pop("role")
         bind = {"role": role}
         if self.trigger_type == TriggerType.INTERACTION:
@@ -331,7 +345,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             label = None
         embed = discord.Embed(
             color=self.ctx.bot.main_color,
-            description=f"Added '{_emoji_label_role_fmt(emoji, label, role)}' bind to the list.",
+            description=f"Added '{bind_string_format(emoji, label, role)}' bind to the list.",
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         self.clear_items()
@@ -445,11 +459,11 @@ class ReactionRoleCreationPanel(RoleManagerView):
             raise KeyError(f"Category `{category}` is invalid for `on_dropdown_select` method.")
         await self.update_view()
 
-    async def on_modal_submit(self, interaction: Interaction) -> None:
-        if self.session_key != "bind":
-            raise KeyError(
-                f"Session key `{self.session_key}` is not recognized for `on_modal_submit` method."
-            )
+    async def resolve_inputs(self, interaction: Interaction) -> None:
+        """
+        Resolves and converts input values.
+        Currently this is only called after submitting inputs from Modal view.
+        """
         converters = {
             "emoji": UnionEmoji,
             "role": AssignableRole,
@@ -504,6 +518,9 @@ class ReactionRoleCreationPanel(RoleManagerView):
 
 
 class ReactionRoleView(RoleManagerView):
+    """
+    Reaction Roles persistent view.
+    """
 
     children: List[RoleManagerButton]
 

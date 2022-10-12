@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
+from discord.utils import MISSING
 
 from core import checks
 from core.models import getLogger, PermissionLevel
@@ -27,6 +28,8 @@ from .core.converters import (
 )
 from .core.models import ReactRules, TriggerType
 from .core.utils import (
+    bind_string_format,
+    get_audit_reason,
     guild_roughly_chunked,
 )
 from .core.views import ReactionRoleCreationPanel, ReactionRoleView
@@ -50,7 +53,6 @@ logger = getLogger(__name__)
 
 
 # <!-- Developer -->
-MISSING = discord.utils.MISSING
 if TYPE_CHECKING:
     from .core.config import RoleManagerConfig
     from ..utils.utils import (
@@ -89,10 +91,6 @@ def _set_globals(cog: RoleManager) -> None:
 
 
 # <!-- ----- -->
-
-
-def get_audit_reason(moderator: discord.Member):
-    return f"Moderator: {moderator}."
 
 
 # these probably will be used in couple of places so we define them outside
@@ -1268,12 +1266,14 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
             for bind in entry.binds:
                 emoji = bind.get("emoji") or bind.get("button", {}).get("emoji")
-                identifier = f"{emoji}" if emoji else ""
                 if trigger_type == TriggerType.INTERACTION:
-                    if emoji:
-                        identifier += "  "
-                    identifier += bind["button"].get("label", "")
-                output.append(f"**{identifier}** : <@&{bind['role']}>")
+                    label = bind["button"].get("label")
+                else:
+                    label = None
+                output.append(f"- {bind_string_format(emoji, label, bind['role'])}")
+            else:
+                if len(output) == 1:
+                    output.append("- `None`")
             react_roles.append("\n".join(output))
         if not react_roles:
             raise commands.BadArgument("There are no reaction roles set up here!")

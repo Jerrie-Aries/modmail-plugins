@@ -2,22 +2,15 @@ from __future__ import annotations
 
 import argparse
 import re
-from typing import (
-    Optional,
-    TYPE_CHECKING,  # need the TYPE_CHECKING to create some lies for type hinting
-    Union,
-)
+from typing import Union, TYPE_CHECKING
 
 import discord
 from dateutil.parser import parse as parse_datetime
+from discord.ext import commands
 from emoji import EMOJI_DATA
 
 from .checks import my_role_hierarchy
 
-# <-- Developer -->
-from discord.ext import commands
-
-# <-- ----- -->
 
 if TYPE_CHECKING:
     from bot import ModmailBot
@@ -26,7 +19,6 @@ if TYPE_CHECKING:
 __all__ = [
     "Args",
     "AssignableRole",
-    "EmojiRoleGroup",
     "ObjectConverter",
     "UnionEmoji",
     "PERMS",
@@ -103,31 +95,6 @@ if TYPE_CHECKING:
 else:
     AssignableRole = _AssignableRoleConverter
     UnionEmoji = _UnionEmojiConverter
-
-
-class EmojiRoleGroup(commands.Converter):
-    """
-    A custom converter to convert arguments to :class:`UnionEmoji`
-    and :class:`ManageableRole` that is inherited from discord :class:`Role`.
-
-    Returns
-    --------
-    Tuple
-        A tuple of :class:`Emoji` and :class:`ManageableRole`.
-    """
-
-    def __init__(self):
-        self.emoji: Optional[UnionEmoji] = None
-        self.role: Optional[AssignableRole] = None
-
-    async def convert(self, ctx: commands.Context, argument: str) -> EmojiRoleGroup:
-        split = argument.split(";")
-        if len(split) < 2:
-            raise commands.BadArgument
-
-        self.emoji = await UnionEmoji().convert(ctx, split[0])
-        self.role = await AssignableRole().convert(ctx, split[1])
-        return self
 
 
 class ObjectConverter(commands.IDConverter):
