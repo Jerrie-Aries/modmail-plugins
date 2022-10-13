@@ -1,4 +1,6 @@
-from typing import Literal, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
+
+import discord
 
 
 MessageDaysT = Literal[0, 1, 2, 3, 4, 5, 6, 7]
@@ -25,3 +27,13 @@ def parse_delete_message_days(
             return reason, days
 
     return args, 0
+
+
+def get_audit_reason(moderator: discord.Member, reason: Optional[str] = None) -> str:
+    """
+    Returns a string representation of action reason for audit logs.
+    """
+    ret = f"Moderator: {moderator}\n"
+    if reason:
+        ret += f"Reason: {reason}"
+    return ret

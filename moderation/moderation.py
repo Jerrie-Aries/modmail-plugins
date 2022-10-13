@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import (
     Any,
     Dict,
+    Optional,
     Union,
     List,
     TYPE_CHECKING,
@@ -30,7 +31,7 @@ from core.utils import strtobool
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.logging import ModerationLogging
-from .core.utils import parse_delete_message_days
+from .core.utils import get_audit_reason, parse_delete_message_days
 
 
 if TYPE_CHECKING:
@@ -81,16 +82,10 @@ def _set_globals(cog: Moderation) -> None:
 # <!-- ----- -->
 
 
-def moderation_reason(ctx: commands.Context, reason: str) -> str:
-    return f"Moderator - {ctx.author}\nReason - {reason}"
-
-
-# Checks
 def can_execute_action(ctx: commands.Context, user: discord.Member, target: discord.Member) -> bool:
     return user.id in ctx.bot.bot_owner_ids or user == ctx.guild.owner or user.top_role > target.top_role
 
 
-# Actual Cog
 class Moderation(commands.Cog):
     __doc__ = __description__
 
@@ -202,43 +197,101 @@ class Moderation(commands.Cog):
         return config
 
     # Logging
-    @commands.group(name="logging", invoke_without_command=True)
+    @commands.group(name="logging", usage="<command> [argument]", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_group(self, ctx: commands.Context):
         """
-        Sets the logging feature for moderation commands.
+        Logging feature for Moderation actions.
+
+        __**Support actions:**__
+        - `ban`/`unban`
+        - `kick`
+        - Timeout, `mute`/`unmute`
+        - Member roles update, `add`/`remove`
+        - Nickname changes
+        - Channel created/deleted
         """
         await ctx.send_help(ctx.command)
 
-    @logging_group.command(name="channel")
+    @logging_group.group(name="config", usage="<command> [argument]", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_channel(self, ctx: commands.Context, channel: discord.TextChannel):
+    async def logging_config(self, ctx: commands.Context):
+        """
+        Moderation logging configuration.
+
+        Run this command without argument to see the current set configurations.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        embed = discord.Embed(
+            title="Logging Config",
+            color=self.bot.main_color,
+        )
+        for key, value in config.items():
+            embed.add_field(name=key.replace("_", " ").capitalize(), value=f"`{value}`")
+        await ctx.send(embed=embed)
+
+    @logging_config.command(name="channel")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_channel(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
         """
         Sets the logging channel.
+
+        `channel` may be a channel ID, mention, or name.
+
+        Leave `channel` empty to see the current set channel.
         """
         config = self.guild_config(str(ctx.guild.id))
-        config.set("log_channel", str(channel.id))
-        embed = discord.Embed(
-            description=f"Log channel is now set to {channel.mention}.",
-            color=self.bot.main_color,
-        )
+        if channel is None:
+            channel = self.bot.get_channel(int(config.get("log_channel")))
+            if channel:
+                description = f"Current moderation logging channel is {channel.mention}."
+            else:
+                description = "Moderation logging channel is not set."
+        else:
+            config.set("log_channel", str(channel.id))
+            description = f"Log channel is now set to {channel.mention}."
+            await config.update()
+
+        embed = discord.Embed(description=description, color=self.bot.main_color)
         await ctx.send(embed=embed)
+
+    @logging_config.command(name="enable")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable moderation logging feature.
+
+        `mode` is a boolean value, may be `True` or `False` (case insensitive).
+
+        Leave `mode` empty to see the current set value.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        if mode is None:
+            mode = config.get("logging")
+            description = "Logging feature is currently " + ("`enabled`" if mode else "`disabled`") + "."
+        else:
+            config.set("logging", mode)
+            description = ("Enabled " if mode else "Disabled ") + "the logging for moderation actions."
+            await config.update()
+
+        embed = discord.Embed(description=description, color=self.bot.main_color)
+        await ctx.send(embed=embed)
+
+    @logging_config.command(name="clear", aliases=["reset"])
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_clear(self, ctx: commands.Context):
+        """
+        Reset the moderation logging configurations to default.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        for key in config.keys():
+            config.remove(key)
         await config.update()
 
-    @logging_group.command(name="enable")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_enable(self, ctx: commands.Context, mode: bool):
-        """
-        Enable or disable logging feature for moderation command.
-        """
-        config = self.guild_config(str(ctx.guild.id))
-        config.set("logging", mode)
         embed = discord.Embed(
-            description=("Enabled " if mode else "Disabled ") + "the logging for moderation commands.",
-            color=self.bot.main_color,
+            color=self.bot.main_color, description="Moderation logging configurations are now cleared."
         )
         await ctx.send(embed=embed)
-        await config.update()
 
     # Mute commands
     @commands.command()
@@ -284,7 +337,7 @@ class Moderation(commands.Cog):
 
         human_delta = human_timedelta(duration.dt)
 
-        await member.timeout(duration.dt, reason=moderation_reason(ctx, reason))
+        await member.timeout(duration.dt, reason=get_audit_reason(ctx.author, reason))
 
         await ctx.send(
             embed=discord.Embed(
@@ -329,7 +382,7 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
 
-        await member.timeout(None, reason=moderation_reason(ctx, reason))
+        await member.timeout(None, reason=get_audit_reason(ctx.author, reason))
 
         await ctx.send(
             embed=discord.Embed(
@@ -730,7 +783,7 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
         try:
-            await member.kick(reason=moderation_reason(ctx, reason))
+            await member.kick(reason=get_audit_reason(ctx.author, reason))
         except discord.Forbidden:
             raise commands.BadArgument("I don't have enough permissions to kick this user.")
 
@@ -803,7 +856,7 @@ class Moderation(commands.Cog):
         try:
             await ctx.guild.ban(
                 user,
-                reason=moderation_reason(ctx, reason),
+                reason=get_audit_reason(ctx.author, reason),
                 delete_message_days=message_days,
             )
         except discord.Forbidden:
@@ -1036,7 +1089,7 @@ class Moderation(commands.Cog):
                     if member and reason:
                         if not self.massban_enabled:
                             continue
-                        await ctx.guild.ban(member, reason=moderation_reason(ctx, reason))
+                        await ctx.guild.ban(member, reason=get_audit_reason(ctx.author, reason))
                 except discord.HTTPException:
                     pass
                 else:
@@ -1145,7 +1198,7 @@ class Moderation(commands.Cog):
                 try:
                     await ctx.guild.ban(
                         member,
-                        reason=moderation_reason(ctx, reason),
+                        reason=get_audit_reason(ctx.author, reason),
                         delete_message_days=0,
                     )
                 except discord.HTTPException:
@@ -1222,10 +1275,10 @@ class Moderation(commands.Cog):
             reason = "No reason was provided."
         await ctx.guild.ban(
             member,
-            reason=moderation_reason(ctx, reason),
+            reason=get_audit_reason(ctx.author, reason),
             delete_message_days=message_days,
         )
-        await ctx.guild.unban(member, reason=moderation_reason(ctx, reason))
+        await ctx.guild.unban(member, reason=get_audit_reason(ctx.author, reason))
 
         embed = discord.Embed(
             title="Ban",
@@ -1270,7 +1323,7 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
 
-        await ban_entry.unban(reason=moderation_reason(ctx, reason))
+        await ban_entry.unban(reason=get_audit_reason(ctx.author, reason))
 
         embed = discord.Embed(
             title="Unban",

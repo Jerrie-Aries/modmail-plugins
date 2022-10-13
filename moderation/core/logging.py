@@ -66,10 +66,14 @@ class ModerationLogging:
         if channel is None:
             return
 
+        send_params = {}
         webhook = config.webhook or await self._get_or_create_webhook(channel)
         if webhook:
             if not config.webhook:
                 config.webhook = webhook
+            send_params["username"] = self.bot.user.name
+            send_params["avatar_url"] = str(self.bot.user.display_avatar)
+            send_params["wait"] = True
             send_method = webhook.send
         else:
             send_method = channel.send
@@ -109,7 +113,8 @@ class ModerationLogging:
         if moderator is not None:
             embed.add_field(name="Moderator", value=moderator.mention, inline=False)
 
-        return await send_method(embed=embed)
+        send_params["embed"] = embed
+        return await send_method(**send_params)
 
     async def _get_or_create_webhook(self, channel: discord.TextChannel) -> Optional[discord.Webhook]:
         """
