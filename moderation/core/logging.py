@@ -167,8 +167,12 @@ class ModerationLogging:
         return wh
 
     async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        config = self.cog.guild_config(str(after.guild.id))
+        if not config.get("logging"):
+            return
+
         if before.guild_avatar != after.guild_avatar:
-            return await self.on_member_guild_avatar_update(before, after)
+            return await self._on_member_guild_avatar_update(before, after)
 
         audit_logs = after.guild.audit_logs(limit=10)
         found = False
@@ -178,17 +182,17 @@ class ModerationLogging:
                 if action == discord.AuditLogAction.member_update:
                     if hasattr(entry.after, "nick"):
                         found = True
-                        await self.on_member_nick_update(before, after, entry.user, reason=entry.reason)
+                        await self._on_member_nick_update(before, after, entry.user, reason=entry.reason)
                     elif hasattr(entry.after, "timed_out_until"):
                         found = True
-                        await self.on_member_timed_out_update(before, after, entry.user, reason=entry.reason)
+                        await self._on_member_timed_out_update(before, after, entry.user, reason=entry.reason)
                 elif action == discord.AuditLogAction.member_role_update:
                     found = True
-                    await self.on_member_role_update(before, after, entry.user, reason=entry.reason)
+                    await self._on_member_role_update(before, after, entry.user, reason=entry.reason)
                 if found:
                     return
 
-    async def on_member_guild_avatar_update(self, before: discord.Member, after: discord.Member) -> None:
+    async def _on_member_guild_avatar_update(self, before: discord.Member, after: discord.Member) -> None:
         action = "updated" if after.guild_avatar is not None else "removed"
         description = f"`{after}` {action} their guild avatar."
         await self.send_log(
@@ -197,7 +201,7 @@ class ModerationLogging:
             target=after,
         )
 
-    async def on_member_nick_update(
+    async def _on_member_nick_update(
         self,
         before: discord.Member,
         after: discord.Member,
@@ -219,7 +223,7 @@ class ModerationLogging:
             after=f"`{str(after.nick)}`",
         )
 
-    async def on_member_role_update(
+    async def _on_member_role_update(
         self,
         before: discord.Member,
         after: discord.Member,
@@ -246,7 +250,7 @@ class ModerationLogging:
             **kwargs,
         )
 
-    async def on_member_timed_out_update(
+    async def _on_member_timed_out_update(
         self,
         before: discord.Member,
         after: discord.Member,
@@ -284,6 +288,10 @@ class ModerationLogging:
         )
 
     async def on_member_remove(self, member: discord.Member) -> None:
+        config = self.cog.guild_config(str(member.guild.id))
+        if not config.get("logging"):
+            return
+
         audit_logs = member.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick)
         async for entry in audit_logs:
             if int(entry.target.id) == member.id:
@@ -307,7 +315,11 @@ class ModerationLogging:
             description=f"`{member}` has been kicked.",
         )
 
-    async def on_member_ban(self, guild: disocrd.Guild, user: Union[discord.User, discord.Member]) -> None:
+    async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        config = self.cog.guild_config(str(guild.id))
+        if not config.get("logging"):
+            return
+
         audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.ban)
         async for entry in audit_logs:
             if int(entry.target.id) == user.id:
@@ -333,7 +345,11 @@ class ModerationLogging:
             description=f"`{user}` has been banned.",
         )
 
-    async def on_member_unban(self, guild: disocrd.Guild, user: discord.User) -> None:
+    async def on_member_unban(self, guild: discord.Guild, user: discord.User) -> None:
+        config = self.cog.guild_config(str(guild.id))
+        if not config.get("logging"):
+            return
+
         audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.unban)
         async for entry in audit_logs:
             if int(entry.target.id) == user.id:
@@ -356,6 +372,10 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        config = self.cog.guild_config(str(channel.guild.id))
+        if not config.get("logging"):
+            return
+
         audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
         async for entry in audit_logs:
             if int(entry.target.id) == channel.id:
@@ -383,6 +403,10 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        config = self.cog.guild_config(str(channel.guild.id))
+        if not config.get("logging"):
+            return
+
         audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
         async for entry in audit_logs:
             if int(entry.target.id) == channel.id:

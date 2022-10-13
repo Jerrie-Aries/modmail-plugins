@@ -425,6 +425,31 @@ class Moderation(commands.Cog):
         if reason is None:
             reason = "No reason was provided."
 
+        dm_embed = discord.Embed(
+            title="Warn",
+            description=f"You have been warned by a Moderator.",
+            color=self.bot.error_color,
+            timestamp=discord.utils.utcnow(),
+        )
+        dm_embed.set_thumbnail(
+            url="https://raw.githubusercontent.com/Jerrie-Aries/extras/master/icons/warn.png"
+        )
+        dm_embed.add_field(name="Reason", value=reason)
+
+        dm_embed.set_footer(text=f"Server: {ctx.guild}", icon_url=ctx.guild.icon)
+
+        try:
+            await member.send(embed=dm_embed)
+        except discord.errors.Forbidden:
+            raise commands.BadArgument(f"I couldn't warn `{member}` on DM's since they have it disabled.")
+
+        embed = discord.Embed(
+            title="Success", color=self.bot.main_color, description=f"`{member}` has been warned in DM's."
+        )
+        embed.add_field(name="Reason", value=reason)
+        embed.set_footer(text=f"User ID: {member.id}")
+        await ctx.send(embed=embed)
+
         await self.logging.send_log(
             guild=ctx.guild,
             action=ctx.command.name,
@@ -432,45 +457,6 @@ class Moderation(commands.Cog):
             moderator=ctx.author,
             reason=reason,
             description=f"`{member}` has been warned.",
-        )
-
-        dm_embed = discord.Embed(
-            title="Warn",
-            description=f"You have been warned in server: {ctx.guild.name}.",
-            color=self.bot.error_color,
-            timestamp=discord.utils.utcnow(),
-        )
-        dm_embed.set_thumbnail(
-            url=(
-                "https://upload.wikimedia.org/wikipedia/en/"
-                "thumb/1/15/Ambox_warning_pn.svg/1178px-Ambox_warning_pn.svg.png"
-            )
-        )
-        dm_embed.set_author(name=ctx.guild.name, icon_url=ctx.guild.icon.url)
-        dm_embed.add_field(name="Reason", value=reason)
-
-        if await checks.user_has_permissions(ctx, PermissionLevel.ADMINISTRATOR):
-            author_tag = "Administrator"
-        elif await checks.user_has_permissions(ctx, PermissionLevel.MODERATOR):
-            author_tag = "Moderator"
-        else:
-            author_tag = "Staff"
-
-        dm_embed.set_footer(text=f"From: Server's {author_tag}")
-
-        try:
-            await member.send(embed=dm_embed)
-        except discord.errors.Forbidden:
-            raise commands.BadArgument(
-                f"Warning has been logged for {member}. I couldn't warn them on DM's since they disabled it."
-            )
-
-        await ctx.send(
-            embed=discord.Embed(
-                title="Success",
-                description=f"`{member}` has been warned on DM's.",
-                color=self.bot.main_color,
-            ).add_field(name="Reason", value=reason)
         )
 
     # Purge commands
