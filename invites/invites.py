@@ -257,7 +257,7 @@ class Invites(commands.Cog):
             return
 
         user_data = {
-            "user_name": f"{member.name}#{member.discriminator}",
+            "user_name": str(member),
             "inviter": {
                 "mention": "\n".join(getattr(invite.inviter, "mention", "None") for invite in invites),
                 "id": "\n".join(str(getattr(invite.inviter, "id", "None")) for invite in invites),
@@ -503,25 +503,20 @@ class Invites(commands.Cog):
 
     @invites.command(name="delete", aliases=["revoke"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def invites_delete(self, ctx: commands.Context, invite: discord.Invite):
+    async def invites_delete(self, ctx: commands.Context, *, invite: discord.Invite):
         """
         Delete an invite.
 
         `invite` may be an invite code, or full invite link.
         """
-        fetched_invites = await ctx.guild.invites()
-        if invite not in fetched_invites:
+        if not invite.guild or invite.guild != ctx.guild:
             raise commands.BadArgument('Invite "{}" is not from this guild.'.format(invite.code))
 
-        for inv in fetched_invites:
-            if inv.id == invite.id:
-                invite = inv
-                break
         embed = discord.Embed(
             color=discord.Color.blurple(),
             description=f"Deleted invite code: `{invite.code}`",
         )
-        embed.add_field(name="Inviter:", value=invite.inviter.mention)
+        embed.add_field(name="Inviter:", value=f"`{invite.inviter}`")
         embed.add_field(name="Channel:", value=invite.channel.mention)
 
         if invite.max_age:
@@ -538,7 +533,7 @@ class Invites(commands.Cog):
         try:
             await invite.delete()
         except discord.Forbidden:
-            raise commands.BadArgument("I don't have permissions to revoke invites.")
+            raise commands.BadArgument("I do not have permissions to revoke invites.")
 
         await ctx.send(embed=embed)
 
@@ -601,9 +596,12 @@ class Invites(commands.Cog):
         if channel is None:
             return
 
-        embed = discord.Embed(color=discord.Color.green(), timestamp=datetime.utcnow())
+        embed = discord.Embed(
+            title=f"{member} just joined.",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow(),
+        )
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.title = f"{member.name}#{member.discriminator} just joined."
         embed.set_footer(text=f"User ID: {member.id}")
 
         join_position = sorted(member.guild.members, key=lambda m: m.joined_at).index(member) + 1
@@ -620,7 +618,7 @@ class Invites(commands.Cog):
             vanity_inv = self.vanity_invites.get(member.guild.id)
             embed.add_field(
                 name="Inviter:",
-                value="\n".join(getattr(i.inviter, "mention", "None") for i in pred_invs),
+                value="\n".join(getattr(i.inviter, "mention", "`None`") for i in pred_invs),
             )
             embed.add_field(
                 name="Invite code:",
@@ -628,7 +626,7 @@ class Invites(commands.Cog):
             )
             embed.add_field(
                 name="Invite channel:",
-                value="\n".join(getattr(i.channel, "mention", "None") for i in pred_invs),
+                value="\n".join(getattr(i.channel, "mention", "`None`") for i in pred_invs),
             )
 
             if len(pred_invs) == 1:
@@ -674,7 +672,7 @@ class Invites(commands.Cog):
 
         embed = discord.Embed(color=discord.Color.red(), timestamp=datetime.utcnow())
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.title = f"{member.name}#{member.discriminator} left."
+        embed.title = f"{member} left."
         embed.set_footer(text=f"User ID: {member.id}")
         desc = f"{member.mention} just left the server."
         embed.description = desc + "\n"
