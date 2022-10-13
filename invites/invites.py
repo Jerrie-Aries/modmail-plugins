@@ -292,121 +292,96 @@ class Invites(commands.Cog):
         Set up invites tracking logs.
 
         **For initial setup, use commands:**
-        - `{prefix}invite config set channel <channel>`
-        - `{prefix}invite config set enable True`
+        - `{prefix}invite config channel <channel>`
+        - `{prefix}invite config enable True`
         """
         await ctx.send_help(ctx.command)
 
-    @invites.group(name="config", invoke_without_command=True)
+    @invites.group(name="config", usage="<command> [argument]", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def invites_config(self, ctx: commands.Context):
         """
         Invites tracking configurations.
-        """
-        await ctx.send_help(ctx.command)
 
-    @invites_config.group(name="set", invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def invites_config_set(self, ctx: commands.Context):
+        Run this command without argument to see current set configurations.
         """
-        Set the configurations.
-        """
-        await ctx.send_help(ctx.command)
+        config = self.guild_config(str(ctx.guild.id))
 
-    @invites_config_set.command(name="channel")
+        channel = ctx.guild.get_channel(int(config["channel"]))
+        embed = discord.Embed(
+            title="Invites Config",
+            color=self.bot.main_color,
+            description="Current set configurations.",
+        )
+
+        embed.add_field(
+            name="Channel",
+            value=f'{getattr(channel, "mention", "`None`")}',
+            inline=False,
+        )
+        embed.add_field(name="Enabled", value=f"`{config['enable']}`", inline=False)
+        embed.add_field(name="Webhook URL", value=f'`{config["webhook"]}`', inline=False)
+        await ctx.send(embed=embed)
+
+    @invites_config.command(name="channel")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def invites_config_set_channel(self, ctx: commands.Context, channel: discord.TextChannel):
+    async def invites_config_channel(
+        self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None
+    ):
         """
         Set the channel where the logs for invites tracking should be posted.
 
-        `<channel>` may be a channel ID, mention, or name.
+        `channel` may be a channel ID, mention, or name.
+
+        Leave `channel` empty to see the current set channel.
         """
         config = self.guild_config(str(ctx.guild.id))
+        if channel is None:
+            channel = self.bot.get_channel(int(config.get("channel")))
+            if channel:
+                description = f"Invites logging channel is currently set to {channel.mention}."
+            else:
+                description = "Invites logging channel is not set."
+        else:
+            new_config = dict(channel=str(channel.id), webhook=None)
+            config.update(new_config)
+            await self.config.update()
+            description = f"Log channel is now set to {channel.mention}."
 
-        new_config = dict(channel=str(channel.id), webhook=None)
-        config.update(new_config)
-        await self.config.update()
-
-        embed = discord.Embed(
-            description=f"Invite logs channel is now set to {channel.mention}",
-            color=self.bot.main_color,
-        )
+        embed = discord.Embed(description=description, color=self.bot.main_color)
         await ctx.send(embed=embed)
 
-    @invites_config_set.command(name="enable")
+    @invites_config.command(name="enable")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def invites_config_set_enable(self, ctx: commands.Context, mode: bool):
+    async def invites_config_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
         """
         Enable or disable the logging for invites tracking.
 
-        **Usage:**
-        - `{prefix}invite config set enable True`
-        - `{prefix}invite config set enable False`
+        `mode` is a boolean value, may be `True` or `False` (case insensitive).
+
+        **Examples:**
+        - `{prefix}invite config enable True`
+        - `{prefix}invite config enable False`
+
+        Leave `mode` empty to see the current set value.
         """
         config = self.guild_config(str(ctx.guild.id))
+        if mode is None:
+            mode = config.get("enable")
+            description = (
+                "Invites tracking logging is currently " + ("`enabled`" if mode else "`disabled`") + "."
+            )
+        else:
+            new_config = dict(enable=mode)
+            config.update(new_config)
+            description = ("Enabled " if mode else "Disabled ") + "the logging for invites tracking."
+            await self.config.update()
 
-        new_config = dict(enable=mode)
-        config.update(new_config)
-        await self.config.update()
-
-        embed = discord.Embed(
-            description=("Enabled" if mode is True else "Disabled") + " the invites tracking logs.",
-            color=self.bot.main_color,
-        )
+        embed = discord.Embed(description=description, color=self.bot.main_color)
         await ctx.send(embed=embed)
 
         if mode:
             self.invite_cache[ctx.guild.id] = {inv for inv in await ctx.guild.invites()}
-
-    @invites_config.command(name="get")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def invites_config_get(self, ctx: commands.Context, *, key: str.lower = None):
-        """
-        Show the configuration variables that are currently set.
-
-        Leave `key` empty to show all currently set configuration variables.
-
-        **Usage:**
-        - `{prefix}invite config get channel`
-        - `{prefix}invite config get enable`
-        """
-        config = self.guild_config(str(ctx.guild.id))
-
-        if key:
-            if key in self.default_config.keys():
-                if key == "channel":
-                    channel = ctx.guild.get_channel(int(config[key]))
-                    desc = f"`{key}` is set to {channel.mention if channel is not None else '`None`'}"
-                else:
-                    desc = f"`{key}` is set to `{config[key]}`"
-
-                embed = discord.Embed(color=self.bot.main_color, description=desc)
-                embed.set_author(name="Config variable", icon_url=self.bot.user.display_avatar.url)
-
-            else:
-                embed = discord.Embed(
-                    title="Error",
-                    color=self.bot.error_color,
-                    description=f"`{key}` is an invalid key.",
-                )
-        else:
-            channel = ctx.guild.get_channel(int(config["channel"]))
-
-            embed = discord.Embed(
-                color=self.bot.main_color,
-                description="Here is a list of currently set configurations.",
-            )
-            embed.set_author(name="Invite config:", icon_url=self.bot.user.display_avatar.url)
-
-            embed.add_field(
-                name="Channel",
-                value=f'{getattr(channel, "mention", "`None`")}',
-                inline=False,
-            )
-            embed.add_field(name="Webhook URL", value=f'`{config["webhook"]}`', inline=False)
-            embed.add_field(name="Enabled", value=f"`{config['enable']}`", inline=False)
-
-        await ctx.send(embed=embed)
 
     @invites_config.command(name="reset")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -422,8 +397,8 @@ class Invites(commands.Cog):
             color=self.bot.main_color,
         )
         embed.add_field(name="Channel", value="`None`", inline=False)
-        embed.add_field(name="Webhook URL", value="`None`", inline=False)
         embed.add_field(name="Enabled", value="`False`", inline=False)
+        embed.add_field(name="Webhook URL", value="`None`", inline=False)
         await ctx.send(embed=embed)
 
     @invites.command(name="refresh")
@@ -490,21 +465,15 @@ class Invites(commands.Cog):
         """
         Get an info of a specific invite.
         """
-        embed = discord.Embed(color=self.bot.main_color, title="__Invite info__")
-        embed.set_thumbnail(url=str(invite.guild.icon_url))
-        embed.description = f"**Server:**\n{invite.guild}\n" f"**Invite link:**\n{invite.url}\n"
+        embed = discord.Embed(color=self.bot.main_color, title="__Invite Info__")
+        embed.description = f"**Server:**\n{invite.guild}\n\n" f"**Invite link:**\n{invite.url}\n\n"
 
-        fetched_invites = await discord.Guild.invites(ctx.guild)
-        try:
-            embed.add_field(
-                name="Inviter:",
-                value=invite.inviter.mention
-                if invite in fetched_invites
-                else f"{invite.inviter.name}#{invite.inviter.discriminator}",
-            )
-            embed.add_field(name="Channel:", value=invite.channel.mention)
-        except AttributeError:
-            pass
+        fetched_invites = await ctx.guild.invites()
+        embed.add_field(
+            name="Inviter:",
+            value=f"`{invite.inviter}`",
+        )
+        embed.add_field(name="Channel:", value=invite.channel.mention)
         if invite in fetched_invites:
             local = False
             for inv in fetched_invites:
@@ -523,7 +492,13 @@ class Invites(commands.Cog):
                 embed.add_field(name="Created at:", value=created)
                 embed.add_field(name="Expires at:", value=expires)
         else:
-            embed.description += f"**Member count:**\n{invite.approximate_member_count}"
+            embed.description += f"**Member count:**\n{invite.approximate_member_count}\n\n"
+
+        # could be None if the invite is from a group DM
+        if invite.guild is not None:
+            embed.set_thumbnail(url=str(invite.guild.icon))
+            embed.set_footer(text=f"Server ID: {invite.guild.id}")
+
         await ctx.send(embed=embed)
 
     @invites.command(name="delete", aliases=["revoke"])
