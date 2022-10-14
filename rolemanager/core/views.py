@@ -245,7 +245,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
                 "clear": self._action_clear,
             }
             for label, callback in config_buttons.items():
-                if label in ("title", "add"):
+                if label == "add":
                     style = ButtonStyle.blurple
                 else:
                     style = ButtonStyle.grey
@@ -326,23 +326,20 @@ class ReactionRoleCreationPanel(RoleManagerView):
         bind = {"role": role}
         if self.trigger_type == TriggerType.INTERACTION:
             payload = {key: self.__bind["button"].pop(key) for key in list(self.__bind["button"])}
+            emoji = payload.get("emoji")
+            label = payload.get("label")
             if not payload.get("style"):
                 payload["style"] = "blurple"
             bind["button"] = payload
         elif self.trigger_type == TriggerType.REACTION:
-            bind["emoji"] = self.__bind.pop("emoji")
+            bind["emoji"] = emoji = self.__bind.pop("emoji")
+            label = None
         else:
             raise TypeError(f"`{self.trigger_type}` is invalid for reaction roles trigger type.")
 
         self.binds.append(bind)
         self.__bind.clear()
         self.current_input.clear()
-        if self.trigger_type == TriggerType.INTERACTION:
-            emoji = bind["button"].get("emoji")
-            label = bind["button"].get("label")
-        else:
-            emoji = bind.get("emoji")
-            label = None
         embed = discord.Embed(
             color=self.ctx.bot.main_color,
             description=f"Added '{bind_string_format(emoji, label, role)}' bind to the list.",
