@@ -149,10 +149,19 @@ class Config(BaseConfig):
         Fetches the data from database. If the response data is `None` default data will be returned.
 
         By default if cache is enabled, this will automatically refresh the cache after the data is retrieved.
+
+        Returns
+        -------
+        DataT
+            The data retrieved or empty dictionary if no data received from the database.
         """
         data = await self.db.find_one({"_id": self._id})
-        if data is None and self.defaults is not None:
-            data = self.deepcopy(self.defaults)
+        if data is None:
+            if self.defaults is not None:
+                data = self.deepcopy(self.defaults)
+            else:
+                # empty dict to resolve AttributeError in `.refresh`
+                data = {}
         if self.cache_enabled():
             self.refresh(data=data)
         return data
