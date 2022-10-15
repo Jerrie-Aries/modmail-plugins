@@ -97,6 +97,7 @@ class Invites(commands.Cog):
         Populates the config cache with data from database.
         """
         config = Config(self, self.db)
+        config.defaults = {str(guild.id): config.copy(self.default_config) for guild in self.bot.guilds}
         await config.fetch()
         update = False
         for guild in self.bot.guilds:
