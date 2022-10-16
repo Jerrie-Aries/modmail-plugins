@@ -89,12 +89,20 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     async def cog_unload(self) -> None:
         pass
 
-    @commands.command()
+    @commands.command(name="ext-utils", hidden=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def ext_utils(self, ctx: commands.Context):
         """Extended utils."""
-        embed = discord.Embed(color=self.bot.main_color)
-        embed.description(f"Version: `{__version__}`")
+        embed = discord.Embed(title="Utils", color=self.bot.main_color)
+        elems = ["chat_formatting", "config", "timeutils", "views"]
+        description = ""
+        for elem in elems:
+            attr = getattr(self, elem)
+            description += f"__**{elem.replace('_', ' ').capitalize()}:**__\n"
+            description += "\n".join(f"`{e}`" for e in attr)
+            description += "\n\n"
+        embed.description = description
+        embed.set_footer(text=f"Version: {__version__}")
         await ctx.send(embed=embed)
 
 
