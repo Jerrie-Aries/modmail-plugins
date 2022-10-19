@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import List, Optional, Union, TYPE_CHECKING
 
 import discord
-
 from discord.utils import MISSING
 
 from core.models import getLogger
@@ -20,10 +19,15 @@ action_colors = {
     "normal": discord.Color.blue(),
     "ban": discord.Color.red(),
     "multiban": discord.Color.red(),
+    "mute": discord.Color.dark_grey(),
 }
 
 
 class ModerationLogging:
+    """
+    ModerationLogging instance to handle and manage the logging feature.
+    """
+
     def __init__(self, cog: Moderation):
         self.cog: Moderation = cog
         self.bot: ModmailBot = cog.bot
@@ -91,7 +95,7 @@ class ModerationLogging:
             embed.set_thumbnail(url=target.display_avatar.url)
             embed.add_field(name="User", value=target.mention)
             embed.set_footer(text=f"User ID: {target.id}")
-        elif isinstance(target, List):
+        elif isinstance(target, list):
             embed.add_field(
                 name="User" if len(target) == 1 else "Users",
                 value="\n".join(str(m) for m in target),
@@ -167,6 +171,14 @@ class ModerationLogging:
         return wh
 
     async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        """
+        General member update events will be caught from here.
+        As of now, we only look for these events:
+        - Guild avatar update
+        - Nickname changes
+        - Timed out changes
+        - Role updates
+        """
         config = self.cog.guild_config(str(after.guild.id))
         if not config.get("logging"):
             return
@@ -258,7 +270,7 @@ class ModerationLogging:
         *,
         reason: Optional[str] = None,
     ) -> None:
-        if moderator == self.bot:
+        if moderator == self.bot.user:
             # handled in mute/unmute command
             return
 
@@ -288,6 +300,11 @@ class ModerationLogging:
         )
 
     async def on_member_remove(self, member: discord.Member) -> None:
+        """
+        Currently this listener is to search for kicked members.
+        For some reason Discord and discord.py do not dispatch or have a specific event when a guild member
+        was kicked, so we have to do it manually here.
+        """
         config = self.cog.guild_config(str(member.guild.id))
         if not config.get("logging"):
             return
@@ -300,7 +317,7 @@ class ModerationLogging:
             return
 
         mod = entry.user
-        if mod == self.bot:
+        if mod == self.bot.user:
             return
 
         if entry.created_at.timestamp() < member.joined_at.timestamp():
@@ -329,7 +346,7 @@ class ModerationLogging:
             return
 
         mod = entry.user
-        if mod == self.bot:
+        if mod == self.bot.user:
             return
 
         if isinstance(user, discord.Member):
@@ -359,7 +376,7 @@ class ModerationLogging:
             return
 
         mod = entry.user
-        if mod == self.bot:
+        if mod == self.bot.user:
             return
 
         await self.send_log(

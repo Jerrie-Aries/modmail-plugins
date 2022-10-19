@@ -197,7 +197,7 @@ class Moderation(commands.Cog):
         return config
 
     # Logging
-    @commands.group(name="logging", usage="<command> [argument]", invoke_without_command=True)
+    @commands.group(name="logging", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_group(self, ctx: commands.Context):
         """
@@ -208,8 +208,13 @@ class Moderation(commands.Cog):
         - `kick`
         - Timeout, `mute`/`unmute`
         - Member roles update, `add`/`remove`
-        - Nickname changes
-        - Channel created/deleted
+        - Nickname changes, `set`/`update`/`remove`
+        - Channels, `created`/`deleted`
+
+        For initial setup, set the logging channel and enable the logging.
+        Use commands:
+        - `{prefix}logging config channel #channel`
+        - `{prefix}logging config enable true`
         """
         await ctx.send_help(ctx.command)
 
@@ -249,6 +254,8 @@ class Moderation(commands.Cog):
                 description = "Moderation logging channel is not set."
         else:
             config.set("log_channel", str(channel.id))
+            config.remove("webhook")
+            config.webhook = MISSING
             description = f"Log channel is now set to {channel.mention}."
             await config.update()
 
@@ -286,6 +293,7 @@ class Moderation(commands.Cog):
         config = self.guild_config(str(ctx.guild.id))
         for key in config.keys():
             config.remove(key)
+        config.webhook = MISSING
         await config.update()
 
         embed = discord.Embed(
