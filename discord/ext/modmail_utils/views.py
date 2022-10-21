@@ -15,6 +15,10 @@ from discord import ButtonStyle, Interaction
 from discord.ui import Button, View
 from discord.utils import MISSING
 
+
+__all__ = ("ConfirmView",)
+
+
 if TYPE_CHECKING:
     from bot import ModmailBot
 

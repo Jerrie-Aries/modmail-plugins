@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, TYPE_CHECKING
 
+from discord.ext.modmail_utils import Config
+
+
 from .models import AutoRoleManager, ReactionRoleManager
-from .vendors import Config
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection

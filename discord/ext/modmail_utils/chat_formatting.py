@@ -9,6 +9,23 @@ from discord.utils import escape_markdown
 
 # Chat formatting
 
+__all__ = (
+    "bold",
+    "code_block",
+    "cleanup_code",
+    "days",
+    "escape",
+    "escape_code_block",
+    "escape_mentions",
+    "human_join",
+    "humanize_roles",
+    "inline",
+    "normalize_smartquotes",
+    "paginate",
+    "text_to_file",
+    "plural",
+)
+
 
 def bold(text: str, escape_formatting: bool = True) -> str:
     """
@@ -145,6 +162,38 @@ MENTION_RE = re.compile(r"@(everyone|here|&[0-9]{17,21})")
 
 def escape_mentions(text: str):
     return MENTION_RE.sub("@\u200b\\1", text)
+
+
+def human_join(sequence: Sequence[str], delim: str = ", ", final: str = "or") -> str:
+    """
+    Get comma-separated list, with the last element joined with *or*.
+
+    Parameters
+    ----------
+    sequence : Sequence[str]
+        The items of the list to join together.
+    delim : str
+        The delimiter to join the sequence with. Defaults to ", ".
+        This will be ignored if the length of `sequence` is or less then 2, otherwise "final" will be used instead.
+    final : str
+        The final delimiter to format the string with. Defaults to "or".
+
+    Returns
+    --------
+    str
+        The formatted string, e.g. "seq_one, seq_two and seq_three".
+    """
+    size = len(sequence)
+    if size == 0:
+        return ""
+
+    if size == 1:
+        return sequence[0]
+
+    if size == 2:
+        return f"{sequence[0]} {final} {sequence[1]}"
+
+    return delim.join(sequence[:-1]) + f" {final} {sequence[-1]}"
 
 
 def humanize_roles(

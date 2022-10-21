@@ -18,22 +18,6 @@ from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
 from core.utils import human_join
 
-from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
-from .core.converters import (
-    Args,
-    AssignableRole,
-    ObjectConverter,
-    PERMS,
-    UnionEmoji,
-)
-from .core.models import ReactRules, TriggerType
-from .core.utils import (
-    bind_string_format,
-    get_audit_reason,
-    guild_roughly_chunked,
-)
-from .core.views import ReactionRoleCreationPanel, ReactionRoleView
-
 
 if TYPE_CHECKING:
     from .motor.motor_asyncio import AsyncIOMotorCollection
@@ -53,41 +37,31 @@ logger = getLogger(__name__)
 
 
 # <!-- Developer -->
-if TYPE_CHECKING:
-    from .core.config import RoleManagerConfig
-    from ..utils.utils import (
-        ConfirmView,
-        humanize_roles,
-        human_timedelta,
-        paginate,
-    )
-else:
-    RoleManagerConfig = MISSING
-    ConfirmView = MISSING
-    humanize_roles = MISSING
-    human_timedelta = MISSING
-    paginate = MISSING
-
-
-def _set_globals(cog: RoleManager) -> None:
+try:
+    from discord.ext.modmail_utils import ConfirmView, humanize_roles, human_timedelta, paginate
+except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
-    utils_cog = cog.bot.get_cog(required)
-    if not utils_cog:
-        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+    raise RuntimeError(
+        f"`modmail_utils` package is required for {__plugin_name__} plugin to function.\n"
+        f"Install {required} plugin resolve this issue."
+    ) from exc
 
-    global RoleManagerConfig, ConfirmView, humanize_roles, human_timedelta, paginate
-
-    ConfirmView = utils_cog.views["ConfirmView"]
-    humanize_roles = utils_cog.chat_formatting["humanize_roles"]
-    paginate = utils_cog.chat_formatting["paginate"]
-    human_timedelta = utils_cog.timeutils["human_timedelta"]
-
-    from .core.vendors import _set_globals as vendors_globals
-
-    kwargs = {"Config": utils_cog.config["Config"]}
-    vendors_globals(**kwargs)
-
-    from .core.config import RoleManagerConfig
+from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
+from .core.config import RoleManagerConfig
+from .core.converters import (
+    Args,
+    AssignableRole,
+    ObjectConverter,
+    PERMS,
+    UnionEmoji,
+)
+from .core.models import ReactRules, TriggerType
+from .core.utils import (
+    bind_string_format,
+    get_audit_reason,
+    guild_roughly_chunked,
+)
+from .core.views import ReactionRoleCreationPanel, ReactionRoleView
 
 
 # <!-- ----- -->
@@ -146,7 +120,6 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
-        _set_globals(self)
         await self.populate_config()
 
     async def populate_config(self):

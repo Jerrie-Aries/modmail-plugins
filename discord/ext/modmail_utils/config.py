@@ -11,6 +11,12 @@ if TYPE_CHECKING:
     from bot import ModmailBot
 
 
+__all__ = (
+    "BaseConfig",
+    "Config",
+)
+
+
 CogT = TypeVar("CogT", bound=commands.Cog)
 TypeT = TypeVar("TypeT")
 VT = TypeVar("VT")
