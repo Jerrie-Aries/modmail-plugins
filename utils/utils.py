@@ -50,10 +50,11 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         self.bot: ModmailBot = bot
         # TODO: Update to master
         self.branch: str = "dev-package"
+        self.raw_version_url: str = "https://raw.githubusercontent.com/Jerrie-Aries/modmail-plugins/{}/discord/ext/modmail_utils/__init__.py"
 
     async def cog_load(self) -> None:
         global modmail_utils
-        if modmail_utils is None:
+        if not await self._is_latest():
             logger.debug("Downloading requirements for %s.", __plugin_name__)
             await self.install_packages()
 
@@ -62,10 +63,19 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     async def cog_unload(self) -> None:
         pass
 
+    async def _is_latest(self) -> bool:
+        if modmail_utils is None:
+            return False
+        current = version_tuple(modmail_utils.__version__)
+        latest = version_tuple(await self.fetch_latest_version_string())
+        if latest > current:
+            return False
+        return True
+
     async def install_packages(self, branch: Optional[str] = None) -> None:
         """
         Install additonal packages.
-        This method was adapted from cogs/plugins.py
+        This method was adapted from cogs/plugins.py.
         """
         req = __requirements__[0]
         req += f"@{branch}" if branch is not None else f"@{self.branch}"
@@ -100,7 +110,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         """
         Fetch latest version string from Github.
         """
-        url = f"https://raw.githubusercontent.com/Jerrie-Aries/modmail-plugins/{branch if branch else self.branch}/discord/ext/modmail_utils/__init__.py"
+        url = self.raw_version_url.format(branch if branch else self.branch)
         try:
             text = await self.bot.api.request(url)
         except Exception as exc:
@@ -111,7 +121,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     @commands.group(name="ext-utils", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def ext_utils(self, ctx: commands.Context):
-        """Extended utils."""
+        """
+        Extended utils. Show information of current additional packages used.
+        """
         embed = discord.Embed(title="Utils", color=self.bot.main_color)
         description = "__**Additional packages:**__\n"
         if modmail_utils is not None:
@@ -131,7 +143,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_package(self, ctx: commands.Context):
         """
-        Basic package manager.
+        Base package manager.
         """
         await ctx.send_help(ctx.command)
 
