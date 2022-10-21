@@ -49,7 +49,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
         # TODO: Update to master
-        self.branch: str = "dev-package"
+        self.branch: str = "master"
         self.raw_version_url: str = "https://raw.githubusercontent.com/Jerrie-Aries/modmail-plugins/{}/discord/ext/modmail_utils/__init__.py"
 
     async def cog_load(self) -> None:
