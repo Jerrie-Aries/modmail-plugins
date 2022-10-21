@@ -43,7 +43,7 @@ except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
     raise RuntimeError(
         f"`modmail_utils` package is required for {__plugin_name__} plugin to function.\n"
-        f"Install {required} plugin resolve this issue."
+        f"Install {required} plugin to resolve this issue."
     ) from exc
 
 from .core.checks import is_allowed_by_role_hierarchy, my_role_hierarchy
