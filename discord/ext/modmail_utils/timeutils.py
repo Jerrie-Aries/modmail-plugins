@@ -4,14 +4,14 @@ from typing import Literal, Optional, SupportsInt
 
 import discord
 
-from core.utils import human_join
+from .chat_formatting import human_join
 
 
-__all__ = [
+__all__ = (
     "datetime_formatter",
     "human_timedelta",
     "humanize_timedelta",
-]
+)
 
 
 def human_timedelta(dt: datetime, *, source: datetime = None) -> str:

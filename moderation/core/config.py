@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 import discord
 from discord.utils import MISSING
 
-from .vendors import Config
+from discord.ext.modmail_utils import Config
 
 
 if TYPE_CHECKING:

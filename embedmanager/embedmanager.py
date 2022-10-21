@@ -35,24 +35,16 @@ __plugin_name__ = __plugin_info__["name"]
 __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
+
 # <!-- Developer -->
-if TYPE_CHECKING:
-    from ..utils.utils import inline, paginate
-else:
-    inline = MISSING
-    paginate = MISSING
-
-
-def _set_globals(cog: EmbedManager) -> None:
+try:
+    from discord.ext.modmail_utils import inline, paginate
+except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
-    utils_cog = cog.bot.get_cog(required)
-    if not utils_cog:
-        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
-
-    global inline, paginate
-
-    inline = utils_cog.chat_formatting["inline"]
-    paginate = utils_cog.chat_formatting["paginate"]
+    raise RuntimeError(
+        f"`modmail_utils` package is required for {__plugin_name__} plugin to function.\n"
+        f"Install {required} plugin to resolve this issue."
+    ) from exc
 
 
 # <!-- ----- -->
@@ -129,12 +121,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         Initial tasks when loading the cog.
         """
-        self.bot.loop.create_task(self.initialize())
-
-    async def initialize(self) -> None:
-        # Ensure everything is ready and all extensions are loaded
-        await self.bot.wait_for_connected()
-        _set_globals(self)
+        pass
 
     async def db_config(self) -> Dict:
         # No need to store in cache when initializing the plugin.

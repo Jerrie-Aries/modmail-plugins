@@ -29,29 +29,21 @@ info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
     __plugin_info__ = json.loads(f.read())
 
+__plugin_name__ = __plugin_info__["name"]
 __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
 
 # <!-- Developer -->
-if TYPE_CHECKING:
-    from ..utils.utils import Config, datetime_formatter as dt_formatter
-else:
-    Config = MISSING
-    dt_formatter = MISSING
-
-
-def _set_globals(cog: Invites) -> None:
+try:
+    from discord.ext.modmail_utils import Config, datetime_formatter as dt_formatter
+except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
-    utils_cog = cog.bot.get_cog(required)
-    if not utils_cog:
-        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
-
-    global Config, dt_formatter
-
-    Config = utils_cog.config["Config"]
-    dt_formatter = utils_cog.timeutils["datetime_formatter"]
+    raise RuntimeError(
+        f"`modmail_utils` package is required for {__plugin_name__} plugin to function.\n"
+        f"Install {required} plugin to resolve this issue."
+    ) from exc
 
 
 # <-- ----- -->
@@ -86,9 +78,7 @@ class Invites(commands.Cog):
         self.bot.loop.create_task(self.initialize())
 
     async def initialize(self) -> None:
-        # Ensure everything is ready and all extensions are loaded
         await self.bot.wait_for_connected()
-        _set_globals(self)
         await self.populate_config()
         await self.populate_invites()
 

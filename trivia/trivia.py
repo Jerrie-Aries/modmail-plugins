@@ -14,9 +14,6 @@ from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession, MessagePaginatorSession
 
-from .core.session import TriviaSession
-from .core.checks import trivia_stop_check
-
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
@@ -28,6 +25,7 @@ info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
     __plugin_info__ = json.loads(f.read())
 
+__plugin_name__ = __plugin_info__["name"]
 __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
@@ -35,30 +33,17 @@ logger = getLogger(__name__)
 
 
 # <!-- Developer -->
-if TYPE_CHECKING:
-    from ..utils.utils import bold, plural
-else:
-    bold = MISSING
-    plural = MISSING
-
-
-def _set_globals(cog: Trivia) -> None:
+try:
+    from discord.ext.modmail_utils import bold, plural
+except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
-    utils_cog = cog.bot.get_cog(required)
-    if not utils_cog:
-        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+    raise RuntimeError(
+        f"`modmail_utils` package is required for {__plugin_name__} plugin to function.\n"
+        f"Install {required} plugin resolve this issue."
+    ) from exc
 
-    global bold, plural
-    bold = utils_cog.chat_formatting["bold"]
-    plural = utils_cog.chat_formatting["plural"]
-
-    from .core.session import _set_globals as _session_globals
-
-    _session_globals(
-        bold=bold,
-        code_block=utils_cog.chat_formatting["code_block"],
-        normalize_smartquotes=utils_cog.chat_formatting["normalize_smartquotes"],
-    )
+from .core.session import TriviaSession
+from .core.checks import trivia_stop_check
 
 
 # <-- ----- -->
@@ -105,7 +90,6 @@ class Trivia(commands.Cog):
 
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
-        _set_globals(self)
         await self.populate_config_cache()
 
     async def populate_config_cache(self) -> None:
