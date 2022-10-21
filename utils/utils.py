@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from site import USER_SITE
 from subprocess import PIPE
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -17,6 +17,7 @@ from discord.ext import commands
 try:
     from discord.ext import modmail_utils
 except ImportError:
+    # resolve when loading the cog
     modmail_utils = None
 
 from core import checks
@@ -43,29 +44,37 @@ def version_tuple(version_string: str) -> Tuple[int]:
     return tuple(int(i) for i in version_string.split("."))
 
 
+def _additional_tasks() -> None:
+    # additional tasks to run when debugging
+    pass
+
+
 class ExtendedUtils(commands.Cog, name=__plugin_name__):
     __doc__ = __description__
+    BASE: str = "https://github.com"
+    RAW_BASE: str = "https://raw.githubusercontent.com"
+    USER: str = "Jerrie-Aries"
+    REPO: str = "modmail-plugins"
+    BRANCH: str = "master"
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
-        # TODO: Update to master
-        self.branch: str = "master"
-        self.raw_version_url: str = "https://raw.githubusercontent.com/Jerrie-Aries/modmail-plugins/{}/discord/ext/modmail_utils/__init__.py"
+        self.raw_version_url: str = (
+            f"{self.RAW_BASE}/{self.USER}/{self.REPO}" "/{}/discord/ext/modmail_utils/__init__.py"
+        )
 
     async def cog_load(self) -> None:
         global modmail_utils
-        if not await self._is_latest():
-            logger.debug("Downloading requirements for %s.", __plugin_name__)
+        if modmail_utils is None or not await self._is_latest():
+            operation = "Downloading" if modmail_utils is None else "Updating"
+            logger.debug("%s requirements for %s.", operation, __plugin_name__)
             await self.install_packages()
 
             from discord.ext import modmail_utils
 
-    async def cog_unload(self) -> None:
-        pass
+            _additional_tasks()
 
     async def _is_latest(self) -> bool:
-        if modmail_utils is None:
-            return False
         current = version_tuple(modmail_utils.__version__)
         latest = version_tuple(await self.fetch_latest_version_string())
         if latest > current:
@@ -74,11 +83,15 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
     async def install_packages(self, branch: Optional[str] = None) -> None:
         """
-        Install additonal packages.
+        Install additional packages. Currently we only use `modmail-utils` custom package.
         This method was adapted from cogs/plugins.py.
         """
+        if branch is not None:
+            branch = f"@{branch}"
+        else:
+            branch = f"@{self.BRANCH}" if self.BRANCH != "master" else ""
         req = __requirements__[0]
-        req += f"@{branch}" if branch is not None else f"@{self.branch}"
+        req += branch
         venv = hasattr(sys, "real_prefix") or hasattr(sys, "base_prefix")  # in a virtual env
         user_install = " --user" if not venv else ""
         proc = await asyncio.create_subprocess_shell(
@@ -110,7 +123,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         """
         Fetch latest version string from Github.
         """
-        url = self.raw_version_url.format(branch if branch else self.branch)
+        url = self.raw_version_url.format(branch if branch else self.BRANCH)
         try:
             text = await self.bot.api.request(url)
         except Exception as exc:
@@ -136,20 +149,12 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         else:
             description += f"Latest version: `v{latest}`"
         embed.description = description
-        embed.set_footer(text=f"Version: {__version__}")
+        embed.set_footer(text=f"{__plugin_name__}: {__version__}")
         await ctx.send(embed=embed)
 
-    @ext_utils.group(name="package", invoke_without_command=True)
+    @ext_utils.command(name="update")
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def utils_package(self, ctx: commands.Context):
-        """
-        Base package manager.
-        """
-        await ctx.send_help(ctx.command)
-
-    @utils_package.command(name="update")
-    @checks.has_permissions(PermissionLevel.OWNER)
-    async def package_update(self, ctx: commands.Context, *, branch: Optional[str] = None):
+    async def utils_update(self, ctx: commands.Context, *, branch: Optional[str] = None):
         """
         Update the `modmail-utils` package.
         """
