@@ -1,41 +1,32 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import sys
+
 from pathlib import Path
+from site import USER_SITE
+from subprocess import PIPE
 from typing import Any, Dict, TYPE_CHECKING
 
 import discord
+from discord.ext import commands
+
+try:
+    from discord.ext import modmail_utils
+except ImportError:
+    modmail_utils = None
 
 from core import checks
-
-# <!-- Developer -->
-from discord.ext import commands
-from core.models import PermissionLevel
-from .core.chat_formatting import (
-    bold,
-    code_block,
-    cleanup_code,
-    days,
-    escape,
-    escape_code_block,
-    escape_mentions,
-    humanize_roles,
-    humanize_members,
-    inline,
-    normalize_smartquotes,
-    paginate,
-    plural,
-    text_to_file,
-)
-from .core.config import BaseConfig, Config
-from .core.timeutils import datetime_formatter, human_timedelta, humanize_timedelta
-from .core.views import ConfirmView
-
-# <!-- ----- -->
+from core.models import getLogger, PermissionLevel
 
 
 if TYPE_CHECKING:
     from bot import ModmailBot
+
+
+logger = getLogger(__name__)
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -44,6 +35,7 @@ with open(info_json, encoding="utf-8") as f:
 __plugin_name__ = __plugin_info__["name"]
 __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
+__requirements__ = __plugin_info__["requirements"]
 
 
 class ExtendedUtils(commands.Cog, name=__plugin_name__):
@@ -52,42 +44,42 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
 
-        # store these in dictionaries
-        # TODO: do research about more elegant way to deal with these
-        self.chat_formatting: Dict[str, Any] = {
-            "bold": bold,
-            "code_block": code_block,
-            "cleanup_code": cleanup_code,
-            "days": days,
-            "escape": escape,
-            "escape_code_block": escape_code_block,
-            "escape_mentions": escape_mentions,
-            "humanize_roles": humanize_roles,
-            "humanize_members": humanize_members,
-            "inline": inline,
-            "normalize_smartquotes": normalize_smartquotes,
-            "paginate": paginate,
-            "plural": plural,
-            "text_to_file": text_to_file,
-        }
-        self.config: Dict[str, Any] = {
-            "BaseConfig": BaseConfig,
-            "Config": Config,
-        }
-        self.timeutils: Dict[str, Any] = {
-            "datetime_formatter": datetime_formatter,
-            "human_timedelta": human_timedelta,
-            "humanize_timedelta": humanize_timedelta,
-        }
-        self.views: Dict[str, Any] = {
-            "ConfirmView": ConfirmView,
-        }
-
     async def cog_load(self) -> None:
-        pass
+        if modmail_utils is None:
+            logger.debug("Downloading requirements for %s.", __plugin_name__)
+            await self.install_packages()
 
     async def cog_unload(self) -> None:
         pass
+
+    async def install_packages(self) -> None:
+        for req in __requirements__:
+            venv = hasattr(sys, "real_prefix") or hasattr(sys, "base_prefix")  # in a virtual env
+            user_install = " --user" if not venv else ""
+            proc = await asyncio.create_subprocess_shell(
+                f'"{sys.executable}" -m pip install --upgrade{user_install} {req} -q -q',
+                stderr=PIPE,
+                stdout=PIPE,
+            )
+
+            logger.debug("Downloading `%s`.", req)
+
+            stdout, stderr = await proc.communicate()
+
+            if stdout:
+                logger.debug("[stdout]\n%s.", stdout.decode())
+
+            if stderr:
+                logger.debug("[stderr]\n%s.", stderr.decode())
+                logger.error(
+                    "Failed to download `%s`.",
+                    req,
+                    exc_info=True,
+                )
+                raise RuntimeError(f"Unable to download requirements: ```\n{stderr.decode()}\n```")
+
+            if os.path.exists(USER_SITE):
+                sys.path.insert(0, USER_SITE)
 
     @commands.command(name="ext-utils", hidden=True)
     @checks.has_permissions(PermissionLevel.OWNER)

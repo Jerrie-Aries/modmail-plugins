@@ -28,11 +28,6 @@ from core.paginator import EmbedPaginatorSession
 from core.time import UserFriendlyTime
 from core.utils import strtobool
 
-from .core.converters import Arguments, ActionReason, BannedMember
-from .core.errors import BanEntryNotFound
-from .core.logging import ModerationLogging
-from .core.utils import get_audit_reason, parse_delete_message_days
-
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
@@ -49,34 +44,20 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 logger = getLogger(__name__)
 
 # <!-- Developer -->
-if TYPE_CHECKING:
-    from ..utils.utils import ConfirmView, human_timedelta, plural
-else:
-    ModConfig = MISSING
-    ConfirmView = MISSING
-    human_timedelta = MISSING
-    plural = MISSING
-
-
-def _set_globals(cog: Moderation) -> None:
+try:
+    from discord.ext.modmail_utils import ConfirmView, human_timedelta, plural
+except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
-    utils_cog = cog.bot.get_cog(required)
-    if not utils_cog:
-        raise RuntimeError(f"{required} plugin is required for {cog.qualified_name} plugin to function.")
+    raise RuntimeError(
+        f"`modmail_utils` package is required for {__plugin_name__} plugin to function.\n"
+        f"Install {required} plugin resolve this issue."
+    ) from exc
 
-    global ModConfig, ConfirmView, human_timedelta, plural
-
-    ConfirmView = utils_cog.views["ConfirmView"]
-    human_timedelta = utils_cog.timeutils["human_timedelta"]
-    plural = utils_cog.chat_formatting["plural"]
-
-    from .core.vendors import _set_globals as vendors_globals
-
-    kwargs = {"Config": utils_cog.config["Config"]}
-    vendors_globals(**kwargs)
-
-    # this import can only be done after globals in .vendors is set
-    from .core.config import ModConfig as ModConfig
+from .core.config import ModConfig
+from .core.converters import Arguments, ActionReason, BannedMember
+from .core.errors import BanEntryNotFound
+from .core.logging import ModerationLogging
+from .core.utils import get_audit_reason, parse_delete_message_days
 
 
 # <!-- ----- -->
@@ -163,7 +144,6 @@ class Moderation(commands.Cog):
         Initial tasks when loading the cog.
         """
         await self.bot.wait_for_connected()
-        _set_globals(self)
 
         if self.db is MISSING:
             self.db = self.bot.api.get_plugin_partition(self)

@@ -8,38 +8,16 @@ from collections import Counter
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 import discord
-
-# <!-- Developer -->
-from discord.utils import MISSING
 from discord.ext import commands
-from core.models import getLogger
+from discord.ext.modmail_utils import bold, code_block, normalize_smartquotes
+from discord.utils import MISSING
 
-# <-- ----- -->
+from core.models import getLogger
 
 if TYPE_CHECKING:
     TriviaDict = Dict[str, List[str]]
 
 logger = getLogger(__name__)
-
-
-# <!-- Developer -->
-if TYPE_CHECKING:
-    from ...utils.utils import bold, code_block, normalize_smartquotes
-else:
-    bold = MISSING
-    code_block = MISSING
-    normalize_smartquotes = MISSING
-
-
-def _set_globals(*args, **kwargs) -> None:
-    # This should be called from main plugin file once
-    global bold, code_block, normalize_smartquotes
-    bold = kwargs.pop("bold")
-    code_block = kwargs.pop("code_block")
-    normalize_smartquotes = kwargs.pop("normalize_smartquotes")
-
-
-# <-- ----- -->
 
 
 _REVEAL_MESSAGES = (
