@@ -135,7 +135,15 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def ext_utils(self, ctx: commands.Context):
         """
-        Extended utils. Show information of current additional packages used.
+        Extended Utils base command.
+        """
+        await ctx.send_help(ctx.command)
+
+    @ext_utils.command(name="info")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def utils_info(self, ctx: commands.Context):
+        """
+        Information and version of current additional packages used.
         """
         embed = discord.Embed(title="Utils", color=self.bot.main_color)
         description = "__**Additional packages:**__\n"
@@ -147,7 +155,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         if latest is None:
             description += "Failed to fetch latest version.\n"
         else:
-            description += f"Latest version: `v{latest}`"
+            description += f"Latest: `v{latest}`"
         embed.description = description
         embed.set_footer(text=f"{__plugin_name__}: v{__version__}")
         await ctx.send(embed=embed)
@@ -180,6 +188,49 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                 description = f"Successfully update `modmail-utils` to `v{'.'.join(str(i) for i in latest)}`."
         embed.description = description
         await msg.edit(embed=embed)
+
+    @ext_utils.command(name="reorder", hidden=True)
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def utils_reorder(self, ctx: commands.Context):
+        """
+        Reorder the plugins loading order.
+        Generally no need to run this command, but put here just in case.
+        This is just to make sure the plugins that require this plugin will load last or after this plugin is loaded.
+        """
+        plugins_cog = self.bot.get_cog("Plugins")
+        ordered = []
+        for plugin in plugins_cog.loaded_plugins:
+            try:
+                extension = self.bot.extensions[plugin.ext_string]
+                if not hasattr(extension, "__plugin_info__"):
+                    continue
+                cogs_required = (
+                    getattr(extension, "__cogs_required__", None)
+                    or extension.__plugin_info__["cogs_required"]
+                )
+            except (AttributeError, KeyError):
+                continue
+
+            if self.qualified_name not in cogs_required:
+                continue
+
+            if str(plugin) in self.bot.config["plugins"]:
+                # just remove and append it back
+                self.bot.config["plugins"].remove(str(plugin))
+                self.bot.config["plugins"].append(str(plugin))
+                ordered.append(str(plugin))
+
+        embed = discord.Embed(color=self.bot.main_color)
+        if ordered:
+            await self.bot.config.update()
+            description = "Reordered the plugins.\n"
+            description += "```\n"
+            description += "\n".join(ordered)
+            description += "\n```"
+        else:
+            description = "Nothing changed."
+        embed.description = description
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: ModmailBot) -> None:
