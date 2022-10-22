@@ -149,7 +149,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         else:
             description += f"Latest version: `v{latest}`"
         embed.description = description
-        embed.set_footer(text=f"{__plugin_name__}: {__version__}")
+        embed.set_footer(text=f"{__plugin_name__}: v{__version__}")
         await ctx.send(embed=embed)
 
     @ext_utils.command(name="update")
@@ -165,17 +165,19 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         latest = version_tuple(latest)
         if current >= latest:
             raise commands.BadArgument(
-                f"`modmail-utils` is up to date with latest version: `v{'.'.join(str(i) for i in current)}`"
+                f"`modmail-utils` is up to date with latest version: `v{'.'.join(str(i) for i in current)}`."
             )
         embed = discord.Embed(color=self.bot.main_color)
-        embed.description = "Updating `modmail-utils`"
+        embed.description = "Updating `modmail-utils`..."
         msg = await ctx.send(embed=embed)
-        try:
-            await self.install_packages(branch)
-        except Exception as exc:
-            description = "Failed to download. Check console for error."
-        else:
-            description = f"Successfully update `modmail-utils` to `v{'.'.join(str(i) for i in latest)}`"
+
+        async with ctx.typing():
+            try:
+                await self.install_packages(branch)
+            except Exception as exc:
+                description = "Failed to download. Check console for error."
+            else:
+                description = f"Successfully update `modmail-utils` to `v{'.'.join(str(i) for i in latest)}`."
         embed.description = description
         await msg.edit(embed=embed)
 
