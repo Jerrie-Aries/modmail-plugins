@@ -38,6 +38,7 @@ __plugin_name__ = __plugin_info__["name"]
 __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 __requirements__ = __plugin_info__["requirements"]
+__branch__ = os.environ.get("MODMAIL_UTILS")
 
 
 def version_tuple(version_string: str) -> Tuple[int]:
@@ -54,7 +55,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     BASE: str = "https://github.com"
     RAW_BASE: str = "https://raw.githubusercontent.com"
     USER: str = "Jerrie-Aries"
-    REPO: str = "modmail-plugins"
+    REPO: str = "modmail-utils"
     BRANCH: str = "master"
 
     def __init__(self, bot: ModmailBot):
@@ -62,6 +63,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         self.raw_version_url: str = (
             f"{self.RAW_BASE}/{self.USER}/{self.REPO}" "/{}/discord/ext/modmail_utils/__init__.py"
         )
+
+        if __branch__:
+            self.BRANCH = __branch__.lower()
 
     async def cog_load(self) -> None:
         global modmail_utils
