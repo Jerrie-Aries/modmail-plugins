@@ -108,7 +108,8 @@ class RoleManagerConfig(Config):
 
     async def fetch(self) -> None:
         data = await super().fetch()
-        if data is None:
+        if not data:
+            # empty dict returned from .fetch()
             data = self.deepcopy(_default_config)
         if data["reactroles"].get("message_cache") is not None:
             data = _resolve_migration(data)
