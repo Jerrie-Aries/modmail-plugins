@@ -414,7 +414,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Customize the contact button using buttons and text input.
 
         __**Available fields:**__
-        - **Emoji** : Emoji shown on the button.
+        - **Emoji** : Emoji shown on the button. May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).
         - **Label** : Button label. Must not exceed 80 characters.
         - **Style** : The color style for the button. Must be one of these (case insensitive):
             - `Blurple`
@@ -527,6 +527,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         A select option can be linked to a custom category where the thread will be created.
 
         __**Available options:**__
+        - **Emoji** : Emoji for select option. May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).
         - **Label** : Label for select option.
         - **Description** : Short description for the option. Must not exceed 100 characters.
         - **Category** : The discord category channel where the thread will be created if the user choose the option.
