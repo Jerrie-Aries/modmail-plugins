@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from site import USER_SITE
 from subprocess import PIPE
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -30,15 +30,14 @@ if TYPE_CHECKING:
 
 logger = getLogger(__name__)
 
-info_json = Path(__file__).parent.resolve() / "info.json"
+current_dir = Path(__file__).parent.resolve()
+info_json = current_dir / "info.json"
 with open(info_json, encoding="utf-8") as f:
     __plugin_info__ = json.loads(f.read())
 
 __plugin_name__ = __plugin_info__["name"]
 __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
-__requirements__ = __plugin_info__["requirements"]
-__branch__ = os.environ.get("MODMAIL_UTILS")
 
 
 def version_tuple(version_string: str) -> Tuple[int]:
@@ -52,25 +51,15 @@ def _additional_tasks() -> None:
 
 class ExtendedUtils(commands.Cog, name=__plugin_name__):
     __doc__ = __description__
-    BASE: str = "https://github.com"
-    RAW_BASE: str = "https://raw.githubusercontent.com"
-    USER: str = "Jerrie-Aries"
-    REPO: str = "modmail-utils"
-    BRANCH: str = "master"
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
-        self.raw_version_url: str = (
-            f"{self.RAW_BASE}/{self.USER}/{self.REPO}" "/{}/discord/ext/modmail_utils/__init__.py"
-        )
-
-        if __branch__:
-            self.BRANCH = __branch__.lower()
+        self.package_path: Path = current_dir
 
     async def cog_load(self) -> None:
         global modmail_utils
-        if modmail_utils is None or not await self._is_latest():
-            operation = "Downloading" if modmail_utils is None else "Updating"
+        if modmail_utils is None or not self._is_latest():
+            operation = "Installing" if modmail_utils is None else "Updating"
             logger.debug("%s requirements for %s.", operation, __plugin_name__)
             await self.install_packages()
 
@@ -78,24 +67,19 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
             _additional_tasks()
 
-    async def _is_latest(self) -> bool:
+    def _is_latest(self) -> bool:
         current = version_tuple(modmail_utils.__version__)
-        latest = version_tuple(await self.fetch_latest_version_string())
+        latest = version_tuple(self.version_from_source_dir())
         if latest > current:
             return False
         return True
 
-    async def install_packages(self, branch: Optional[str] = None) -> None:
+    async def install_packages(self) -> None:
         """
         Install additional packages. Currently we only use `modmail-utils` custom package.
         This method was adapted from cogs/plugins.py.
         """
-        if branch is not None:
-            branch = f"@{branch}"
-        else:
-            branch = f"@{self.BRANCH}" if self.BRANCH != "master" else ""
-        req = __requirements__[0]
-        req += branch
+        req = self.package_path
         venv = hasattr(sys, "real_prefix") or hasattr(sys, "base_prefix")  # in a virtual env
         user_install = " --user" if not venv else ""
         proc = await asyncio.create_subprocess_shell(
@@ -104,7 +88,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             stdout=PIPE,
         )
 
-        logger.debug("Downloading `%s`.", req)
+        logger.debug("Installing `%s`.", req)
 
         stdout, stderr = await proc.communicate()
 
@@ -114,25 +98,22 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         if stderr:
             logger.debug("[stderr]\n%s.", stderr.decode())
             logger.error(
-                "Failed to download `%s`.",
+                "Failed to install `%s`.",
                 req,
                 exc_info=True,
             )
-            raise RuntimeError(f"Unable to download requirements: ```\n{stderr.decode()}\n```")
+            raise RuntimeError(f"Unable to install requirements: ```\n{stderr.decode()}\n```")
 
         if os.path.exists(USER_SITE):
             sys.path.insert(0, USER_SITE)
 
-    async def fetch_latest_version_string(self, branch: Optional[str] = None) -> Optional[str]:
+    def version_from_source_dir(self) -> Optional[str]:
         """
-        Fetch latest version string from Github.
+        Get latest version string from the source directory.
         """
-        url = self.raw_version_url.format(branch if branch else self.BRANCH)
-        try:
-            text = await self.bot.api.request(url)
-        except Exception as exc:
-            logger.error(f"{type(exc).__name__}: {str(exc)}")
-            return None
+        file_path = self.package_path / "discord/ext/modmail_utils/__init__.py"
+        with open(file_path) as f:
+            text = f.read()
         return re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', text, re.MULTILINE).group(1)
 
     @commands.group(name="ext-utils", invoke_without_command=True)
@@ -155,25 +136,25 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             description += f"- `modmail-utils`: `v{modmail_utils.__version__}`\n"
         else:
             description += "- `modmail-utils`: Not installed.\n"
-        latest = await self.fetch_latest_version_string()
+        latest = self.version_from_source_dir()
         if latest is None:
-            description += "Failed to fetch latest version.\n"
+            description += "Failed to parse latest version.\n"
         else:
-            description += f"Latest: `v{latest}`"
+            description += f"Latest from source: `v{latest}`"
         embed.description = description
         embed.set_footer(text=f"{__plugin_name__}: v{__version__}")
         await ctx.send(embed=embed)
 
     @ext_utils.command(name="update")
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def utils_update(self, ctx: commands.Context, *, branch: Optional[str] = None):
+    async def utils_update(self, ctx: commands.Context):
         """
         Update the `modmail-utils` package.
         """
         current = version_tuple(modmail_utils.__version__)
-        latest = await self.fetch_latest_version_string(branch)
+        latest = self.version_from_source_dir()
         if latest is None:
-            raise commands.BadArgument("Failed to fetch latest version.")
+            raise commands.BadArgument("Failed to parse latest version.")
         latest = version_tuple(latest)
         if current >= latest:
             raise commands.BadArgument(
@@ -185,9 +166,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
         async with ctx.typing():
             try:
-                await self.install_packages(branch)
+                await self.install_packages()
             except Exception as exc:
-                description = "Failed to download. Check console for error."
+                description = f"{type(exc).__name__}: Failed to install. Check console for error."
             else:
                 description = f"Successfully update `modmail-utils` to `v{'.'.join(str(i) for i in latest)}`."
         embed.description = description
