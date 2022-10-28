@@ -295,8 +295,6 @@ class ContactView(BaseView):
             description=self.bot.config["thread_creation_self_contact_response"],
             color=self.bot.main_color,
         )
-        if self.bot.config["show_timestamp"]:
-            embed.timestamp = discord.utils.utcnow()
         embed.set_footer(text=f"{user}", icon_url=user.display_avatar.url)
         await user.send(embed=embed)
         del embed
