@@ -679,6 +679,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         To see more customizable options, see:
         `{prefix}feedback config`
+
+        __**Note:**__
+        - The button on the feedback prompt message will only available for 10 minutes.
         """
         await ctx.send_help(ctx.command)
 
@@ -892,7 +895,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{feedback_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="feedback_button")
+        view = SupportUtilityView(ctx, input_session="feedback button")
         buttons = [
             ("set", discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),

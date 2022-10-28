@@ -180,11 +180,11 @@ class FeedbackManager:
         view.value = True
         modal.stop()
 
-        feedback = view.input_map.get("feedback")
+        description = "__**Feedback:**__\n\n"
+        description += view.input_map.get("feedback") or "No content."
         embed = discord.Embed(
-            title="Feedback submitted",
-            color=discord.Color.green(),
-            description=feedback or "No content.",
+            color=discord.Color.dark_orange(),
+            description=description,
             timestamp=discord.utils.utcnow(),
         )
         user = view.user
