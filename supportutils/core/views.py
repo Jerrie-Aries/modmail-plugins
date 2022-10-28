@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, Optional, Union, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, ui
@@ -12,7 +12,8 @@ from core.models import getLogger, DMDisabled
 
 if TYPE_CHECKING:
     from bot import ModmailBot
-    from .models import ContactManager
+    from core.thread import Thread
+    from .models import ContactManager, FeedbackManager
     from ..supportutils import SupportUtility
 
     ButtonCallbackT = Callable[[Union[Interaction, Any]], Awaitable]
@@ -35,6 +36,8 @@ class Modal(ui.Modal):
             title = "Support Utility"
         super().__init__(title=title)
         self.view = view
+        if view.timeout is not None:
+            view.modals.append(self)
         self.__callback = callback
         for key, value in options.items():
             self.add_item(TextInput(key, **value))
@@ -137,15 +140,26 @@ class BaseView(ui.View):
 class SupportUtilityView(BaseView):
     def __init__(self, ctx: commands.Context, *, input_session: str = MISSING):
         self.ctx: commands.Context = ctx
+        self.user: discord.Member = ctx.author
         super().__init__(ctx.cog)
         self.input_session: str = input_session
         self.input_map: Dict[str, Any] = {}
         self.extras: Dict[str, Any] = {}
 
-    async def _action_cancel(self, interaction: Interaction, button: Button) -> None:
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user != self.user:
+            await interaction.response.send_message(
+                "These message components cannot be controlled by you.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def _action_cancel(self, *args) -> None:
         """
         Consistent callback for Cancel button.
         """
+        interaction, _ = args
         self.value = None
         await interaction.response.defer()
         self.disable_and_stop()
@@ -177,7 +191,7 @@ class ContactView(BaseView):
         if self.manager.view is not MISSING:
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
-        select_config = self.cog.config.contact["select"]
+        select_config = self.manager.config["select"]
         self.select_options = select_config["options"]
         options = []
         for data in self.select_options:
@@ -195,7 +209,7 @@ class ContactView(BaseView):
                     custom_id=f"contact_dropdown:{self.message.channel.id}-{self.message.id}",
                 )
             )
-        button_config = self.cog.config.contact["button"]
+        button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
         label = button_config.get("label")
         if emoji is None and label is None:
@@ -229,7 +243,7 @@ class ContactView(BaseView):
         elif await self.bot.is_blocked(user):
             embed.description = f"You are currently blocked from contacting {self.bot.user.name}."
         elif self.bot.config["dm_disabled"] in (DMDisabled.NEW_THREADS, DMDisabled.ALL_THREADS):
-            embed.description = self.config["disabled_new_thread_response"]
+            embed.description = self.bot.config["disabled_new_thread_response"]
             logger.info(
                 "A new thread using contact menu was blocked from %s due to disabled Modmail.",
                 user,
@@ -307,3 +321,61 @@ class ContactView(BaseView):
             except discord.HTTPException:
                 # just supress this
                 return
+
+
+class FeedbackView(BaseView):
+    """
+    Feedback view.
+    """
+
+    def __init__(
+        self, user: discord.Member, cog: SupportUtility, thread: Thread, *, message: discord.Message = MISSING
+    ):
+        self.user: discord.Member = user
+        self.thread: Thread = thread
+        super().__init__(cog, message=message)
+        self.manager: FeedbackManager = self.cog.feedback_manager
+        self.input_map: Dict[str, Any] = {}
+
+        button_config = self.manager.config["button"]
+        emoji = button_config.get("emoji")
+        label = button_config.get("label")
+        if emoji is None and label is None:
+            label = "Feedback"
+        try:
+            style = ButtonStyle[button_config.get("style")]
+        except (KeyError, TypeError, ValueError):
+            style = ButtonStyle.grey
+        payload = {
+            "emoji": emoji,
+            "label": label,
+            "style": style,
+            "callback": self._button_callback,
+        }
+        self.add_item(Button(**payload))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user == self.user:
+            return True
+        # most likely not going to happen since this is only sent in DM's
+        # defer anyways
+        await interaction.response.defer()
+        return False
+
+    async def _button_callback(self, interaction: Interaction, item: Button, **kwargs) -> None:
+        """
+        A single callback called when user presses the feedback button attached to this view.
+        """
+        text_input = {
+            "label": "Content",
+            "max_length": 4000,
+            "style": discord.TextStyle.long,
+            "required": True,
+        }
+        modal = Modal(self, {"feedback": text_input}, self.manager.feedback_submit, title="Feedback")
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+
+        if self.value:
+            self.disable_and_stop()
+            return

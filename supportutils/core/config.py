@@ -27,9 +27,12 @@ _default_config: Dict[str, Any] = {
         },
     },
     "feedback": {
+        "enable": False,
+        "channel": None,
         "embed": {
             "title": "Feedback",
             "description": "Press the button below to give a feedback.",
+            "footer": None,
         },
         "button": {},
     },

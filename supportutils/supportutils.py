@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -17,6 +17,7 @@ from core.utils import human_join, truncate
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
+    from core.thread import Thread
 
 
 info_json = Path(__file__).parent.resolve() / "info.json"
@@ -45,8 +46,8 @@ except ImportError as exc:
     ) from exc
 
 from .core.config import SupportUtilityConfig
-from .core.models import ContactManager
-from .core.views import Button, ContactView, DropdownMenu, Modal, SupportUtilityView
+from .core.models import ContactManager, FeedbackManager
+from .core.views import Button, ContactView, Modal, SupportUtilityView
 
 
 # <!-- ----- -->
@@ -60,6 +61,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         self.db: AsyncIOMotorCollection = self.bot.api.get_plugin_partition(self)
         self.config: SupportUtilityConfig = SupportUtilityConfig(self, self.db)
         self.contact_manager: ContactManager = ContactManager(self)
+        self.feedback_manager: FeedbackManager = FeedbackManager(self)
 
     async def cog_load(self) -> None:
         await self.config.fetch()
@@ -73,6 +75,151 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         await self.contact_manager.initialize()
+
+    def _resolve_modal_payload(self, item: Button) -> Dict[str, Any]:
+        """
+        Internal method to respectively resolve the required payload to initiate
+        the `Modal` view.
+        """
+        view = item.view
+        args = view.input_session.split(" ")
+        if len(args) == 1:
+            prefix = None
+            session = args[0]
+        else:
+            prefix, session = args
+
+        valid_sessions = ("button", "dropdown", "embed")
+        if session not in valid_sessions:
+            raise ValueError(
+                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
+                f"got `{session}` instead."
+            )
+
+        options = {}
+        if session == "button":
+            elements = [("emoji", 256), ("label", max_button_label), ("style", 32)]
+            button_config = getattr(self.config, prefix, {}).get("button")
+            for elem in elements:
+                options[elem[0]] = {
+                    "label": elem[0].title(),
+                    "max_length": elem[1],
+                    "required": False,
+                    "default": view.input_map.get(elem[0]) or button_config.get(elem[0]),
+                }
+        elif session == "embed":
+            elements = [("title", 256), ("description", 4000), ("footer", 1024)]
+            embed_config = getattr(self.config, prefix, {}).get("embed")
+            for elem in elements:
+                options[elem[0]] = {
+                    "label": elem[0].title(),
+                    "max_length": elem[1],
+                    "style": discord.TextStyle.long if elem[0] == "description" else discord.TextStyle.short,
+                    "required": elem[0] == "description",
+                    "default": view.input_map.get(elem[0]) or embed_config.get(elem[0]),
+                }
+        else:
+            elements = [
+                ("emoji", 256),
+                ("label", max_button_label),
+                ("description", max_selectmenu_description),
+                ("category", 256),
+            ]
+            for elem in elements:
+                options[elem[0]] = {
+                    "label": elem[0].title(),
+                    "max_length": elem[1],
+                    "required": elem[0] == "label",
+                    "default": view.input_map.get(elem[0]),
+                }
+        return options
+
+    async def _button_callback(self, interaction: discord.Interaction, item: Button) -> None:
+        if not isinstance(item, Button):
+            raise TypeError(
+                "Invalid type of item received. Expected Button, " f"got {type(item).__name__} instead."
+            )
+
+        view = item.view
+        options = self._resolve_modal_payload(item)
+        title = view.input_session.title() + " config"
+        modal = Modal(view, options, self._modal_callback, title=title)
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+
+        if view.value:
+            view.disable_and_stop()
+            return
+
+    async def _modal_callback(self, interaction: discord.Interaction, modal: Modal) -> None:
+        """
+        Resolve and convert inputs submitted from Modal view.
+
+        Things that need to be converted:
+            - Emoji
+            - Category channel
+            - Button style
+
+        Everything else is just a plain string.
+        """
+        view = modal.view
+        converters = {
+            "emoji": EmojiConverter,
+            "category": commands.CategoryChannelConverter,
+        }
+        errors = []
+        if view.input_session in ("button", "dropdown") and all(
+            (view.input_map.get(elem) is None for elem in ("emoji", "label"))
+        ):
+            errors.append("ValueError: Emoji and Label cannot both be None.")
+
+        for key, value in view.input_map.items():
+            if value is None:
+                view.extras[key] = value
+                continue
+
+            if key == "style":
+                value = value.lower()
+                try:
+                    if value not in ("blurple", "green", "red", "grey"):
+                        raise ValueError("Invalid color style.")
+                    value = discord.ButtonStyle[value].name
+                except (KeyError, TypeError, ValueError):
+                    errors.append(f"ValueError: `{value}` is invalid for color style.")
+                    continue
+                view.extras[key] = value
+                continue
+
+            conv = converters.get(key)
+            if conv is None:
+                # mostly plain string
+                view.extras[key] = value
+                continue
+            try:
+                entity = await conv().convert(view.ctx, value)
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}: {str(exc)}")
+                continue
+            if isinstance(entity, discord.CategoryChannel):
+                value = str(entity.id)
+            elif isinstance(entity, (discord.PartialEmoji, discord.Emoji)):
+                value = str(entity)
+            else:
+                errors.append(f"TypeError: Invalid type of converted value, `{type(entity).__name__}`.")
+                continue
+            view.extras[key] = value
+
+        if errors:
+            embed = discord.Embed(
+                description="\n".join(errors),
+                color=self.bot.error_color,
+            )
+            view.value = False
+            modal.stop()
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        view.value = True
+        modal.stop()
 
     @commands.group(aliases=["conmenu"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -193,146 +340,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         await ctx.send_help(ctx.command)
 
-    def _resolve_modal_payload(self, interaction: discord.Interaction, item: Button) -> Dict[str, Any]:
-        """
-        Internal method to respectively resolve the required payload to initiate
-        the `Modal` view.
-        """
-        view = item.view
-        session = view.input_session
-        valid_sessions = ("button", "dropdown", "embed")
-        if session not in valid_sessions:
-            raise ValueError(
-                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
-                f"got `{session}` instead."
-            )
-
-        options = {}
-        if session == "button":
-            elements = [("emoji", 256), ("label", max_button_label), ("style", 32)]
-            button_config = self.config.contact.get("button")
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "required": False,
-                    "default": view.input_map.get(elem[0]) or button_config.get(elem[0]),
-                }
-        elif session == "embed":
-            elements = [("title", 256), ("description", 4000), ("footer", 1024)]
-            embed_config = self.config.contact.get("embed")
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "style": discord.TextStyle.long if elem[0] == "description" else discord.TextStyle.short,
-                    "required": elem[0] == "description",
-                    "default": view.input_map.get(elem[0]) or embed_config.get(elem[0]),
-                }
-        else:
-            elements = [
-                ("emoji", 256),
-                ("label", max_button_label),
-                ("description", max_selectmenu_description),
-                ("category", 256),
-            ]
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "required": elem[0] == "label",
-                    "default": view.input_map.get(elem[0]),
-                }
-        return options
-
-    async def _button_callback(self, interaction: discord.Interaction, item: Button) -> None:
-        if not isinstance(item, Button):
-            raise TypeError(
-                "Invalid type of item received. Expected Button, " f"got {type(item).__name__} instead."
-            )
-
-        view = item.view
-        options = self._resolve_modal_payload(interaction, item)
-        title = view.input_session.title() + " config"
-        modal = Modal(view, options, self._modal_callback, title=title)
-        view.modals.append(modal)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-
-        if view.value:
-            view.disable_and_stop()
-            return
-
-    async def _modal_callback(self, interaction: discord.Interaction, modal: Modal) -> None:
-        """
-        Resolve and convert inputs submitted from Modal view.
-
-        Things that need to be converted:
-            - Emoji
-            - Category channel
-            - Button style
-
-        Everything else is just a plain string.
-        """
-        view = modal.view
-        converters = {
-            "emoji": EmojiConverter,
-            "category": commands.CategoryChannelConverter,
-        }
-        errors = []
-        if view.input_session in ("button", "dropdown") and all(
-            (view.input_map.get(elem) is None for elem in ("emoji", "label"))
-        ):
-            errors.append("ValueError: Emoji and Label cannot both be None.")
-
-        for key, value in view.input_map.items():
-            if value is None:
-                view.extras[key] = value
-                continue
-
-            if key == "style":
-                value = value.lower()
-                try:
-                    if value not in ("blurple", "green", "red", "grey"):
-                        raise ValueError("Invalid color style.")
-                    discord.ButtonStyle[value]
-                except (KeyError, TypeError, ValueError):
-                    errors.append(f"ValueError: `{value}` is invalid for color style.")
-                    continue
-                view.extras[key] = value
-                continue
-
-            conv = converters.get(key)
-            if conv is None:
-                # mostly plain string
-                view.extras[key] = value
-                continue
-            try:
-                entity = await conv().convert(view.ctx, value)
-            except Exception as exc:
-                errors.append(f"{type(exc).__name__}: {str(exc)}")
-                continue
-            if isinstance(entity, discord.CategoryChannel):
-                value = str(entity.id)
-            elif isinstance(entity, (discord.PartialEmoji, discord.Emoji)):
-                value = str(entity)
-            else:
-                errors.append(f"TypeError: Invalid type of converted value, `{type(entity).__name__}`.")
-                continue
-            view.extras[key] = value
-
-        if errors:
-            embed = discord.Embed(
-                description="\n".join(errors),
-                color=self.bot.error_color,
-            )
-            view.value = False
-            modal.stop()
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-
-        view.value = True
-        modal.stop()
-
     @cm_config.group(name="embed", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_embed(self, ctx: commands.Context):
@@ -359,7 +366,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 for key in ("title", "description", "footer")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="embed")
+        view = SupportUtilityView(ctx, input_session="contact embed")
         buttons = [
             ("set", discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
@@ -436,7 +443,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{button_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="button")
+        view = SupportUtilityView(ctx, input_session="contact_button")
         buttons = [
             ("set", discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
@@ -648,30 +655,291 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @commands.group(invoke_without_command=True)
+    @commands.group(aliases=["fback"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def feedback(self, ctx: commands.Context):
         """
         Feedback prompt after the thread is closed.
+
+        This feature is disabled by default. To enable, use command:
+        `{prefix}feedback config enable true`
+
+        To see more customizable options, see:
+        `{prefix}feedback config`
         """
         await ctx.send_help(ctx.command)
 
-    @feedback.command(name="embed")
+    @feedback.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_embed(self, ctx: commands.Context):
+    async def fb_config(self, ctx: commands.Context):
+        """
+        Feedback feature configurations.
+
+        Use the subcommands respectively to change the values.
+        """
+        await ctx.send_help(ctx.command)
+
+    @fb_config.command(name="channel")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_channel(
+        self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None
+    ):
+        """
+        Set the feedback log channel.
+        If this config has never been set, fallbacks to bot's `log_channel`.
+
+        `channel` if specified, may be a channel ID, mention, or name.
+        Leave `channel` empty to get current set feedback log channel.
+        """
+        embed = discord.Embed(
+            color=self.bot.main_color,
+        )
+        if channel is None:
+            embed.description = (
+                f"Feedback log channel is currently set to: {self.feedback_manager.channel.mention}."
+            )
+            return await ctx.send(embed=embed)
+
+        self.config.feedback["channel"] = str(channel.id)
+        await self.config.update()
+        embed.description = f"Feedback log channel is now set to {channel.mention}."
+        await ctx.send(embed=embed)
+
+    @fb_config.command(name="enable")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable sending the feedback prompt message.
+
+        `mode` may be `True` or `False` (case insensitive).
+        Leave `mode` empty to retrieve the current set value.
+        """
+        fb_config = self.config.feedback
+        enabled = fb_config.get("enable", False)
+        if mode is None:
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description="Feedback feature is currently " + ("enabled." if enabled else "disabled."),
+            )
+            return await ctx.send(embed=embed)
+        if mode == enabled:
+            raise commands.BadArgument(
+                "Feedback feature is already " + ("enabled." if enabled else "disabled.")
+            )
+
+        fb_config["enable"] = mode
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Feedback feature is now " + ("enabled." if mode else "disabled."),
+        )
+        await ctx.send(embed=embed)
+
+    @fb_config.group(name="embed", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_embed(self, ctx: commands.Context):
         """
         Customize the feedback embed.
 
         __**Available fields:**__
         - **Title** : The title for the embed. Must be 256 or fewer in length.
         - **Description** : Embed description. Must not exceed 4000 characters.
+        - **Footer** : Embed footer text.
         """
         embed = discord.Embed(
             title="Feedback embed",
             color=self.bot.main_color,
             description=ctx.command.help,
         )
-        await ctx.send_help(ctx.command)
+        embed.set_footer(text="Press Set to set/edit the values")
+        embed_config = self.config.feedback.get("embed")
+        embed.add_field(
+            name="Current values",
+            value="\n".join(
+                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=1000)}`"
+                for key in ("title", "description", "footer")
+            ),
+        )
+        view = SupportUtilityView(ctx, input_session="feedback embed")
+        buttons = [
+            ("set", discord.ButtonStyle.grey, self._button_callback),
+            ("cancel", discord.ButtonStyle.red, view._action_cancel),
+        ]
+        for elem in buttons:
+            key = elem[0]
+            button = Button(
+                label=key.title(),
+                style=elem[1],
+                callback=elem[2],
+            )
+            view.add_item(button)
+        view.message = message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+        await message.edit(view=view)
+
+        if view.value:
+            payload = view.extras
+            updated = []
+            for key in list(payload):
+                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=2000)}`")
+                self.config.feedback["embed"][key] = payload.pop(key)
+            await self.config.update()
+            embed = discord.Embed(
+                description="Successfully set the new configurations for feedback embed.\n\n"
+                + "\n".join(updated),
+                color=self.bot.main_color,
+            )
+            await view.interaction.followup.send(embed=embed)
+
+    @fb_config_embed.command(name="clear")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_embed_clear(self, ctx: commands.Context):
+        """
+        Clear the feedback embed configurations and reset to default values.
+        """
+        default = self.config.defaults["feedback"].get("embed", {})
+
+        self.config.feedback["embed"] = self.config.deepcopy(default)
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Feedback embed configurations are now reset to defaults.",
+        )
+        await ctx.send(embed=embed)
+
+    @fb_config.group(name="button", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_button(self, ctx: commands.Context):
+        """
+        Customize the feedback button using buttons and text input.
+
+        __**Available fields:**__
+        - **Emoji** : Emoji shown on the button. May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).
+        - **Label** : Button label. Must not exceed 80 characters.
+        - **Style** : The color style for the button. Must be one of these (case insensitive):
+            - `Blurple`
+            - `Green`
+            - `Red`
+            - `Grey`
+        """
+        description = ctx.command.help
+        embed = discord.Embed(
+            title="Feedback button",
+            color=self.bot.main_color,
+            description=description,
+        )
+        embed.set_footer(text="Press Set to set/edit the values")
+        feedback_config = self.config.feedback.get("button")
+        embed.add_field(
+            name="Current values",
+            value="\n".join(
+                f"- **{key.title()}** : `{feedback_config.get(key)}`" for key in ("emoji", "label", "style")
+            ),
+        )
+        view = SupportUtilityView(ctx, input_session="feedback_button")
+        buttons = [
+            ("set", discord.ButtonStyle.grey, self._button_callback),
+            ("cancel", discord.ButtonStyle.red, view._action_cancel),
+        ]
+        for elem in buttons:
+            key = elem[0]
+            button = Button(
+                label=key.title(),
+                style=elem[1],
+                callback=elem[2],
+            )
+            view.add_item(button)
+        view.message = message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+        await message.edit(view=view)
+
+        if view.value:
+            payload = view.extras
+            updated = []
+            for key in list(payload):
+                updated.append(f"- **{key.title()}** : `{payload[key]}`")
+                self.config.feedback["button"][key] = payload.pop(key)
+            await self.config.update()
+            embed = discord.Embed(
+                description="Successfully set the new configurations for feedback button.\n\n"
+                + "\n".join(updated),
+                color=self.bot.main_color,
+            )
+            await view.interaction.followup.send(embed=embed)
+
+    @fb_config_button.command(name="clear")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_button_clear(self, ctx: commands.Context):
+        """
+        Clear the feedback button configurations and reset to default values.
+        """
+        self.config.feedback["button"].clear()
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color, description="Feedback button configurations are now reset to defaults."
+        )
+        await ctx.send(embed=embed)
+
+    @fb_config.command(name="clear")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_clear(self, ctx: commands.Context):
+        """
+        Clear the feedback feature configurations.
+        This will reset all the settings (e.g. button, channel, embed etc) to defaults.
+
+        __**Note:**__
+        - This operation cannot be undone.
+        """
+        view = ConfirmView(self.bot, ctx.author)
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Are you sure you want to clear all feedback feature settings?",
+        )
+        view.message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+
+        if not view.value:
+            return
+        del embed
+
+        self.config.remove("feedback", restore_default=True)
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="All feedback feature configurations have been reset to defaults.",
+        )
+        await ctx.send(embed=embed)
+
+    @commands.Cog.listener()
+    async def on_thread_close(
+        self,
+        thread: Thread,
+        closer: discord.Member,
+        silent: bool,
+        delete_channel: bool,
+        close_message: Optional[str],
+        scheduled: bool,
+    ) -> None:
+        """
+        Dispatched when the thread is closed.
+        """
+        if silent:
+            return
+
+        if not self.config.feedback.get("enable", False):
+            return
+        self.bot.loop.create_task(
+            self.feedback_manager.send(
+                thread,
+                closer,
+                delete_channel,
+                close_message,
+                scheduled,
+            ),
+        )
 
 
 async def setup(bot: ModmailBot) -> None:
