@@ -1,12 +1,14 @@
 {
     "name": "Support Utility",
     "description": [
-        "Contact Modmail using button and dropdown, and submit review after the thread is closed.",
-        "Customizable contact button. Multiple categories are also supported.",
+        "Additional tools to enhance Support experience.\n",
+        "Contact Modmail using button and dropdown. Users submit their feedback after their thread is closed.",
+        "Customizable contact button, dropdown and message.",
+        "Link dropdown option to a specific category.",
         "\n**Version:**\n`{0}`"
     ],
     "author": "Jerrie-Aries",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "bot_version": "4.0.0",
     "dpy_version": "2.0.0",
     "cogs_required": ["Extended Utils"]

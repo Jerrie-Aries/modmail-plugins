@@ -138,7 +138,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def _button_callback(self, interaction: discord.Interaction, item: Button) -> None:
         if not isinstance(item, Button):
             raise TypeError(
-                "Invalid type of item received. Expected Button, " f"got {type(item).__name__} instead."
+                f"Invalid type of item received. Expected Button, got {type(item).__name__} instead."
             )
 
         view = item.view
@@ -237,7 +237,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def cm_create(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
         """
         Create a contact message and add contact components to it.
-        Button and dropdown settings will be retrieved from the config.
+        Button and dropdown settings will be retrieved from config.
 
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, fallbacks to current channel.
@@ -273,9 +273,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def cm_attach(self, ctx: commands.Context, *, message: discord.Message):
         """
         Attach the contact components to the message specified.
-        Button and dropdown settings will be retrieved from the config.
+        Button and dropdown settings will be retrieved from config.
 
-        `message` may be a message ID, link, or format of `messageid-channelid`.
+        `message` may be a message ID, link, or format of `channelid-messageid`.
         """
         if self.contact_manager.view is not MISSING:
             raise commands.BadArgument(
@@ -308,8 +308,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_clear(self, ctx: commands.Context):
         """
-        Clear the contact components attached on the contact menu message.
-        This will remove the button and dropdown, stop listening to interactions made on the message.
+        Clear the contact components attached to the contact menu message.
+        This will remove the button and dropdown, and stop listening to interactions made on the message.
         """
         if self.contact_manager.view is MISSING:
             raise commands.BadArgument("There is currently no active contact menu.")
@@ -336,7 +336,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         __**Customizable options:**__
         - Button
         - Dropdown
-        - Embed (title, description)
+        - Embed (title, description, footer)
         """
         await ctx.send_help(ctx.command)
 
