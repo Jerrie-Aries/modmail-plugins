@@ -367,10 +367,11 @@ class FeedbackView(BaseView):
         await interaction.response.defer()
         return False
 
-    async def _button_callback(self, interaction: Interaction, item: Button, **kwargs) -> None:
+    async def _button_callback(self, *args, **kwargs) -> None:
         """
         A single callback called when user presses the feedback button attached to this view.
         """
+        interaction, _ = args
         text_input = {
             "label": "Content",
             "max_length": 4000,

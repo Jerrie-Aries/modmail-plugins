@@ -224,7 +224,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
     @commands.group(aliases=["conmenu"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def contactmenu(self, ctx: commands.Contact):
+    async def contactmenu(self, ctx: commands.Context):
         """
         Base command for contact menu.
 
@@ -288,6 +288,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         await self.config.update()
         view = ContactView(self, message)
         await message.edit(view=view)
+        await ctx.message.add_reaction("\u2705")
 
     @contactmenu.command(name="refresh")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -618,7 +619,20 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         options = self.config.contact["select"]["options"]
         if not options:
             raise commands.BadArgument("There is no dropdown option set.")
-        # TODO: send confirmation view
+
+        view = ConfirmView(self.bot, ctx.author)
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Are you sure you want to clear all dropdown configurations?",
+        )
+        view.message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+
+        if not view.value:
+            return
+        del embed
+
         options.clear()
         await self.config.update()
         embed = discord.Embed(
@@ -935,7 +949,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         embed = discord.Embed(color=self.bot.main_color)
         feedback_config = self.config.feedback
-        if message is None:
+        if response is None:
             embed.description = f"Feedback response is currently set to:\n\n{feedback_config['response']}"
             return await ctx.send(embed=embed)
 

@@ -158,7 +158,7 @@ class FeedbackManager:
                 return channel
         return self.bot.log_channel
 
-    async def send(self, user: discord.Member, thread: Option[Thread] = None) -> None:
+    async def send(self, user: discord.Member, thread: Optional[Thread] = None) -> None:
         embed = discord.Embed(
             title=self.config["embed"].get("title"),
             color=self.bot.main_color,
