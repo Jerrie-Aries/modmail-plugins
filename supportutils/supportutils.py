@@ -180,11 +180,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 continue
 
             if key == "style":
-                value = value.lower()
                 try:
-                    if value not in ("blurple", "green", "red", "grey"):
-                        raise ValueError("Invalid color style.")
-                    value = discord.ButtonStyle[value].name
+                    value = value.lower()
+                    discord.ButtonStyle[value]
                 except (KeyError, TypeError, ValueError):
                     errors.append(f"ValueError: `{value}` is invalid for color style.")
                     continue
