@@ -444,7 +444,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{button_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="contact_button")
+        view = SupportUtilityView(ctx, input_session="contact button")
         buttons = [
             ("set", discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
