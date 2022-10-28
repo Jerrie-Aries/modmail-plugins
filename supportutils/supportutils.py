@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional, TYPE_CHECKING
@@ -656,7 +657,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=embed)
 
     @commands.group(aliases=["fback"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
     async def feedback(self, ctx: commands.Context):
         """
         Feedback prompt after the thread is closed.
@@ -668,6 +669,48 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `{prefix}feedback config`
         """
         await ctx.send_help(ctx.command)
+
+    @feedback.command(name="send")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    async def fb_send(self, ctx: commands.Context, *, user: Optional[discord.Member] = None):
+        """
+        Manually send the feedback prompt message to user.
+
+        `user` if specified, may be a user ID, mention, or name.
+        Leave `user` parameter empty if this command is run in thread channel to send to the current recipient.
+        """
+        embed = discord.Embed(color=self.bot.main_color)
+        if user:
+            self.bot.loop.create_task(self.feedback_manager.send(user))
+            embed.description = f"Feedback prompt message has been sent to {user.mention}."
+            await ctx.send(embed=embed)
+            return
+        thread = ctx.thread
+        if not thread:
+            raise commands.BadArgument(
+                "This command can only be run in thread channel is `user` parameter is not specified."
+            )
+
+        tasks = []
+        for user in thread.recipients:
+            if user is None:
+                continue
+            if not isinstance(user, discord.Member):
+                entity = self.bot.guild.get_member(user.id)
+                if not entity:
+                    continue
+                user = entity
+
+            tasks.append(self.feedback_manager.send(user, thread))
+
+        if tasks:
+            asyncio.gather(*tasks)
+        if len(thread.recipients) > 1:
+            recip = "all recipients"
+        else:
+            recip = "recipient"
+        embed.description = f"Successfully sent to {recip}."
+        await ctx.reply(embed=embed)
 
     @feedback.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -685,7 +728,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None
     ):
         """
-        Set the feedback log channel.
+        Feedback log channel.
         If this config has never been set, fallbacks to bot's `log_channel`.
 
         `channel` if specified, may be a channel ID, mention, or name.
@@ -714,8 +757,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `mode` may be `True` or `False` (case insensitive).
         Leave `mode` empty to retrieve the current set value.
         """
-        fb_config = self.config.feedback
-        enabled = fb_config.get("enable", False)
+        feedback_config = self.config.feedback
+        enabled = feedback_config.get("enable", False)
         if mode is None:
             embed = discord.Embed(
                 color=self.bot.main_color,
@@ -727,7 +770,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 "Feedback feature is already " + ("enabled." if enabled else "disabled.")
             )
 
-        fb_config["enable"] = mode
+        feedback_config["enable"] = mode
         await self.config.update()
         embed = discord.Embed(
             color=self.bot.main_color,
@@ -882,6 +925,25 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
+    @fb_config.command(name="response")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_response(self, ctx: commands.Context, *, response: Optional[str] = None):
+        """
+        Response message that will be sent to the user after submitting the feedback.
+
+        Leave `response` parameter empty to see the current value.
+        """
+        embed = discord.Embed(color=self.bot.main_color)
+        feedback_config = self.config.feedback
+        if message is None:
+            embed.description = f"Feedback response is currently set to:\n\n{feedback_config['response']}"
+            return await ctx.send(embed=embed)
+
+        feedback_config["response"] = response
+        await self.config.update()
+        embed.description = f"Feedback response is now set to:\n\n{response}"
+        await ctx.send(embed=embed)
+
     @fb_config.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def fb_config_clear(self, ctx: commands.Context):
@@ -914,32 +976,31 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_thread_close(
-        self,
-        thread: Thread,
-        closer: discord.Member,
-        silent: bool,
-        delete_channel: bool,
-        close_message: Optional[str],
-        scheduled: bool,
-    ) -> None:
+    async def on_thread_close(self, thread: Thread, *args) -> None:
         """
         Dispatched when the thread is closed.
         """
+        _, silent, *_ = args
         if silent:
             return
 
         if not self.config.feedback.get("enable", False):
             return
-        self.bot.loop.create_task(
-            self.feedback_manager.send(
-                thread,
-                closer,
-                delete_channel,
-                close_message,
-                scheduled,
-            ),
-        )
+
+        tasks = []
+        for user in thread.recipients:
+            if user is None:
+                continue
+            if not isinstance(user, discord.Member):
+                entity = self.bot.guild.get_member(user.id)
+                if not entity:
+                    continue
+                user = entity
+
+            tasks.append(self.feedback_manager.send(user, thread))
+
+        if tasks:
+            asyncio.gather(*tasks)
 
 
 async def setup(bot: ModmailBot) -> None:

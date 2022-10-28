@@ -17,7 +17,7 @@ _default_config: Dict[str, Any] = {
         "channel": None,
         "embed": {
             "title": "Contact Staff",
-            "description": "Contact the staff by pressing the button or selecting an option in the dropdown below.",
+            "description": "Use button or dropdown below to contact our staff.",
             "footer": None,
         },
         "button": {},
@@ -35,6 +35,7 @@ _default_config: Dict[str, Any] = {
             "footer": None,
         },
         "button": {},
+        "response": "Thanks for your time. Your feedback has been submitted to our staff team.",
     },
 }
 

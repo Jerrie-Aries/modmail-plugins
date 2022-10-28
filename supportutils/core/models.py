@@ -158,21 +158,7 @@ class FeedbackManager:
                 return channel
         return self.bot.log_channel
 
-    async def send(
-        self,
-        thread: Thread,
-        closer: discord.Member,
-        delete_channel: bool,
-        close_message: Optional[str],
-        scheduled: bool,
-    ) -> None:
-        if not isinstance(thread.recipient, discord.Member):
-            member = self.bot.guild.get_member(thread.recipient.id)
-            if not member:
-                return
-        else:
-            member = thread.recipient
-
+    async def send(self, user: discord.Member, thread: Option[Thread] = None) -> None:
         embed = discord.Embed(
             title=self.config["embed"].get("title"),
             color=self.bot.main_color,
@@ -184,8 +170,8 @@ class FeedbackManager:
             footer_text = "Your feedback will be submitted to our staff"
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
-        view = FeedbackView(member, self.cog, thread)
-        view.message = message = await member.send(embed=embed, view=view)
+        view = FeedbackView(user, self.cog, thread=thread)
+        view.message = message = await user.send(embed=embed, view=view)
         await view.wait()
         await message.edit(view=view)
 
@@ -196,23 +182,18 @@ class FeedbackManager:
 
         feedback = view.input_map.get("feedback")
         embed = discord.Embed(
-            title="Review submitted",
+            title="Feedback submitted",
             color=discord.Color.green(),
             description=feedback or "No content.",
             timestamp=discord.utils.utcnow(),
         )
         user = view.user
-        embed.set_author(name=str(user), icon_url=user.display_avatar)
-        if view.thread.channel:
-            channel_id = view.thread.channel.id
-        else:
-            channel_id = None
-        embed.set_footer(text=f"User ID: {user.id}\nChannel ID: {channel_id}", icon_url=self.bot.guild.icon)
+        embed.set_author(name=str(user))
+        embed.set_footer(text=f"User ID: {user.id}", icon_url=user.display_avatar)
         await self.channel.send(embed=embed)
 
         embed = discord.Embed(
-            # TODO: config option
-            description="Your feedback has been submitted to our staff.",
+            description=self.config.get("response", "Thanks for your time."),
             color=self.bot.main_color,
         )
         await interaction.followup.send(embed=embed, ephemeral=True)

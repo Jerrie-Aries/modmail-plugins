@@ -329,11 +329,16 @@ class FeedbackView(BaseView):
     """
 
     def __init__(
-        self, user: discord.Member, cog: SupportUtility, thread: Thread, *, message: discord.Message = MISSING
+        self,
+        user: discord.Member,
+        cog: SupportUtility,
+        *,
+        thread: Optional[Thread] = None,
+        message: discord.Message = MISSING,
     ):
         self.user: discord.Member = user
-        self.thread: Thread = thread
-        super().__init__(cog, message=message)
+        self.thread: Optional[Thread] = thread
+        super().__init__(cog, message=message, timeout=600.0)
         self.manager: FeedbackManager = self.cog.feedback_manager
         self.input_map: Dict[str, Any] = {}
 
