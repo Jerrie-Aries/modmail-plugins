@@ -260,8 +260,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not footer_text:
             footer_text = f"{self.bot.guild.name}: Contact menu"
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
-        if self.bot.config.get("show_timestamp"):
-            embed.timestamp = discord.utils.utcnow()
 
         message = await channel.send(embed=embed)
         self.config.contact["message"] = str(message.id)
