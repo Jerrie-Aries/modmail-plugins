@@ -182,7 +182,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             if key == "style":
                 try:
                     value = value.lower()
-                    discord.ButtonStyle[value]
+                    entity = discord.ButtonStyle[value]
+                    if entity == discord.ButtonStyle.url:
+                        errors.append("ValueError: ButtonStyle.url is not supported.")
+                        continue
                 except (KeyError, TypeError, ValueError):
                     errors.append(f"ValueError: `{value}` is invalid for color style.")
                     continue
