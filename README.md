@@ -43,6 +43,7 @@ to add the trivia plugin.
 | Moderation`*` | `moderation` | Moderate your server with moderation plugin. This plugin supports kick, ban, add/remove roles, mute and temp mute, change nicknames, and many more. |
 | Role Manager`*` | `rolemanager` | Manage roles on your server. This plugin includes Auto Role, Mass Roling, Reaction Roles, and Targeter (a tool to search members that match the given args). This plugin is a combination and modified version of `roleutils` cog made by [PhenoM4n4n](https://github.com/phenom4n4n), and `targeter` cog made by [NeuroAssassin](https://github.com/NeuroAssassin). |
 | RTFM | `rtfm` | RTFM commands for developers to easily fetch `discord.py` and `python` documentation links. Converted from [RoboDanny](https://github.com/Rapptz/RoboDanny). |
+| Support Utility`*` | `supportutils` | Addtional tools to enhance Support members' experience. Contact Modmail using button or dropdown. Users submit their feedback after the ticket is closed. |
 | Trivia`*` | `trivia` | Play trivia with friends on your server. This is a modified version of `cogs trivia` of [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot). I just made it compatible with Modmail bot. Any credits must go to original developer. You can find the source [here](https://github.com/Cog-Creators/Red-DiscordBot/tree/V3/develop/redbot/cogs/trivia). |
 
 `*` : Requires *Extended Utils* plugin to work.
