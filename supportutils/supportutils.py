@@ -272,11 +272,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
         message = await channel.send(embed=embed)
+        view = ContactView(self, message)
+        await message.edit(view=view)
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
-        view = ContactView(self, message)
-        await message.edit(view=view)
+
+        if channel != ctx.channel:
+            await ctx.message.add_reaction("\u2705")
 
     @contactmenu.command(name="attach")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -297,12 +300,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             raise commands.BadArgument(
                 f"There is already active contact menu{trail}. Please disable it first before creating a new one."
             )
+        if message.author != self.bot.user:
+            raise commands.BadArgument("Cannot attach components to a message sent by others.")
 
+        view = ContactView(self, message)
+        await message.edit(view=view)
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
-        view = ContactView(self, message)
-        await message.edit(view=view)
         await ctx.message.add_reaction("\u2705")
 
     @contactmenu.command(name="refresh")
