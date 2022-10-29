@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
@@ -76,6 +77,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         await self.contact_manager.initialize()
+        await self.feedback_manager.populate()
 
     def _resolve_modal_payload(self, item: Button) -> Dict[str, Any]:
         """
@@ -182,7 +184,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             if key == "style":
                 try:
                     value = value.lower()
-                    discord.ButtonStyle[value]
+                    entity = discord.ButtonStyle[value]
+                    if entity == discord.ButtonStyle.url:
+                        errors.append("ValueError: ButtonStyle.url is not supported.")
+                        continue
                 except (KeyError, TypeError, ValueError):
                     errors.append(f"ValueError: `{value}` is invalid for color style.")
                     continue
@@ -240,10 +245,17 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, fallbacks to current channel.
         """
-        if self.contact_manager.view is not MISSING:
+        manager = self.contact_manager
+        if manager.view is not MISSING:
+            message = manager.view.message
+            if message:
+                trail = f" on this [message]({message.jump_url})"
+            else:
+                trail = ""
             raise commands.BadArgument(
-                "There is already active contact menu. Please disable it first before creating a new one."
+                f"There is already active contact menu{trail}. Please disable it first before creating a new one."
             )
+
         if channel is None:
             channel = ctx.channel
         embed_config = self.config.contact["embed"]
@@ -260,11 +272,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
         message = await channel.send(embed=embed)
+        view = ContactView(self, message)
+        await message.edit(view=view)
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
-        view = ContactView(self, message)
-        await message.edit(view=view)
+
+        if channel != ctx.channel:
+            await ctx.message.add_reaction("\u2705")
 
     @contactmenu.command(name="attach")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -275,15 +290,24 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         `message` may be a message ID, link, or format of `channelid-messageid`.
         """
-        if self.contact_manager.view is not MISSING:
+        manager = self.contact_manager
+        if manager.view is not MISSING:
+            message = manager.view.message
+            if message:
+                trail = f" on this [message]({message.jump_url})"
+            else:
+                trail = ""
             raise commands.BadArgument(
-                "There is already active contact menu. Please disable it first before creating a new one."
+                f"There is already active contact menu{trail}. Please disable it first before creating a new one."
             )
+        if message.author != self.bot.user:
+            raise commands.BadArgument("Cannot attach components to a message sent by others.")
+
+        view = ContactView(self, message)
+        await message.edit(view=view)
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
-        view = ContactView(self, message)
-        await message.edit(view=view)
         await ctx.message.add_reaction("\u2705")
 
     @contactmenu.command(name="refresh")
@@ -293,36 +317,41 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Refresh components on the contact menu message.
         This should be run to update the button and dropdown to apply new settings.
         """
-        if self.contact_manager.view is MISSING:
+        manager = self.contact_manager
+        if manager.view is MISSING:
             raise commands.BadArgument("There is currently no active contact menu.")
-        self.contact_manager.view.stop()
-        self.contact_manager.view = MISSING
-        message = self.contact_manager.message
+
+        manager.view.stop()
+        manager.view = MISSING
+        message = manager.message
         view = ContactView(self, message)
-        await message.edit(view=view)
+        try:
+            await message.edit(view=view)
+        except discord.HTTPException as exc:
+            logger.error(f"{type(exc).__name__}: {str(exc)}")
+            raise commands.BadArgument("Unable to refresh contact menu message.")
         await ctx.message.add_reaction("\u2705")
 
-    @contactmenu.command(name="clear")
+    @contactmenu.command(name="disable", aliases=["clear"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_clear(self, ctx: commands.Context):
+    async def cm_disable(self, ctx: commands.Context):
         """
         Clear the contact components attached to the contact menu message.
         This will remove the button and dropdown, and stop listening to interactions made on the message.
         """
-        if self.contact_manager.view is MISSING:
+        manager = self.contact_manager
+        if manager.view is MISSING:
             raise commands.BadArgument("There is currently no active contact menu.")
-        await self.contact_manager.view.force_stop()
 
-        # need to access the jump_url before .clear()
-        description = (
-            f"Contact menu on this [message]({self.contact_manager.message.jump_url}) is now cleared."
-        )
-        embed = discord.Embed(color=self.bot.main_color, description=description)
-
-        self.contact_manager.clear()
+        await manager.view.force_stop()
+        manager.clear()
         self.config.contact["message"] = None
         self.config.contact["channel"] = None
         await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Contact menu is now cleared.",
+        )
         await ctx.send(embed=embed)
 
     @contactmenu.group(name="config", usage="<subcommand> [argument]", invoke_without_command=True)
@@ -441,7 +470,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{button_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="contact_button")
+        view = SupportUtilityView(ctx, input_session="contact button")
         buttons = [
             ("set", discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
@@ -693,18 +722,21 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Leave `user` parameter empty if this command is run in thread channel to send to the current recipient.
         """
         embed = discord.Embed(color=self.bot.main_color)
+        manager = self.feedback_manager
         if user:
-            self.bot.loop.create_task(self.feedback_manager.send(user))
+            if manager.is_active(user):
+                raise commands.BadArgument(f"There is already active feedback session for {user.mention}.")
+            await manager.send(user)
             embed.description = f"Feedback prompt message has been sent to {user.mention}."
             await ctx.send(embed=embed)
             return
+
         thread = ctx.thread
         if not thread:
             raise commands.BadArgument(
                 "This command can only be run in thread channel is `user` parameter is not specified."
             )
 
-        tasks = []
         for user in thread.recipients:
             if user is None:
                 continue
@@ -714,16 +746,66 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     continue
                 user = entity
 
-            tasks.append(self.feedback_manager.send(user, thread))
+            try:
+                await manager.send(user, thread)
+            except RuntimeError as exc:
+                logger.error(f"{type(exc).__name__}: {str(exc)}")
+                logger.error(f"Skipping sending feedback prompt message to {user}.")
 
-        if tasks:
-            asyncio.gather(*tasks)
         if len(thread.recipients) > 1:
             recip = "all recipients"
         else:
             recip = "recipient"
         embed.description = f"Successfully sent to {recip}."
         await ctx.reply(embed=embed)
+
+    @feedback.command(name="cancel")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    async def fb_cancel(self, ctx: commands.Context, *, user: discord.Member):
+        """
+        Manually cancel the feedback session sent to user.
+
+        `user` may be a user ID, mention, or name.
+        """
+        feedback = self.feedback_manager.find_session(user)
+        if not feedback:
+            raise commands.BadArgument(f"There is no active feedback session for {user.mention}.")
+
+        feedback.stop()
+        embed = discord.Embed(
+            color=self.bot.main_color, description=f"Feedback session for {user.mention} is now stopped."
+        )
+        await ctx.send(embed=embed)
+
+    @feedback.command(name="list")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    async def fb_list(self, ctx: commands.Context):
+        """
+        Show active feedback sessions sent to users.
+        """
+        manager = self.feedback_manager
+        if not manager.active:
+            raise commands.BadArgument("There is currently no active feedback session.")
+        embeds = []
+        for feedback in manager.active:
+            user = feedback.user
+            embed = discord.Embed(
+                color=self.bot.main_color,
+            )
+            embed.set_author(name=str(user), icon_url=user.display_avatar)
+            embed.set_footer(text=f"User ID: {user.id}")
+            embed.add_field(
+                name="Sent", value=discord.utils.format_dt(datetime.fromtimestamp(feedback.started), "F")
+            )
+            embed.add_field(
+                name="Ends", value=discord.utils.format_dt(datetime.fromtimestamp(feedback.ends), "F")
+            )
+            embed.add_field(name="Message ID", value=f"`{feedback.message.id}`")
+            embed.add_field(name="Channel ID", value=f"`{feedback.message.channel.id}`")
+            embeds.append(embed)
+
+        session = EmbedPaginatorSession(ctx, *embeds)
+        await session.run()
 
     @feedback.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -1000,7 +1082,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not self.config.feedback.get("enable", False):
             return
 
-        tasks = []
         for user in thread.recipients:
             if user is None:
                 continue
@@ -1009,11 +1090,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 if not entity:
                     continue
                 user = entity
-
-            tasks.append(self.feedback_manager.send(user, thread))
-
-        if tasks:
-            asyncio.gather(*tasks)
+            try:
+                await self.feedback_manager.send(user, thread)
+            except RuntimeError:
+                pass
 
 
 async def setup(bot: ModmailBot) -> None:

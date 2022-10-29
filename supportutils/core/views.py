@@ -125,7 +125,7 @@ class BaseView(ui.View):
     def disable_and_stop(self) -> None:
         for child in self.children:
             child.disabled = True
-        for modal in self._underlying_modals:
+        for modal in self.modals:
             if modal.is_dispatching() or not modal.is_finished():
                 modal.stop()
         if not self.is_finished():
@@ -179,7 +179,6 @@ class ContactView(BaseView):
         The SupportUtility cog.
     message : discord.Message
         The message object containing the view the bot listens to.
-
     """
 
     children: List[Button]
@@ -191,24 +190,9 @@ class ContactView(BaseView):
         if self.manager.view is not MISSING:
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
-        select_config = self.manager.config["select"]
-        self.select_options = select_config["options"]
-        options = []
-        for data in self.select_options:
-            options.append(
-                discord.SelectOption(
-                    emoji=data.get("emoji"), label=data["label"], description=data.get("description")
-                )
-            )
-        if options:
-            self.add_item(
-                DropdownMenu(
-                    options=options,
-                    placeholder=select_config.get("placeholder"),
-                    callback=self.handle_interaction,
-                    custom_id=f"contact_dropdown:{self.message.channel.id}-{self.message.id}",
-                )
-            )
+        self.select_options = self.manager.config["select"]["options"]
+        self.add_dropdown()  # dropdown comes first
+
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
         label = button_config.get("label")
@@ -228,9 +212,21 @@ class ContactView(BaseView):
         self.add_item(Button(**payload))
 
     async def interaction_check(self, interaction: Interaction) -> bool:
+        """
+        Entry point when a user made interaction on this view's components.
+        """
         user = interaction.user
+        dropdown = None
+        for child in self.children:
+            if isinstance(child, DropdownMenu):
+                if child.values:
+                    dropdown = child
+                    break
+
         if self.bot.guild.get_member(user.id) is None:
             await interaction.response.defer()
+            if dropdown:
+                await self.refresh_dropdown(dropdown)
             return False
         exists = await self.bot.threads.find(recipient=user)
         embed = discord.Embed(color=self.bot.error_color)
@@ -252,7 +248,49 @@ class ContactView(BaseView):
             return True
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+        if dropdown:
+            await self.refresh_dropdown(dropdown)
         return False
+
+    def add_dropdown(self) -> None:
+        """
+        Add dropdown if any. Otherwise, return silently.
+        """
+        options = []
+        for data in self.select_options:
+            options.append(
+                discord.SelectOption(
+                    emoji=data.get("emoji"), label=data["label"], description=data.get("description")
+                )
+            )
+        if options:
+            self.add_item(
+                DropdownMenu(
+                    options=options,
+                    placeholder=self.manager.config["select"].get("placeholder"),
+                    callback=self.handle_interaction,
+                    custom_id=f"contact_dropdown:{self.message.channel.id}-{self.message.id}",
+                    row=0,
+                )
+            )
+
+    async def refresh_dropdown(self, item: Optional[DropdownMenu] = None) -> None:
+        """
+        Reset the dropdown selected values and placeholder.
+        Refresh the view.
+        """
+        # need to do this to reset the dropdown placeholder and chosen values since
+        # all users are allowed to use interaction on this view.
+        # this might affect performance or get InteractionNotFound error.
+        if item is None:
+            for child in self.children:
+                if not isinstance(child, DropdownMenu):
+                    continue
+                item = child
+                break
+        item.values.clear()
+        item.placeholder = self.manager.config["select"].get("placeholder")
+        await self.message.edit(view=self)
 
     async def handle_interaction(
         self, interaction: Interaction, item: Union[Button, DropdownMenu], **kwargs
@@ -280,6 +318,7 @@ class ContactView(BaseView):
                     if entity:
                         category = entity
                     break
+            await self.refresh_dropdown(item)
 
         thread = await self.manager.create(
             recipient=user,
@@ -323,7 +362,8 @@ class ContactView(BaseView):
 
 class FeedbackView(BaseView):
     """
-    Feedback view.
+    Feedback view. This will be persistent view, which will still work after bot restart.
+    However we will deal with timeout manually.
     """
 
     def __init__(
@@ -331,14 +371,16 @@ class FeedbackView(BaseView):
         user: discord.Member,
         cog: SupportUtility,
         *,
+        message: discord.Message,
         thread: Optional[Thread] = None,
-        message: discord.Message = MISSING,
+        timeout: Optional[float] = None,
     ):
         self.user: discord.Member = user
         self.thread: Optional[Thread] = thread
-        super().__init__(cog, message=message, timeout=600.0)
+        super().__init__(cog, message=message, timeout=timeout)
         self.manager: FeedbackManager = self.cog.feedback_manager
         self.input_map: Dict[str, Any] = {}
+        self.feedback: Feedback = MISSING  # assigned in Feedback
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -354,14 +396,13 @@ class FeedbackView(BaseView):
             "label": label,
             "style": style,
             "callback": self._button_callback,
+            "custom_id": f"feedback_button:{self.message.channel.id}-{self.message.id}",
         }
         self.add_item(Button(**payload))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user == self.user:
             return True
-        # most likely not going to happen since this is only sent in DM's
-        # defer anyways
         await interaction.response.defer()
         return False
 
@@ -381,5 +422,4 @@ class FeedbackView(BaseView):
         await modal.wait()
 
         if self.value:
-            self.disable_and_stop()
-            return
+            self.feedback.submitted = True
