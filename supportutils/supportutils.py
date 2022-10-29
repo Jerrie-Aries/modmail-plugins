@@ -245,10 +245,17 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, fallbacks to current channel.
         """
-        if self.contact_manager.view is not MISSING:
+        manager = self.contact_manager
+        if manager.view is not MISSING:
+            message = manager.view.message
+            if message:
+                trail = f" on this [message]({message.jump_url})"
+            else:
+                trail = ""
             raise commands.BadArgument(
-                "There is already active contact menu. Please disable it first before creating a new one."
+                f"There is already active contact menu{trail}. Please disable it first before creating a new one."
             )
+
         if channel is None:
             channel = ctx.channel
         embed_config = self.config.contact["embed"]
@@ -280,10 +287,17 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         `message` may be a message ID, link, or format of `channelid-messageid`.
         """
-        if self.contact_manager.view is not MISSING:
+        manager = self.contact_manager
+        if manager.view is not MISSING:
+            message = manager.view.message
+            if message:
+                trail = f" on this [message]({message.jump_url})"
+            else:
+                trail = ""
             raise commands.BadArgument(
-                "There is already active contact menu. Please disable it first before creating a new one."
+                f"There is already active contact menu{trail}. Please disable it first before creating a new one."
             )
+
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
@@ -298,36 +312,41 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Refresh components on the contact menu message.
         This should be run to update the button and dropdown to apply new settings.
         """
-        if self.contact_manager.view is MISSING:
+        manager = self.contact_manager
+        if manager.view is MISSING:
             raise commands.BadArgument("There is currently no active contact menu.")
-        self.contact_manager.view.stop()
-        self.contact_manager.view = MISSING
-        message = self.contact_manager.message
+
+        manager.view.stop()
+        manager.view = MISSING
+        message = manager.message
         view = ContactView(self, message)
-        await message.edit(view=view)
+        try:
+            await message.edit(view=view)
+        except discord.HTTPException as exc:
+            logger.error(f"{type(exc).__name__}: {str(exc)}")
+            raise commands.BadArgument("Unable to refresh contact menu message.")
         await ctx.message.add_reaction("\u2705")
 
-    @contactmenu.command(name="clear")
+    @contactmenu.command(name="disable", aliases=["clear"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_clear(self, ctx: commands.Context):
+    async def cm_disable(self, ctx: commands.Context):
         """
         Clear the contact components attached to the contact menu message.
         This will remove the button and dropdown, and stop listening to interactions made on the message.
         """
-        if self.contact_manager.view is MISSING:
+        manager = self.contact_manager
+        if manager.view is MISSING:
             raise commands.BadArgument("There is currently no active contact menu.")
-        await self.contact_manager.view.force_stop()
 
-        # need to access the jump_url before .clear()
-        description = (
-            f"Contact menu on this [message]({self.contact_manager.message.jump_url}) is now cleared."
-        )
-        embed = discord.Embed(color=self.bot.main_color, description=description)
-
-        self.contact_manager.clear()
+        await manager.view.force_stop()
+        manager.clear()
         self.config.contact["message"] = None
         self.config.contact["channel"] = None
         await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Contact menu is now cleared.",
+        )
         await ctx.send(embed=embed)
 
     @contactmenu.group(name="config", usage="<subcommand> [argument]", invoke_without_command=True)

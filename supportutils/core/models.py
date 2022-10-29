@@ -40,6 +40,9 @@ class ContactManager:
         self.view: ContactView = MISSING
 
     async def initialize(self) -> None:
+        """
+        Called on startup.
+        """
         channel_id, message_id = self._resolve_ids()
         if not all((channel_id, message_id)):
             return
@@ -49,13 +52,7 @@ class ContactManager:
         self.channel = channel
         self.message = discord.PartialMessage(channel=self.channel, id=int(message_id))
         view = ContactView(self.cog, self.message)
-        try:
-            await self.message.edit(view=view)
-        except Exception as exc:
-            logger.error("Unexpected exception occured while trying to edit contact menu message.")
-            logger.error(f"{type(exc).__name__}: {str(exc)}")
-        else:
-            self.bot.add_view(view, message_id=self.message.id)
+        self.bot.add_view(view, message_id=self.message.id)
 
     def _resolve_ids(self) -> Tuple[Optional[int]]:
         channel_id = self.config.get("channel")
