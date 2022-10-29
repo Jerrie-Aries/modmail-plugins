@@ -36,6 +36,7 @@ _default_config: Dict[str, Any] = {
         },
         "button": {},
         "response": "Thanks for your time. Your feedback has been submitted to our staff team.",
+        "active_sessions": [],
     },
 }
 

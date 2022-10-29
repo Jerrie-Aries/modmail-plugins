@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
@@ -76,6 +77,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         await self.contact_manager.initialize()
+        await self.feedback_manager.populate()
 
     def _resolve_modal_payload(self, item: Button) -> Dict[str, Any]:
         """
@@ -696,18 +698,21 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Leave `user` parameter empty if this command is run in thread channel to send to the current recipient.
         """
         embed = discord.Embed(color=self.bot.main_color)
+        manager = self.feedback_manager
         if user:
-            self.bot.loop.create_task(self.feedback_manager.send(user))
+            if manager.is_active(user):
+                raise commands.BadArgument(f"There is already active feedback session for {user.mention}.")
+            await manager.send(user)
             embed.description = f"Feedback prompt message has been sent to {user.mention}."
             await ctx.send(embed=embed)
             return
+
         thread = ctx.thread
         if not thread:
             raise commands.BadArgument(
                 "This command can only be run in thread channel is `user` parameter is not specified."
             )
 
-        tasks = []
         for user in thread.recipients:
             if user is None:
                 continue
@@ -717,16 +722,66 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     continue
                 user = entity
 
-            tasks.append(self.feedback_manager.send(user, thread))
+            try:
+                await manager.send(user, thread)
+            except RuntimeError as exc:
+                logger.error(f"{type(exc).__name__}: {str(exc)}")
+                logger.error(f"Skipping sending feedback prompt message to {user}.")
 
-        if tasks:
-            asyncio.gather(*tasks)
         if len(thread.recipients) > 1:
             recip = "all recipients"
         else:
             recip = "recipient"
         embed.description = f"Successfully sent to {recip}."
         await ctx.reply(embed=embed)
+
+    @feedback.command(name="cancel")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    async def fb_cancel(self, ctx: commands.Context, *, user: discord.Member):
+        """
+        Manually cancel the feedback session sent to user.
+
+        `user` may be a user ID, mention, or name.
+        """
+        feedback = self.feedback_manager.find_session(user)
+        if not feedback:
+            raise commands.BadArgument(f"There is no active feedback session for {user.mention}.")
+
+        feedback.stop()
+        embed = discord.Embed(
+            color=self.bot.main_color, description=f"Feedback session for {user.mention} is now stopped."
+        )
+        await ctx.send(embed=embed)
+
+    @feedback.command(name="list")
+    @checks.has_permissions(PermissionLevel.SUPPORTER)
+    async def fb_list(self, ctx: commands.Context):
+        """
+        Show active feedback sessions sent to users.
+        """
+        manager = self.feedback_manager
+        if not manager.active:
+            raise commands.BadArgument("There is currently no active feedback session.")
+        embeds = []
+        for feedback in manager.active:
+            user = feedback.user
+            embed = discord.Embed(
+                color=self.bot.main_color,
+            )
+            embed.set_author(name=str(user), icon_url=user.display_avatar)
+            embed.set_footer(text=f"User ID: {user.id}")
+            embed.add_field(
+                name="Sent", value=discord.utils.format_dt(datetime.fromtimestamp(feedback.started), "F")
+            )
+            embed.add_field(
+                name="Ends", value=discord.utils.format_dt(datetime.fromtimestamp(feedback.ends), "F")
+            )
+            embed.add_field(name="Message ID", value=f"`{feedback.message.id}`")
+            embed.add_field(name="Channel ID", value=f"`{feedback.message.channel.id}`")
+            embeds.append(embed)
+
+        session = EmbedPaginatorSession(ctx, *embeds)
+        await session.run()
 
     @feedback.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -1003,7 +1058,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not self.config.feedback.get("enable", False):
             return
 
-        tasks = []
         for user in thread.recipients:
             if user is None:
                 continue
@@ -1012,11 +1066,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 if not entity:
                     continue
                 user = entity
-
-            tasks.append(self.feedback_manager.send(user, thread))
-
-        if tasks:
-            asyncio.gather(*tasks)
+            try:
+                await self.feedback_manager.send(user, thread)
+            except RuntimeError:
+                pass
 
 
 async def setup(bot: ModmailBot) -> None:

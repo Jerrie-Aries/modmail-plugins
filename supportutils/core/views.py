@@ -125,7 +125,7 @@ class BaseView(ui.View):
     def disable_and_stop(self) -> None:
         for child in self.children:
             child.disabled = True
-        for modal in self._underlying_modals:
+        for modal in self.modals:
             if modal.is_dispatching() or not modal.is_finished():
                 modal.stop()
         if not self.is_finished():
@@ -323,7 +323,8 @@ class ContactView(BaseView):
 
 class FeedbackView(BaseView):
     """
-    Feedback view.
+    Feedback view. This will be persistent view, which will still work after bot restart.
+    However we will deal with timeout manually.
     """
 
     def __init__(
@@ -331,14 +332,16 @@ class FeedbackView(BaseView):
         user: discord.Member,
         cog: SupportUtility,
         *,
+        message: discord.Message,
         thread: Optional[Thread] = None,
-        message: discord.Message = MISSING,
+        timeout: Optional[float] = None,
     ):
         self.user: discord.Member = user
         self.thread: Optional[Thread] = thread
-        super().__init__(cog, message=message, timeout=600.0)
+        super().__init__(cog, message=message, timeout=timeout)
         self.manager: FeedbackManager = self.cog.feedback_manager
         self.input_map: Dict[str, Any] = {}
+        self.feedback: Feedback = MISSING  # assigned in Feedback
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -354,14 +357,13 @@ class FeedbackView(BaseView):
             "label": label,
             "style": style,
             "callback": self._button_callback,
+            "custom_id": f"feedback_button:{self.message.channel.id}-{self.message.id}",
         }
         self.add_item(Button(**payload))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user == self.user:
             return True
-        # most likely not going to happen since this is only sent in DM's
-        # defer anyways
         await interaction.response.defer()
         return False
 
@@ -381,5 +383,4 @@ class FeedbackView(BaseView):
         await modal.wait()
 
         if self.value:
-            self.disable_and_stop()
-            return
+            self.feedback.submitted = True
