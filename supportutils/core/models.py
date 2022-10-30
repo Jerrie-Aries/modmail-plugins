@@ -129,7 +129,15 @@ class ContactManager:
             del self.bot.threads.cache[recipient.id]
             return thread
 
-        self.bot.loop.create_task(thread.setup(creator=recipient, category=category, initial_message=None))
+        embed = discord.Embed(
+            title=self.bot.config["thread_creation_contact_title"],
+            description=self.bot.config["thread_creation_self_contact_response"],
+            color=self.bot.main_color,
+        )
+        embed.set_footer(text=f"{recipient}", icon_url=recipient.display_avatar.url)
+        message = await recipient.send(embed=embed)
+
+        self.bot.loop.create_task(thread.setup(creator=recipient, category=category, initial_message=message))
         return thread
 
 

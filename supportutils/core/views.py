@@ -329,15 +329,6 @@ class ContactView(BaseView):
         if thread.cancelled:
             return
 
-        embed = discord.Embed(
-            title=self.bot.config["thread_creation_contact_title"],
-            description=self.bot.config["thread_creation_self_contact_response"],
-            color=self.bot.main_color,
-        )
-        embed.set_footer(text=f"{user}", icon_url=user.display_avatar.url)
-        await user.send(embed=embed)
-        del embed
-
         await thread.wait_until_ready()
         embed = discord.Embed(
             title="Created Thread",
