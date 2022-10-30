@@ -36,6 +36,7 @@ class AnnouncementModal(Modal):
     def __init__(self, view: AnnouncementView, options: Dict[str, Any]):
         super().__init__(title="Announcement")
         self.view = view
+        self.view.modals.append(self)
         for key, value in options.items():
             self.add_item(AnnouncementTextInput(key, **value))
 
@@ -95,6 +96,7 @@ class AnnouncementView(View):
         self.message: discord.Message = MISSING
         self.announcement: AnnouncementModel = announcement
         self.confirm: Optional[bool] = None
+        self._underlying_modals: List[AnnouncementModal] = []
 
         self.content_data: Dict[str, Any] = {
             "label": "Content",
@@ -130,6 +132,10 @@ class AnnouncementView(View):
         self._add_menu()
         self.generate_buttons()
         self.refresh()
+
+    @property
+    def modals(self) -> List[AnnouncementModal]:
+        return self._underlying_modals
 
     def _add_menu(self) -> None:
         attrs = [
@@ -299,6 +305,9 @@ class AnnouncementView(View):
     def disable_and_stop(self) -> None:
         for child in self.children:
             child.disabled = True
+        for modal in self.modals:
+            if modal.is_dispatching() or not modal.is_finished():
+                modal.stop()
         if not self.is_finished():
             self.stop()
 
