@@ -708,7 +708,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `{prefix}feedback config`
 
         __**Note:**__
-        - The button on the feedback prompt message will only available for 10 minutes.
+        - The button on the feedback prompt message will only available for 24 hours.
+        - Each user can only have one active session at a time.
         """
         await ctx.send_help(ctx.command)
 
@@ -1039,12 +1040,87 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed.description = f"Feedback response is now set to:\n\n{response}"
         await ctx.send(embed=embed)
 
+    @fb_config.group(name="rating", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_rating(self, ctx: commands.Context):
+        """
+        Rating feature. Allow users to choose a rating before submitting feedback.
+
+        This feature is disabled by default. To enable, use command:
+        `{prefix}feedback config rating enable true`
+        """
+        await ctx.send_help(ctx.command)
+
+    @fb_config_rating.command(name="enable")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def fb_config_rating_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable the rating feature on feedback prompt message.
+
+        `mode` may be `True` or `False` (case insensitive).
+        Leave `mode` empty to retrieve the current set value.
+        """
+        rating_config = self.config.feedback.get("rating", {})
+        # TODO: remove as this is just temporary for migration
+        if not rating_config:
+            rating_config = self.config.deepcopy(self.config.defaults["feedback"]["rating"])
+            self.config.feedback["rating"] = rating_config
+            await self.config.update()
+
+        enabled = rating_config.get("enable", False)
+        if mode is None:
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description="Rating feature is currently " + ("enabled." if enabled else "disabled."),
+            )
+            return await ctx.send(embed=embed)
+        if mode == enabled:
+            raise commands.BadArgument(
+                "Rating feature is already " + ("enabled." if enabled else "disabled.")
+            )
+
+        rating_config["enable"] = mode
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Rating feature is now " + ("enabled." if mode else "disabled."),
+        )
+        await ctx.send(embed=embed)
+
+    @fb_config_rating.command(name="placeholder")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def cm_config_rating_placeholder(self, ctx: commands.Context, *, placeholder: Optional[str] = None):
+        """
+        Placeholder text shown on the dropdown menu if nothing is selected.
+        Must not exceed 150 characters.
+        """
+        if placeholder is None:
+            current = self.config.feedback["rating"]["placeholder"]
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description=f"Placeholder text for rating dropdown menu is currently set to:\n`{current}`",
+            )
+            await ctx.send(embed=embed)
+            return
+        if len(placeholder) >= max_selectmenu_placeholder:
+            raise commands.BadArgument(
+                f"Placeholder text must be {max_selectmenu_placeholder} or fewer in length."
+            )
+
+        self.config.feedback["rating"]["placeholder"] = placeholder
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description=f"Placeholder for rating dropdown is now set to:\n{placeholder}",
+        )
+        await ctx.send(embed=embed)
+
     @fb_config.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def fb_config_clear(self, ctx: commands.Context):
         """
         Clear the feedback feature configurations.
-        This will reset all the settings (e.g. button, channel, embed etc) to defaults.
+        This will reset all the settings (e.g. button, channel, embed, rating etc) to defaults.
 
         __**Note:**__
         - This operation cannot be undone.
