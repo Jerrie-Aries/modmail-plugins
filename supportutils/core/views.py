@@ -381,7 +381,37 @@ class FeedbackView(BaseView):
         self.manager: FeedbackManager = self.cog.feedback_manager
         self.input_map: Dict[str, Any] = {}
         self.feedback: Feedback = MISSING  # assigned in Feedback
+        self._rating: Optional[discord.SelectOption] = None
 
+        self.add_dropdown()
+        self.add_button()
+
+    def add_dropdown(self) -> None:
+        """
+        Add rating dropdown if enabled. Otherwise, return silently.
+        """
+        rating_config = self.manager.config.get("rating", {})
+        if not rating_config.get("enable", False):
+            return
+        options = []
+        for i in reversed(range(5)):
+            num = i + 1  # index zero
+            options.append(discord.SelectOption(label="\N{WHITE MEDIUM STAR}" * num, value=str(num)))
+        if options:
+            self.add_item(
+                DropdownMenu(
+                    options=options,
+                    placeholder=rating_config.get("placeholder"),
+                    callback=self._dropdown_callback,
+                    custom_id=f"feedback_dropdown:{self.message.channel.id}-{self.message.id}",
+                    row=0,
+                )
+            )
+
+    def add_button(self) -> None:
+        """
+        Add the feedback button to this view.
+        """
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
         label = button_config.get("label")
@@ -400,11 +430,27 @@ class FeedbackView(BaseView):
         }
         self.add_item(Button(**payload))
 
+    @property
+    def rating(self) -> Optional[discord.SelectOption]:
+        """
+        Returns the rating option the user had chosen from dropdown.
+        """
+        return self._rating
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user == self.user:
             return True
         await interaction.response.defer()
         return False
+
+    async def _dropdown_callback(
+        self,
+        interaction: discord.Interaction,
+        item: DropdownMenu,
+        option: discord.SelectOption,
+    ) -> None:
+        await interaction.response.defer()
+        self._rating = option
 
     async def _button_callback(self, *args, **kwargs) -> None:
         """

@@ -387,6 +387,8 @@ class FeedbackManager:
             description=description,
             timestamp=discord.utils.utcnow(),
         )
+        if view.rating is not None:
+            embed.add_field(name="Rating", value=view.rating.label)
         user = view.user
         embed.set_author(name=str(user))
         embed.set_footer(text=f"User ID: {user.id}", icon_url=user.display_avatar)
