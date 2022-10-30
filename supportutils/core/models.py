@@ -277,7 +277,7 @@ class FeedbackManager:
     def __init__(self, cog: SupportUtility):
         self.cog: SupportUtility = cog
         self.bot: ModmailBot = cog.bot
-        self.active: Set = set()
+        self.active: Set[Feedback] = set()
 
     @property
     def config(self) -> Dict[str, Any]:

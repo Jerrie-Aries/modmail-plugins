@@ -1158,6 +1158,25 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=embed)
 
     @commands.Cog.listener()
+    async def on_thread_ready(self, thread: Thread, *args) -> None:
+        """
+        Dispatched when the thread is ready.
+
+        Here we're going to close active feedback session for the recipients if any and
+        if the auto send feedback on thread close feature is enabled.
+        """
+        if not self.config.feedback.get("enable", False):
+            return
+
+        for user in thread.recipients:
+            if user is None:
+                continue
+            feedback = self.feedback_manager.find_session(user)
+            if feedback:
+                logger.debug(f"Stopping active feedback session for {user}.")
+                feedback.stop()
+
+    @commands.Cog.listener()
     async def on_thread_close(self, thread: Thread, *args) -> None:
         """
         Dispatched when the thread is closed.
