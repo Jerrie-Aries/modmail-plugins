@@ -39,6 +39,7 @@ class GiveawayModal(Modal):
     def __init__(self, view: GiveawayView):
         super().__init__(title="Giveaway")
         self.view = view
+        self.view.modals.append(self)
         for key, value in self.view.input_map.items():
             self.add_item(GiveawayTextInput(key, **value))
 
@@ -81,6 +82,7 @@ class GiveawayView(View):
         self.giveaway_end: float = MISSING
         self.giveaway_winners: int = MISSING
         self.giveaway_prize: str = MISSING
+        self._underlying_modals: List[GiveawayModal] = []
 
         self.input_map: Dict[str, Any] = {
             "content": {
@@ -111,6 +113,10 @@ class GiveawayView(View):
 
         self._generate_buttons()
         self.refresh()
+
+    @property
+    def modals(self) -> List[GiveawayModal]:
+        return self._underlying_modals
 
     def _generate_buttons(self) -> None:
         for label, item in self.ret_buttons.items():
@@ -220,6 +226,9 @@ class GiveawayView(View):
     def disable_and_stop(self) -> None:
         for child in self.children:
             child.disabled = True
+        for modal in self.modals:
+            if modal.is_dispatching() or not modal.is_finished():
+                modal.stop()
         if not self.is_finished():
             self.stop()
 
