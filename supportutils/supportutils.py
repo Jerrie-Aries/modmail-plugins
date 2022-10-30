@@ -132,7 +132,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 options[elem[0]] = {
                     "label": elem[0].title(),
                     "max_length": elem[1],
-                    "required": elem[0] == "label",
+                    "required": elem[0] in ("label", "category"),
                     "default": view.input_map.get(elem[0]),
                 }
         return options
@@ -205,6 +205,17 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 errors.append(f"{type(exc).__name__}: {str(exc)}")
                 continue
             if isinstance(entity, discord.CategoryChannel):
+                if entity == self.bot.main_category:
+                    errors.append("ValueError: Category must be different than the main category.")
+                    continue
+                # check exists
+                for data in self.config.contact["select"]["options"]:
+                    category_id = data["category"]
+                    if category_id and str(entity.id) == category_id:
+                        errors.append(
+                            f"ValueError: Category {entity} is already linked to {data['label'] or data['emoji']}."
+                        )
+                        continue
                 value = str(entity.id)
             elif isinstance(entity, (discord.PartialEmoji, discord.Emoji)):
                 value = str(entity)
@@ -565,7 +576,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         - **Label** : Label for select option.
         - **Description** : Short description for the option. Must not exceed 100 characters.
         - **Category** : The discord category channel where the thread will be created if the user choose the option.
-        If not specified, defaults to `main category`.
+        This field is required and the value must be different than the `main category`.
         """
         embed = discord.Embed(
             title="Contact menu option",
@@ -573,7 +584,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             description=ctx.command.help,
         )
         embed.set_footer(text="Press Add to add a dropdown option")
-        view = SupportUtilityView(ctx, input_session="dropdown")
+        view = SupportUtilityView(ctx, input_session="contact dropdown")
         buttons = [
             ("add", discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
