@@ -22,6 +22,7 @@ except ImportError:
 
 from core import checks
 from core.models import getLogger, PermissionLevel
+from core.utils import strtobool
 
 
 if TYPE_CHECKING:
@@ -58,7 +59,11 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
     async def cog_load(self) -> None:
         global modmail_utils
-        if modmail_utils is None or not self._is_latest():
+        if (
+            modmail_utils is None
+            or not self._is_latest()
+            or strtobool(os.environ.get("UTILS_UPDATE_PACKAGE", "False"))
+        ):
             operation = "Installing" if modmail_utils is None else "Updating"
             logger.debug("%s requirements for %s.", operation, __plugin_name__)
             await self.install_packages()
