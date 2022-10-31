@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import os
 import re
@@ -22,7 +23,6 @@ except ImportError:
 
 from core import checks
 from core.models import getLogger, PermissionLevel
-from core.utils import strtobool
 
 
 if TYPE_CHECKING:
@@ -56,19 +56,28 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
         self.package_path: Path = current_dir
+        self.package_name: str = "modmail-utils"
 
     async def cog_load(self) -> None:
         global modmail_utils
-        if (
-            modmail_utils is None
-            or not self._is_latest()
-            or strtobool(os.environ.get("UTILS_UPDATE_PACKAGE", "False"))
-        ):
+
+        mode = os.environ.get("UTILS_PACKAGE_MODE", "production")
+        if mode.lower() == "development":
+            # for developers usage
+            # make sure the package was installed before running the script
+            return
+
+        if modmail_utils is None or not self._is_latest():
             operation = "Installing" if modmail_utils is None else "Updating"
             logger.debug("%s requirements for %s.", operation, __plugin_name__)
             await self.install_packages()
 
+            do_reload = modmail_utils is not None
+
             from discord.ext import modmail_utils
+
+            if do_reload:
+                importlib.reload(modmail_utils)
 
             _additional_tasks()
 
@@ -138,9 +147,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(title="Utils", color=self.bot.main_color)
         description = "__**Additional packages:**__\n"
         if modmail_utils is not None:
-            description += f"- `modmail-utils`: `v{modmail_utils.__version__}`\n"
+            description += f"- `{self.package_name}`: `v{modmail_utils.__version__}`\n"
         else:
-            description += "- `modmail-utils`: Not installed.\n"
+            description += f"- `{self.package_name}`: Not installed.\n"
         latest = self.version_from_source_dir()
         if latest is None:
             description += "Failed to parse latest version.\n"
@@ -163,10 +172,10 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         latest = version_tuple(latest)
         if current >= latest:
             raise commands.BadArgument(
-                f"`modmail-utils` is up to date with latest version: `v{'.'.join(str(i) for i in current)}`."
+                f"`{self.package_name}` is up to date with latest version: `v{'.'.join(str(i) for i in current)}`."
             )
         embed = discord.Embed(color=self.bot.main_color)
-        embed.description = "Updating `modmail-utils`..."
+        embed.description = f"Updating `{self.package_name}`..."
         msg = await ctx.send(embed=embed)
 
         async with ctx.typing():
@@ -175,7 +184,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             except Exception as exc:
                 description = f"{type(exc).__name__}: Failed to install. Check console for error."
             else:
-                description = f"Successfully update `modmail-utils` to `v{'.'.join(str(i) for i in latest)}`."
+                description = (
+                    f"Successfully update `{self.package_name}` to `v{'.'.join(str(i) for i in latest)}`."
+                )
         embed.description = description
         await msg.edit(embed=embed)
 
