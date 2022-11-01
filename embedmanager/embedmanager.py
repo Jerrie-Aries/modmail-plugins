@@ -21,6 +21,7 @@ from .core.converters import (
     StoredEmbedConverter,
     StringToEmbed,
 )
+from .core.data import JSON_EXAMPLE
 
 
 if TYPE_CHECKING:
@@ -52,49 +53,6 @@ except ImportError as exc:
 
 JSON_CONVERTER = StringToEmbed()
 JSON_CONTENT_CONVERTER = StringToEmbed(content=True)
-JSON_EXAMPLE = """
-{
-    "title": "JSON Example",
-    "description": "This embed is an example to show various features that can be used in a rich embed.",
-    "url": "https://example.com",
-    "color": 2616205,
-    "fields": [
-        {
-            "name": "Field 1",
-            "value": "This field is not within a line."
-       },
-        {
-            "name": "Field 2",
-            "value": "This is also not inline."
-        },
-        {
-            "name": "Field 3",
-            "value": "This field will be inline.",
-            "inline": true
-        },
-        {
-            "name": "Field 4",
-            "value": "This field is also within a line.",
-            "inline": true
-        }
-    ],
-    "author": {
-            "name": "Author Name",
-            "url": "https://example.com",
-            "icon_url": "https://link.to/some/image.png"
-    },
-    "footer": {
-        "text": "Footer text",
-        "icon_url": "https://link.to/some/image.png"
-    },
-    "image": {
-        "url": "https://link.to/some/image.png"
-    },
-    "thumbnail": {
-        "url": "https://link.to/some/image.png"
-    }
-}
-"""
 
 
 YES_EMOJI = "\N{WHITE HEAVY CHECK MARK}"
@@ -204,7 +162,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
             timestamp=discord.utils.utcnow(),
         )
         embed.set_footer(text="This panel will time out after 10 minutes.")
-        view = EmbedBuilderView(ctx.author)
+        view = EmbedBuilderView(self, ctx.author)
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
         if view.embed:
@@ -334,7 +292,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
         """
         source_embed = await self.get_embed_from_message(message, index)
-        view = EmbedBuilderView.from_embed(ctx.author, embed=source_embed)
+        view = EmbedBuilderView.from_embed(self, ctx.author, embed=source_embed)
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
             title="Embed Editor",

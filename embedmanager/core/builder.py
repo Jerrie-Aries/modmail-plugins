@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from distutils.util import strtobool
 from typing import Any, Awaitable, Callable, Dict, Optional, List, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, TextStyle
-from discord.ui import Button, Modal, Select, TextInput, View
+from discord.ext.modmail_utils.ui import Button, Modal, TextInput, View
+from discord.ext.modmail_utils.limits import Limit
+from discord.ui import Select
 from discord.utils import MISSING
 from yarl import URL
 
+from .data import DESCRIPTIONS, SHORT_DESCRIPTIONS, INPUT_DATA
+
 
 if TYPE_CHECKING:
+    from bot import ModmailBot
+    from ..embedmamager import EmbedManager
+
     ButtonCallbackT = Callable[[Union[Interaction, Any]], Awaitable]
 
 
@@ -51,96 +59,6 @@ def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
     return value
 
 
-_max_embed_length = 6000
-_short_length = 256
-_long_length = 4000  # maximum length allowed for modal input
-_footer_text_length = 2048
-_max_fields = 25
-_field_name_length = 1024
-_field_value_length = 2048
-
-_description = {
-    "title": ["**Title:**", "- `Title`: The title of embed.", "- `Embed URL`: The URL of embed.\n"],
-    "author": [
-        "**Author:**",
-        "- `Name`: Name of author.",
-        "- `Icon URL`: URL of author icon.",
-        "- `Author URL`: URL of author.\n",
-    ],
-    "body": [
-        "**Body:**",
-        "- `Description`: Description of embed.",
-        "- `Thumbnail URL`: URL of thumbnail image (shown at top right).",
-        "- `Image URL`: URL of embed image (shown at bottom).\n",
-    ],
-    "footer": [
-        "**Footer:**",
-        "- `Text`: The text shown on footer (can be up to 2048 characters).",
-        "- `Icon URL`: URL of footer icon.\n",
-    ],
-    "color": [
-        "**Color:**",
-        "- `Value`: Color code of the embed.",
-        "The following formats are accepted:",
-        "\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`",
-        "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n",
-    ],
-    "fields": [
-        "**Fields:**",
-        "- `Name`: Name of the field.",
-        "- `Value`: Value of the field, can be up to 1024 characters.",
-        "- `Inline`: Whether or not this field should display inline.\n",
-        "Click `Add Field` to add a new field, or `Clear Fields` to clear all fields, if any.",
-        "Embed fields can be added up to 25.\n",
-    ],
-    "note": [
-        "__**Notes:**__",
-        "- The combine sum of characters in embeds in a single message must not exceed 6000 characters.\n",
-    ],
-}
-
-_short_desc = {
-    "title": "The title of embed including URL.",
-    "author": "The author of the embed.",
-    "body": "Description, thumbnail and image URLs.",
-    "footer": "The footer text and/or icon of the embed.",
-    "color": "Embed's color.",
-    "fields": "Add or remove fields.",
-}
-
-
-class EmbedBuilderTextInput(TextInput):
-    def __init__(self, name: str, **kwargs):
-        self.name: str = name
-        super().__init__(**kwargs)
-
-
-class EmbedBuilderModal(Modal):
-    """
-    Represents modal view for embed builder.
-    """
-
-    children: List[EmbedBuilderTextInput]
-
-    def __init__(self, view: EmbedBuilderView, key: str):
-        super().__init__(title=key.title())
-        self.view = view
-        data = self.view.input_map[key]
-        for key, value in data.items():
-            self.add_item(EmbedBuilderTextInput(key, **value))
-
-    async def on_submit(self, interaction: Interaction) -> None:
-        for child in self.children:
-            value = child.value
-            if not value:
-                value = None
-            self.view.input_map[self.view.current][child.name]["default"] = value
-
-        await interaction.response.defer()
-        self.stop()
-        await self.view.on_modal_submit(interaction)
-
-
 class EmbedBuilderDropdown(Select):
     def __init__(self, *, options: List[discord.SelectOption], **kwargs):
         super().__init__(
@@ -166,124 +84,23 @@ class EmbedBuilderDropdown(Select):
         raise ValueError(f"Cannot find select option with value of `{value}`.")
 
 
-class EmbedBuilderButton(Button["EmbedBuilderView"]):
-    def __init__(
-        self,
-        label: str,
-        *,
-        style: ButtonStyle = ButtonStyle.blurple,
-        row: int = None,
-        callback: ButtonCallbackT = MISSING,
-    ):
-        super().__init__(label=label, style=style, row=row)
-        self.callback_override: ButtonCallbackT = callback
-
-    async def callback(self, interaction: Interaction):
-        assert self.view is not None
-        key = self.label.lower()
-        params = [interaction]
-        if key in self.view.input_map.keys():
-            params.append(key)
-        await self.callback_override(*tuple(params))
-
-
 class EmbedBuilderView(View):
     """
     Main class to handle the view components and responses from interactions.
     """
 
-    children: List[EmbedBuilderButton]
+    children: List[Button]
 
-    def __init__(self, user: discord.Member, *, timeout: float = 600.0, add_items: bool = True):
-        super().__init__(timeout=timeout)
+    def __init__(
+        self, cog: EmbedManager, user: discord.Member, *, timeout: float = 600.0, add_items: bool = True
+    ):
+        super().__init__(extras=deepcopy(INPUT_DATA), timeout=timeout)
+        self.bot: ModmailBot = cog.bot
+        self.cog: EmbedManager = cog
         self.user: discord.Member = user
-        self.message: discord.Message = MISSING
         self.embed: discord.Embed = discord.Embed()
         self.current: Optional[str] = None
 
-        self.input_map: Dict[str, Any] = {
-            "title": {
-                "title": {
-                    "label": "Title",
-                    "placeholder": "Embed title here...",
-                    "max_length": _short_length,
-                },
-                "url": {
-                    "label": "Embed URL",
-                    "max_length": _short_length,
-                    "required": False,
-                },
-            },
-            "author": {
-                "name": {
-                    "label": "Name",
-                    "placeholder": "Author name",
-                    "max_length": _short_length,
-                },
-                "icon_url": {
-                    "label": "Icon URL",
-                    "max_length": _short_length,
-                    "required": False,
-                },
-                "url": {
-                    "label": "Author URL",
-                    "max_length": _short_length,
-                    "required": False,
-                },
-            },
-            "body": {
-                "description": {
-                    "label": "Description",
-                    "style": TextStyle.long,
-                    "max_length": _long_length,
-                },
-                "thumbnail": {
-                    "label": "Thumbnail URL",
-                    "max_length": _short_length,
-                    "required": False,
-                },
-                "image": {
-                    "label": "Image URL",
-                    "max_length": _short_length,
-                    "required": False,
-                },
-            },
-            "color": {
-                "value": {
-                    "label": "Value",
-                    "placeholder": "#ffffff",
-                    "max_length": 32,
-                },
-            },
-            "footer": {
-                "text": {
-                    "label": "Text",
-                    "placeholder": "Footer text",
-                    "max_length": _footer_text_length,
-                },
-                "icon_url": {
-                    "label": "Icon URL",
-                    "max_length": _short_length,
-                    "required": False,
-                },
-            },
-            "fields": {
-                "name": {
-                    "label": "Name",
-                    "max_length": _field_name_length,
-                },
-                "value": {
-                    "label": "Value",
-                    "max_length": _field_value_length,
-                    "style": TextStyle.long,
-                },
-                "inline": {
-                    "label": "Inline",
-                    "max_length": 5,
-                    "required": False,
-                },
-            },
-        }
         if add_items:
             self._add_menu()
             self._generate_buttons()
@@ -292,12 +109,12 @@ class EmbedBuilderView(View):
     def _add_menu(self) -> None:
         options = []
         placeholder = None
-        for key in self.input_map:
+        for key in self.extras:
             if key == self.current:
                 placeholder = key.title()
             option = discord.SelectOption(
                 label=key.title(),
-                description=_short_desc[key],
+                description=SHORT_DESCRIPTIONS[key],
                 value=key,
             )
             options.append(option)
@@ -315,7 +132,7 @@ class EmbedBuilderView(View):
         }
 
         for label, item in buttons.items():
-            self.add_item(EmbedBuilderButton(label.title(), style=item[0], row=4, callback=item[1]))
+            self.add_item(Button(label=label.title(), style=item[0], row=4, callback=item[1]))
 
     def _add_field_buttons(self) -> None:
         buttons = {
@@ -323,11 +140,11 @@ class EmbedBuilderView(View):
             "clear fields": (ButtonStyle.grey, self._action_clear_fields),
         }
         for label, item in buttons.items():
-            self.add_item(EmbedBuilderButton(label.title(), style=item[0], row=3, callback=item[1]))
+            self.add_item(Button(label=label.title(), style=item[0], row=3, callback=item[1]))
 
     def refresh(self) -> None:
         for child in self.children:
-            if not isinstance(child, EmbedBuilderButton):
+            if not isinstance(child, Button):
                 continue
             key = child.label.lower()
             if key == "cancel":
@@ -354,15 +171,22 @@ class EmbedBuilderView(View):
     async def on_dropdown_select(self, value: str) -> None:
         self.current = value
         embed = self.message.embeds[0]
-        embed.description = "\n".join(_description[value]) + "\n\n" + "\n".join(_description["note"])
+        embed.description = "\n".join(DESCRIPTIONS[value]) + "\n\n" + "\n".join(DESCRIPTIONS["note"])
         self.clear_items()
         self._add_menu()
         self._generate_buttons()
         await self.update_view()
 
-    async def on_modal_submit(self, interaction: Interaction) -> None:
+    async def on_modal_submit(self, interaction: Interaction, modal: Modal) -> None:
+        modal.stop()
+        for child in modal.children:
+            value = child.value
+            if not value:
+                value = None
+            self.extras[self.current][child.name]["default"] = value
+
         errors = []
-        data = self.input_map[self.current]
+        data = self.extras[self.current]
         resp_data = {}
         for key, group in data.items():
             if self.current == "fields":
@@ -377,38 +201,54 @@ class EmbedBuilderView(View):
                 resp_data[key] = value
 
         if errors:
-            for error in errors:
-                await interaction.followup.send(error, ephemeral=True)
+            content = "\n".join(f"{n}. {error}" for n, error in enumerate(errors, start=1))
+            embed = discord.Embed(
+                title="__Errors__",
+                color=self.bot.main_color,
+                description=content,
+            )
+            await interaction.response.send(embed=embed, ephemeral=True)
         else:
+            await interaction.response.defer()
             self.embed = self.update_embed(data=resp_data)
         await self.update_view()
 
-    async def _action_add_field(self, interaction: Interaction) -> None:
-        await self._action_edit(interaction)
+    async def _action_add_field(self, *args: Any) -> None:
+        await self._action_edit(*args)
 
-    async def _action_clear_fields(self, interaction: Interaction) -> None:
+    async def _action_clear_fields(self, *args: Any) -> None:
+        interaction, _ = args
         if self.embed.fields:
             self.embed = self.embed.clear_fields()
         await self.update_view()
         await interaction.response.send_message("Cleared all fields.", ephemeral=True)
 
-    async def _action_done(self, interaction: Interaction) -> None:
+    async def _action_done(self, *args: Any) -> None:
+        interaction, _ = args
         self.disable_and_stop()
         await interaction.response.edit_message(view=self)
 
-    async def _action_edit(self, interaction: Interaction) -> None:
-        modal = EmbedBuilderModal(self, self.current)
+    async def _action_edit(self, *args: Any) -> None:
+        interaction, _ = args
+        modal = Modal(
+            self,
+            self.extras[self.current],
+            callback=self.on_modal_submit,
+            title=self.current.title(),
+        )
         await interaction.response.send_modal(modal)
         await modal.wait()
 
-    async def _action_preview(self, interaction: Interaction) -> None:
+    async def _action_preview(self, *args: Any) -> None:
+        interaction, _ = args
         try:
             await interaction.response.send_message(embed=self.embed, ephemeral=True)
         except discord.HTTPException as exc:
             error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
             await interaction.response.send_message(error, ephemeral=True)
 
-    async def _action_cancel(self, interaction: Interaction) -> None:
+    async def _action_cancel(self, *args: Any) -> None:
+        interaction, _ = args
         self.disable_and_stop()
         if self.embed:
             self.embed = MISSING
@@ -455,17 +295,17 @@ class EmbedBuilderView(View):
         return self.embed
 
     @classmethod
-    def from_embed(cls, user: discord.Member, *, embed: discord.Embed) -> EmbedBuilderView:
-        self = cls(user, add_items=False)
+    def from_embed(cls, cog: EmbedManager, user: discord.Member, *, embed: discord.Embed) -> EmbedBuilderView:
+        self = cls(cog, user, add_items=False)
         self.embed = embed
         data = embed.to_dict()
         title = data.get("title")
-        self.input_map["title"]["title"]["default"] = title
+        self.extras["title"]["title"]["default"] = title
         url = data.get("url")
         if url:
-            self.input_map["title"]["url"]["default"] = embed.url
-        self.input_map["body"]["description"]["default"] = data.get("description")
-        self.input_map["color"]["value"]["default"] = data.get("color")
+            self.extras["title"]["url"]["default"] = embed.url
+        self.extras["body"]["description"]["default"] = data.get("description")
+        self.extras["color"]["value"]["default"] = data.get("color")
         images = ["thumbnail", "image"]
         elems = ["author", "footer"]
         for elem in images + elems:
@@ -478,7 +318,7 @@ class EmbedBuilderView(View):
                         key = elem
                         elem = "body"
                     try:
-                        self.input_map[elem][key]["default"] = val
+                        self.extras[elem][key]["default"] = val
                     except KeyError:
                         continue
 
@@ -486,13 +326,3 @@ class EmbedBuilderView(View):
         self._generate_buttons()
         self.refresh()
         return self
-
-    def disable_and_stop(self) -> None:
-        for child in self.children:
-            child.disabled = True
-        if not self.is_finished():
-            self.stop()
-
-    async def on_timeout(self) -> None:
-        self.disable_and_stop()
-        await self.message.edit(view=self)
