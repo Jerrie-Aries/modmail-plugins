@@ -28,7 +28,7 @@ class Modal(ui.Modal):
         A map to construct items i.e. text input for this Modal.
     callback : Any
         A callback to call inside the `on_modal_submit`. This callback should take two parameters;
-        Interaction amd the Modal itself.
+        Interaction and the Modal itself.
     title: :class:`str`
         The title of the modal. Can only be up to 45 characters.
     timeout: Optional[:class:`float`]
@@ -48,49 +48,84 @@ class Modal(ui.Modal):
         if hasattr(self.view, "modals"):
             self.view.modals.append(self)
         view.modals.append(self)
-        self.__callback = callback
+        self.followup_callback = callback
         for key, value in options.items():
             self.add_item(TextInput(key, **value))
 
     async def on_submit(self, interaction: Interaction) -> None:
-        for child in self.children:
-            value = child.value
-            if not value:
-                # resolve empty string value
-                value = None
-            self.view.input_map[child.name] = value
-
-        await interaction.response.defer()
-        self.stop()
         self.view.interaction = interaction
-        await self.__callback(interaction, self)
+        await self.followup_callback(interaction, self)
 
 
 class Button(ui.Button):
     def __init__(self, *args, callback: ButtonCallbackT, **kwargs):
-        self.__callback: ButtonCallbackT = callback
+        self.followup_callback: ButtonCallbackT = callback
         super().__init__(*args, **kwargs)
 
     async def callback(self, interaction: Interaction) -> None:
         assert self.view is not None
         self.view.interaction = interaction
-        await self.__callback(interaction, self)
+        await self.followup_callback(interaction, self)
+
+
+class Select(ui.Select):
+    def __init__(self, *, options: List[discord.SelectOption], callback: Any, **kwargs):
+        self.followup_callback = callback
+        super().__init__(
+            min_values=1,
+            max_values=1,
+            options=options,
+            **kwargs,
+        )
+
+    async def callback(self, interaction: Interaction) -> None:
+        assert self.view is not None
+        option = self.get_option(self.values[0])
+        self.view.interaction = interaction
+        await self.followup_callback(interaction, self, option=option)
+
+    def get_option(self, value: str) -> discord.SelectOption:
+        for option in self.options:
+            if value == option.value:
+                return option
+        raise ValueError(f"Cannot find select option with value of `{value}`.")
 
 
 class View(ui.View):
     """
-    Base view class.
+    View class with extra attributes and methods.
+
+    Parameters
+    -----------
+    message : Union[discord.Message, discord.PartialMessage]
+        The message this view attached to.
+    extras : Dict[str, Any]
+        Key value mapping of additional data you want to manipulate the view with.
     """
 
     children: List[Button]
 
-    def __init__(self, *args, message: Union[discord.Message, discord.PartialMessage] = MISSING, **kwargs):
+    def __init__(
+        self,
+        *args,
+        message: Union[discord.Message, discord.PartialMessage] = MISSING,
+        extras: Dict[str, Any] = MISSING,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._message: Union[discord.Message, discord.PartialMessage] = message
         self.interaction: Optional[discord.Interaction] = None
         self.value: Optional[bool] = None
-        self.input_map: Dict[str, Any] = {}
-        self.extras: Dict[str, Any] = {}
+        self.inputs: Dict[str, Any] = {}
+
+        if extras is MISSING:
+            extras = {}
+        elif not isinstance(extras, dict):
+            raise TypeError(
+                f"Invalid type of value for 'extras' parameter. Expected dict, got {type(extras).__name__} instead."
+            )
+        self.extras: Dict[str, Any] = extras
+
         self._underlying_modals: List[Modal] = []
 
     @property
@@ -130,6 +165,14 @@ class View(ui.View):
 
         self._message = item
 
+    def refresh(self) -> None:
+        """
+        Refresh the components in this View.
+        The current implmentation is doing nothing. Subclasses should override this method
+        to implement custom behavior.
+        """
+        pass
+
     async def update_message(self) -> None:
         """
         Update this View's current state on a message.
@@ -139,17 +182,34 @@ class View(ui.View):
         await self.message.edit(view=self)
 
     def stop(self) -> None:
+        """
+        Stop the View from listening to interactions.
+        Internally this will also stop the underlying Modal instances.
+        """
         for modal in self.modals:
             if modal.is_dispatching() or not modal.is_finished():
                 modal.stop()
         super().stop()
 
-    def disable_and_stop(self) -> None:
+    def disable_all(self) -> None:
+        """
+        Disable all components in this View.
+        """
         for child in self.children:
             child.disabled = True
+
+    def disable_and_stop(self) -> None:
+        """
+        Disable all components is this View and stop from listening to
+        interactions.
+        """
+        self.disable_all()
         self.stop()
 
     async def on_timeout(self) -> None:
+        """
+        Called on View's timeout. This will disable all components and update the message.
+        """
         self.disable_and_stop()
         if self.message:
             await self.update_message()

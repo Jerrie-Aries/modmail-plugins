@@ -83,18 +83,13 @@ class ConfirmView(View):
         await interaction.response.send_message("These buttons cannot be controlled by you.", ephemeral=True)
         return False
 
-    async def on_timeout(self) -> None:
-        self.refresh()
-        if self.message:
-            await self.update_message()
-
     async def _action_confirm(self, interaction: Interaction, button: Button):
         """
         Executed when the user presses the `confirm` button.
         """
         self._selected_button = button
         self.value = True
-        await self.disable_and_stop(interaction)
+        await self._update_view(interaction)
 
     async def _action_cancel(self, interaction: Interaction, button: Button):
         """
@@ -102,18 +97,17 @@ class ConfirmView(View):
         """
         self._selected_button = button
         self.value = False
-        await self.disable_and_stop(interaction)
+        await self._update_view(interaction)
 
-    async def disable_and_stop(self, interaction: Interaction):
+    async def _update_view(self, interaction: Interaction):
         """
-        Method to disable buttons and stop the view after an interaction is made.
+        Disable buttons and stop the view after interaction is made.
         """
         self.refresh()
         await interaction.response.edit_message(view=self)
-        if not self.is_finished():
-            self.stop()
+        self.stop()
 
-    def refresh(self):
+    def refresh(self) -> None:
         """
         Disables the buttons on the view. Unselected button will be greyed out.
         """
