@@ -38,7 +38,7 @@ logger = getLogger(__name__)
 
 # <!-- Developer -->
 try:
-    from discord.ext.modmail_utils import ConfirmView, humanize_roles, human_timedelta, paginate
+    from discord.ext.modmail_utils import ConfirmView, Limit, humanize_roles, human_timedelta, paginate
 except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
     raise RuntimeError(
@@ -71,7 +71,7 @@ from .core.views import ReactionRoleCreationPanel, ReactionRoleView
 _type_session = (
     "Choose a trigger type for this reaction roles.\n\n"
     "__**Available options:**__\n"
-    "- `Reaction` - Legacy reaction with emojies.\n"
+    "- `Reaction` - Legacy reaction with emojis.\n"
     "- `Interaction` - Interaction with new Discord buttons.\n"
 )
 _rule_session = (
@@ -89,7 +89,7 @@ _bind_session = (
     "__**Available fields:**__\n"
     "- `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
     "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
-    "- `Label` - Button label (only available for button). Must not exceed 80 characters.\n"
+    f"- `Label` - Button label (only available for button). Must not exceed {Limit.button_label} characters.\n"
 )
 
 

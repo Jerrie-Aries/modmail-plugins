@@ -11,8 +11,9 @@ from .checks import my_role_hierarchy
 
 
 if TYPE_CHECKING:
+    from discord.ext.modmail_utils.ui import Button
     from ..rolemanager import RoleManager
-    from .views import ReactionRoleView, RoleManagerButton
+    from .views import ReactionRoleView
     from .types import AutoRoleConfigPayload, ReactRolePayload, ReactRoleConfigPayload
 else:
     ReactionRoleView = None
@@ -187,7 +188,7 @@ class ReactionRole:
                 ret.append(_role)
         return ret
 
-    async def resolve_role(self, role_id: int) -> Option[discord.Role]:
+    async def resolve_role(self, role_id: int) -> Optional[discord.Role]:
         role = self.channel.guild.get_role(role_id)
         if not role:
             logger.error(f"Role with ID {role_id} was deleted.")
@@ -353,7 +354,7 @@ class ReactionRoleManager:
         self,
         reactrole: ReactionRole,
         interaction: discord.Interaction,
-        button: RoleManagerButton,
+        button: Button,
     ) -> None:
         if not self.is_enabled():
             embed = discord.Embed(
