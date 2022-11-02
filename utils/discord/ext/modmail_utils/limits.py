@@ -1,3 +1,6 @@
+__all__ = ("Limit",)
+
+
 class Limit:
     """
     Store the length limit of various objects.

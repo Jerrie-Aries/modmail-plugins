@@ -6,5 +6,6 @@ __license__ = "AGPL"
 from .chat_formatting import *
 from .config import *
 from .converters import *
+from .limits import *
 from .views import *
 from .timeutils import *

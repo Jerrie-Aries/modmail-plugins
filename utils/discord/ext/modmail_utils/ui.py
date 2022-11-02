@@ -173,13 +173,15 @@ class View(ui.View):
         """
         pass
 
-    async def update_message(self) -> None:
+    async def update_message(self, *, view: View = MISSING, **kwargs) -> None:
         """
         Update this View's current state on a message.
 
         This will only work if the `.message` attribute is set.
         """
-        await self.message.edit(view=self)
+        if view is MISSING:
+            view = self
+        await self.message.edit(view=view, **kwargs)
 
     def stop(self) -> None:
         """
