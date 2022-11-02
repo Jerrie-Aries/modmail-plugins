@@ -6,8 +6,8 @@ from typing import Any, Awaitable, Callable, Dict, Optional, List, Union, TYPE_C
 
 import discord
 from discord import ButtonStyle, Interaction, TextStyle
+from discord.ext.modmail_utils import Limit
 from discord.ext.modmail_utils.ui import Button, Modal, TextInput, View
-from discord.ext.modmail_utils.limits import Limit
 from discord.ui import Select
 from discord.utils import MISSING
 from yarl import URL

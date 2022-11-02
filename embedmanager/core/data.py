@@ -1,7 +1,7 @@
 from typing import Any, Dict
 
 from discord import TextStyle
-from discord.ext.modmail_utils.limits import Limit
+from discord.ext.modmail_utils import Limit
 
 
 _short_length = 256
