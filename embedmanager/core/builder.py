@@ -207,7 +207,7 @@ class EmbedBuilderView(View):
                 color=self.bot.main_color,
                 description=content,
             )
-            await interaction.response.send(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.defer()
             self.embed = self.update_embed(data=resp_data)
