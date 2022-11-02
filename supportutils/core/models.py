@@ -151,7 +151,7 @@ class Feedback:
         manager: FeedbackManager,
         user: discord.Member,
         *,
-        message: Union[dicord.Message, discord.PartialMessage],
+        message: Union[discord.Message, discord.PartialMessage],
         view: FeedbackView,
         started: float,
         ends: float,
@@ -160,12 +160,14 @@ class Feedback:
         self.cog: SupportUtility = manager.cog
         self.manager: FeedbackManager = manager
         self.user: discord.Member = user
-        self.message: Union[dicord.Message, discord.PartialMessage] = message
+        self.message: Union[discord.Message, discord.PartialMessage] = message
         view.feedback = self
         self.view: FeedbackView = view
         self.started: float = started
         self.ends: float = ends
         self._submitted: bool = False
+        self.timed_out: bool = False
+        self.cancelled: bool = False
         self.event: asyncio.Event = asyncio.Event()
         self.task: asyncio.Task = MISSING
 
@@ -231,6 +233,11 @@ class Feedback:
     async def run(self) -> None:
         await self.wait()
         self.view.disable_and_stop()
+
+        if self.cancelled:
+            # graceful stop on cog_unload
+            return
+
         try:
             await self.message.edit(view=self.view)
         except discord.HTTPException:
@@ -250,8 +257,10 @@ class Feedback:
         self.task = self.bot.loop.create_task(asyncio.wait_for(self.event.wait(), sleep_time))
         try:
             await self.task
-        except asyncio.TimeoutError as exc:
-            pass
+        except asyncio.TimeoutError:
+            self.timed_out = True
+        except asyncio.CancelledError:
+            self.cancelled = True
 
     def stop(self) -> None:
         """
@@ -389,7 +398,7 @@ class FeedbackManager:
         modal.stop()
 
         description = "__**Feedback:**__\n\n"
-        description += view.input_map.get("feedback") or "No content."
+        description += view.inputs.get("feedback") or "No content."
         embed = discord.Embed(
             color=discord.Color.dark_orange(),
             description=description,
@@ -406,4 +415,4 @@ class FeedbackManager:
             description=self.config.get("response", "Thanks for your time."),
             color=self.bot.main_color,
         )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)

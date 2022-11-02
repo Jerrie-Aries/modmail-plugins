@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -33,13 +32,11 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 logger = getLogger(__name__)
 
-max_selectmenu_placeholder = 150
 max_selectmenu_description = 100
-max_button_label = 80
 
 # <!-- Developer -->
 try:
-    from discord.ext.modmail_utils import ConfirmView, EmojiConverter
+    from discord.ext.modmail_utils import ConfirmView, EmojiConverter, Limit
 except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
     raise RuntimeError(
@@ -73,6 +70,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         view = self.contact_manager.view
         if view is not MISSING:
             view.stop()
+        for feedback in self.feedback_manager.active:
+            feedback.task.cancel()
 
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
@@ -101,17 +100,17 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         options = {}
         if session == "button":
-            elements = [("emoji", 256), ("label", max_button_label), ("style", 32)]
+            elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
             button_config = getattr(self.config, prefix, {}).get("button")
             for elem in elements:
                 options[elem[0]] = {
                     "label": elem[0].title(),
                     "max_length": elem[1],
                     "required": False,
-                    "default": view.input_map.get(elem[0]) or button_config.get(elem[0]),
+                    "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
         elif session == "embed":
-            elements = [("title", 256), ("description", 4000), ("footer", 1024)]
+            elements = [("title", 256), ("description", Limit.text_input_max), ("footer", Limit.embed_footer)]
             embed_config = getattr(self.config, prefix, {}).get("embed")
             for elem in elements:
                 options[elem[0]] = {
@@ -119,13 +118,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "max_length": elem[1],
                     "style": discord.TextStyle.long if elem[0] == "description" else discord.TextStyle.short,
                     "required": elem[0] == "description",
-                    "default": view.input_map.get(elem[0]) or embed_config.get(elem[0]),
+                    "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
         else:
             elements = [
                 ("emoji", 256),
-                ("label", max_button_label),
-                ("description", max_selectmenu_description),
+                ("label", Limit.button_label),
+                ("description", Limit.select_description),
                 ("category", 256),
             ]
             for elem in elements:
@@ -133,7 +132,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "label": elem[0].title(),
                     "max_length": elem[1],
                     "required": elem[0] in ("label", "category"),
-                    "default": view.input_map.get(elem[0]),
+                    "default": view.inputs.get(elem[0]),
                 }
         return options
 
@@ -172,11 +171,11 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         }
         errors = []
         if view.input_session in ("button", "dropdown") and all(
-            (view.input_map.get(elem) is None for elem in ("emoji", "label"))
+            (view.inputs.get(elem) is None for elem in ("emoji", "label"))
         ):
             errors.append("ValueError: Emoji and Label cannot both be None.")
 
-        for key, value in view.input_map.items():
+        for key, value in view.inputs.items():
             if value is None:
                 view.extras[key] = value
                 continue
@@ -231,8 +230,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             )
             view.value = False
             modal.stop()
-            return await interaction.followup.send(embed=embed, ephemeral=True)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
+        await interaction.response.defer()
         view.value = True
         modal.stop()
 
@@ -400,7 +400,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed.add_field(
             name="Current values",
             value="\n".join(
-                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=1000)}`"
+                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=256)}`"
                 for key in ("title", "description", "footer")
             ),
         )
@@ -426,7 +426,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             payload = view.extras
             updated = []
             for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=2000)}`")
+                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
                 self.config.contact["embed"][key] = payload.pop(key)
             await self.config.update()
             embed = discord.Embed(
@@ -551,9 +551,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             )
             await ctx.send(embed=embed)
             return
-        if len(placeholder) >= max_selectmenu_placeholder:
+        if len(placeholder) >= Limit.select_placeholder:
             raise commands.BadArgument(
-                f"Placeholder text must be {max_selectmenu_placeholder} or fewer in length."
+                f"Placeholder text must be {Limit.select_placeholder} or fewer in length."
             )
 
         self.config.contact["select"]["placeholder"] = placeholder
@@ -906,7 +906,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed.add_field(
             name="Current values",
             value="\n".join(
-                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=1000)}`"
+                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=256)}`"
                 for key in ("title", "description", "footer")
             ),
         )
@@ -932,7 +932,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             payload = view.extras
             updated = []
             for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=2000)}`")
+                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
                 self.config.feedback["embed"][key] = payload.pop(key)
             await self.config.update()
             embed = discord.Embed(
@@ -1113,9 +1113,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             )
             await ctx.send(embed=embed)
             return
-        if len(placeholder) >= max_selectmenu_placeholder:
+        if len(placeholder) >= Limit.select_placeholder:
             raise commands.BadArgument(
-                f"Placeholder text must be {max_selectmenu_placeholder} or fewer in length."
+                f"Placeholder text must be {Limit.select_placeholder} or fewer in length."
             )
 
         self.config.feedback["rating"]["placeholder"] = placeholder
