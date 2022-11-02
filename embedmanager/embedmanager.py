@@ -7,7 +7,6 @@ from typing import Dict, Optional, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
-from discord.utils import MISSING
 
 from core import checks
 from core.models import PermissionLevel
@@ -74,12 +73,6 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         """
         self.bot: ModmailBot = bot
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
-
-    async def cog_load(self) -> None:
-        """
-        Initial tasks when loading the cog.
-        """
-        pass
 
     async def db_config(self) -> Dict:
         # No need to store in cache when initializing the plugin.
@@ -463,7 +456,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         description = "\n".join(description)
 
         color = self.bot.main_color
-        em = discord.Embed(color=color, title=f"Stored Embeds")
+        em = discord.Embed(color=color, title="Stored Embeds")
 
         if len(description) > 2048:
             embeds = []

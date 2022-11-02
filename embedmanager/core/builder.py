@@ -5,9 +5,8 @@ from distutils.util import strtobool
 from typing import Any, Awaitable, Callable, Dict, Optional, List, Union, TYPE_CHECKING
 
 import discord
-from discord import ButtonStyle, Interaction, TextStyle
-from discord.ext.modmail_utils import Limit
-from discord.ext.modmail_utils.ui import Button, Modal, TextInput, View
+from discord import ButtonStyle, Interaction
+from discord.ext.modmail_utils.ui import Button, Modal, View
 from discord.ui import Select
 from discord.utils import MISSING
 from yarl import URL
