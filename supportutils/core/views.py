@@ -39,7 +39,7 @@ class Modal(uiModal):
         await self.followup_callback(interaction, self)
 
     async def on_error(self, interaction: Interaction, error: Exception) -> None:
-        logger.error("Ignoring exception in modal %r for item %r", self, exc_info=error)
+        logger.error("Ignoring exception in modal %r:", self, exc_info=error)
 
 
 class DropdownMenu(ui.Select):
