@@ -110,7 +110,11 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
         elif session == "embed":
-            elements = [("title", 256), ("description", Limit.text_input_max), ("footer", Limit.embed_footer)]
+            elements = [
+                ("title", Limit.embed_title),
+                ("description", Limit.text_input_max),
+                ("footer", Limit.embed_footer),
+            ]
             embed_config = getattr(self.config, prefix, {}).get("embed")
             for elem in elements:
                 options[elem[0]] = {
@@ -378,17 +382,23 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         await ctx.send_help(ctx.command)
 
-    @cm_config.group(name="embed", invoke_without_command=True)
+    @cm_config.group(
+        name="embed",
+        help=(
+            "Customize the embed title, description and footer text for contact menu message.\n"
+            "Please note that this embed will only be posted if the contact menu is initiated from "
+            "`{prefix}contactmenu create` command.\n\n"
+            "__**Available fields:**__\n"
+            f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
+            f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
+            f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n"
+        ),
+        invoke_without_command=True,
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_embed(self, ctx: commands.Context):
         """
         Customize the embed title, description and footer text for contact menu message.
-        Please note that this embed will only be posted if the contact menu is initiated from `{prefix}contactmenu create` command.
-
-        __**Available fields:**__
-        - **Title** : Embed title.
-        - **Description** : Embed description.
-        - **Footer** : Embed footer text.
         """
         embed = discord.Embed(
             title="Contact embed",
@@ -452,20 +462,26 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @cm_config.group(name="button", invoke_without_command=True)
+    @cm_config.group(
+        name="button",
+        help=(
+            "Customize the contact button using buttons and text input.\n\n"
+            "__**Available fields:**__\n"
+            "- **Emoji** : Emoji shown on the button. May be a unicode emoji, "
+            "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
+            f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
+            "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
+            "    - `Blurple`\n"
+            "    - `Green`\n"
+            "    - `Red`\n"
+            "    - `Grey`\n"
+        ),
+        invoke_without_command=True,
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_button(self, ctx: commands.Context):
         """
         Customize the contact button using buttons and text input.
-
-        __**Available fields:**__
-        - **Emoji** : Emoji shown on the button. May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).
-        - **Label** : Button label. Must not exceed 80 characters.
-        - **Style** : The color style for the button. Must be one of these (case insensitive):
-            - `Blurple`
-            - `Green`
-            - `Red`
-            - `Grey`
         """
         description = ctx.command.help
         embed = discord.Embed(
@@ -534,14 +550,19 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         await ctx.send_help(ctx.command)
 
-    @cm_config_dropdown.command(name="placeholder")
+    @cm_config_dropdown.command(
+        name="placeholder",
+        help=(
+            "Placeholder text shown on the dropdown menu if nothing is selected.\n"
+            f"Must not exceed {Limit.select_placeholder} characters."
+        ),
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_dropdown_placeholder(
         self, ctx: commands.Context, *, placeholder: Optional[str] = None
     ):
         """
         Placeholder text shown on the dropdown menu if nothing is selected.
-        Must not exceed 150 characters.
         """
         if placeholder is None:
             current = self.config.contact["select"]["placeholder"]
@@ -563,20 +584,24 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @cm_config_dropdown.command(name="add")
+    @cm_config_dropdown.command(
+        name="add",
+        help=(
+            "Add and customize the dropdown for contact menu.\n\n"
+            "A select option can be linked to a custom category where the thread will be created.\n\n"
+            "__**Available options:**__\n"
+            "- **Emoji** : Emoji for select option. May be a unicode emoji, format of `:name:`, `<:name:id>` "
+            "or `<a:name:id>` (animated emoji).\n"
+            f"- **Label** : Label for select option. Must be {Limit.select_label} or fewer in length.\n"
+            f"- **Description** : Short description for the option. Must not exceed {Limit.select_description} characters.\n"
+            "- **Category** : The discord category channel where the thread will be created if the user choose the option. "
+            "This field is required and the value must be different than the `main category`.\n"
+        ),
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_dropdown_add(self, ctx: commands.Context):
         """
         Add and customize the dropdown for contact menu.
-
-        A select option can be linked to a custom category where the thread will be created.
-
-        __**Available options:**__
-        - **Emoji** : Emoji for select option. May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).
-        - **Label** : Label for select option.
-        - **Description** : Short description for the option. Must not exceed 100 characters.
-        - **Category** : The discord category channel where the thread will be created if the user choose the option.
-        This field is required and the value must be different than the `main category`.
         """
         embed = discord.Embed(
             title="Contact menu option",
@@ -718,7 +743,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         To see more customizable options, see:
         `{prefix}feedback config`
 
-        __**Note:**__
+        __**Notes:**__
         - The button on the feedback prompt message will only available for 24 hours.
         - Each user can only have one active session at a time.
         """
@@ -885,16 +910,21 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @fb_config.group(name="embed", invoke_without_command=True)
+    @fb_config.group(
+        name="embed",
+        help=(
+            "Customize the feedback embed.\n\n"
+            "__**Available fields:**__\n"
+            f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
+            f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
+            f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n"
+        ),
+        invoke_without_command=True,
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def fb_config_embed(self, ctx: commands.Context):
         """
         Customize the feedback embed.
-
-        __**Available fields:**__
-        - **Title** : The title for the embed. Must be 256 or fewer in length.
-        - **Description** : Embed description. Must not exceed 4000 characters.
-        - **Footer** : Embed footer text.
         """
         embed = discord.Embed(
             title="Feedback embed",
@@ -958,20 +988,26 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @fb_config.group(name="button", invoke_without_command=True)
+    @fb_config.group(
+        name="button",
+        help=(
+            "Customize the feedback button using buttons and text input.\n\n"
+            "__**Available fields:**__\n"
+            "- **Emoji** : Emoji shown on the button. May be a unicode emoji, "
+            "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
+            f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
+            "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
+            "    - `Blurple`\n"
+            "    - `Green`\n"
+            "    - `Red`\n"
+            "    - `Grey`\n"
+        ),
+        invoke_without_command=True,
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def fb_config_button(self, ctx: commands.Context):
         """
         Customize the feedback button using buttons and text input.
-
-        __**Available fields:**__
-        - **Emoji** : Emoji shown on the button. May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).
-        - **Label** : Button label. Must not exceed 80 characters.
-        - **Style** : The color style for the button. Must be one of these (case insensitive):
-            - `Blurple`
-            - `Green`
-            - `Red`
-            - `Grey`
         """
         description = ctx.command.help
         embed = discord.Embed(
@@ -1098,12 +1134,17 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @fb_config_rating.command(name="placeholder")
+    @fb_config_rating.command(
+        name="placeholder",
+        help=(
+            "Placeholder text shown on the dropdown menu if nothing is selected.\n"
+            f"Must not exceed {Limit.select_placeholder} characters."
+        ),
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_rating_placeholder(self, ctx: commands.Context, *, placeholder: Optional[str] = None):
         """
         Placeholder text shown on the dropdown menu if nothing is selected.
-        Must not exceed 150 characters.
         """
         if placeholder is None:
             current = self.config.feedback["rating"]["placeholder"]
