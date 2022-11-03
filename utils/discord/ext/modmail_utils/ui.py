@@ -69,14 +69,19 @@ class Button(ui.Button):
 
 
 class Select(ui.Select):
+    """
+    Inherits from discord.ui.Select.
+
+    Parameters
+    -----------
+    callback : Any
+        A callback to call inside the `callback` method. This callback should take three parameters;
+        Interaction, Select itself and the Select option.
+    """
+
     def __init__(self, *, options: List[discord.SelectOption], callback: Any, **kwargs):
         self.followup_callback = callback
-        super().__init__(
-            min_values=1,
-            max_values=1,
-            options=options,
-            **kwargs,
-        )
+        super().__init__(options=options, **kwargs)
 
     async def callback(self, interaction: Interaction) -> None:
         assert self.view is not None
@@ -85,6 +90,9 @@ class Select(ui.Select):
         await self.followup_callback(interaction, self, option=option)
 
     def get_option(self, value: str) -> discord.SelectOption:
+        """
+        Get select option from value.
+        """
         for option in self.options:
             if value == option.value:
                 return option
