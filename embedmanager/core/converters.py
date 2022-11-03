@@ -109,8 +109,7 @@ class ListStringToEmbed(StringToEmbed):
             embeds.append(embed)
         if embeds:
             return embeds
-        else:
-            raise BadArgument
+        raise BadArgument
 
 
 class StoredEmbedConverter(Converter):
@@ -134,8 +133,8 @@ class BotMessage(discord.Message):
         converter = MessageConverter()
         message = await converter.convert(ctx, argument)
         if message.author.id != ctx.me.id:
-            raise BadArgument(f"That is not a message sent by me.")
-        elif not message.channel.permissions_for(ctx.me).send_messages:
+            raise BadArgument("That is not a message sent by me.")
+        if not message.channel.permissions_for(ctx.me).send_messages:
             raise BadArgument(
                 f"I do not have permissions to send/edit messages in {message.channel.mention}."
             )

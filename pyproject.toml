@@ -13,3 +13,6 @@ black = "22.3.0"
 [tool.black]
 line-length = "110"
 target-version = ["py39"]
+
+[tool.pylint.format]
+max-line-length = "110"

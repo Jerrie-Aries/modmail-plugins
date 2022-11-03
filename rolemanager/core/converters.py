@@ -228,7 +228,7 @@ class Args(commands.Converter):
 
         try:
             for key, value in vals.items():
-                if type(value) == list:
+                if isinstance(value, list):
                     split_words = value
                     word_list = []
                     tmp = ""

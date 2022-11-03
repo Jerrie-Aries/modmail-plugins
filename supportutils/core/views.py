@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, ui
 from discord.ext import commands
+from discord.ext.modmail_utils import Limit
+from discord.ext.modmail_utils.ui import Button, Modal as uiModal, TextInput, View
 from discord.utils import MISSING
 
 from core.models import getLogger, DMDisabled
@@ -13,7 +15,7 @@ from core.models import getLogger, DMDisabled
 if TYPE_CHECKING:
     from bot import ModmailBot
     from core.thread import Thread
-    from .models import ContactManager, FeedbackManager
+    from .models import ContactManager, Feedback, FeedbackManager
     from ..supportutils import SupportUtility
 
     ButtonCallbackT = Callable[[Union[Interaction, Any]], Awaitable]
@@ -21,26 +23,9 @@ if TYPE_CHECKING:
 logger = getLogger(__name__)
 
 
-class TextInput(ui.TextInput):
-    def __init__(self, name: str, **kwargs):
-        self.name: str = name
-        super().__init__(**kwargs)
-
-
-class Modal(ui.Modal):
+class Modal(uiModal):
 
     children: List[TextInput]
-
-    def __init__(self, view: BaseView, options: Dict[str, Any], callback: Any, title: str = MISSING):
-        if title is MISSING:
-            title = "Support Utility"
-        super().__init__(title=title)
-        self.view = view
-        if view.timeout is not None:
-            view.modals.append(self)
-        self.__callback = callback
-        for key, value in options.items():
-            self.add_item(TextInput(key, **value))
 
     async def on_submit(self, interaction: Interaction) -> None:
         for child in self.children:
@@ -48,21 +33,19 @@ class Modal(ui.Modal):
             if not value:
                 # resolve empty string value
                 value = None
-            self.view.input_map[child.name] = value
+            self.view.inputs[child.name] = value
 
-        await interaction.response.defer()
-        self.stop()
         self.view.interaction = interaction
-        await self.__callback(interaction, self)
+        await self.followup_callback(interaction, self)
 
-    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
-        logger.error("Ignoring exception in modal %r for item %r", self, item, exc_info=error)
+    async def on_error(self, interaction: Interaction, error: Exception) -> None:
+        logger.error("Ignoring exception in modal %r:", self, exc_info=error)
 
 
 class DropdownMenu(ui.Select):
     def __init__(self, *, options: List[discord.SelectOption], **kwargs):
         placeholder = kwargs.pop("placeholder", "Choose option")
-        self.__callback = kwargs.pop("callback")
+        self.followup_callback = kwargs.pop("callback")
         super().__init__(
             placeholder=placeholder,
             min_values=1,
@@ -75,7 +58,7 @@ class DropdownMenu(ui.Select):
         assert self.view is not None
         option = self.get_option(self.values[0])
         self.view.interaction = interaction
-        await self.__callback(interaction, self, option=option)
+        await self.followup_callback(interaction, self, option=option)
 
     def get_option(self, value: str) -> discord.SelectOption:
         for option in self.options:
@@ -84,18 +67,7 @@ class DropdownMenu(ui.Select):
         raise ValueError(f"Cannot find select option with value of `{value}`.")
 
 
-class Button(ui.Button):
-    def __init__(self, *args, callback: ButtonCallbackT, **kwargs):
-        self.__callback: ButtonCallbackT = callback
-        super().__init__(*args, **kwargs)
-
-    async def callback(self, interaction: Interaction) -> None:
-        assert self.view is not None
-        self.view.interaction = interaction
-        await self.__callback(interaction, self)
-
-
-class BaseView(ui.View):
+class BaseView(View):
     """
     Base view class.
     """
@@ -103,38 +75,12 @@ class BaseView(ui.View):
     children: List[Button]
 
     def __init__(self, cog: SupportUtility, *, message: discord.Message = MISSING, timeout: float = 300.0):
-        super().__init__(timeout=timeout)
+        super().__init__(message=message, timeout=timeout)
         self.cog: SupportUtility = cog
         self.bot: ModmailBot = cog.bot
-        self.message: discord.Message = message
-        self.interaction: Optional[discord.Interaction] = None
-        self.value: Optional[bool] = None
-        self._underlying_modals: List[Modal] = []
-
-    @property
-    def modals(self) -> List[Modal]:
-        return self._underlying_modals
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
-
-    async def update_view(self) -> None:
-        if self.message:
-            await self.message.edit(view=self)
-
-    def disable_and_stop(self) -> None:
-        for child in self.children:
-            child.disabled = True
-        for modal in self.modals:
-            if modal.is_dispatching() or not modal.is_finished():
-                modal.stop()
-        if not self.is_finished():
-            self.stop()
-
-    async def on_timeout(self) -> None:
-        self.disable_and_stop()
-        if self.message:
-            await self.message.edit(view=self)
 
 
 class SupportUtilityView(BaseView):
@@ -143,8 +89,6 @@ class SupportUtilityView(BaseView):
         self.user: discord.Member = ctx.author
         super().__init__(ctx.cog)
         self.input_session: str = input_session
-        self.input_map: Dict[str, Any] = {}
-        self.extras: Dict[str, Any] = {}
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user != self.user:
@@ -370,7 +314,6 @@ class FeedbackView(BaseView):
         self.thread: Optional[Thread] = thread
         super().__init__(cog, message=message, timeout=timeout)
         self.manager: FeedbackManager = self.cog.feedback_manager
-        self.input_map: Dict[str, Any] = {}
         self.feedback: Feedback = MISSING  # assigned in Feedback
         self._rating: Optional[discord.SelectOption] = None
 
@@ -450,7 +393,7 @@ class FeedbackView(BaseView):
         interaction, _ = args
         text_input = {
             "label": "Content",
-            "max_length": 4000,
+            "max_length": Limit.text_input_max,
             "style": discord.TextStyle.long,
             "required": True,
         }
