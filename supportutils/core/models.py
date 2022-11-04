@@ -153,6 +153,7 @@ class Feedback:
         *,
         message: Union[discord.Message, discord.PartialMessage],
         view: FeedbackView,
+        thread_channel_id: Optional[int],
         started: float,
         ends: float,
     ):
@@ -163,6 +164,7 @@ class Feedback:
         self.message: Union[discord.Message, discord.PartialMessage] = message
         view.feedback = self
         self.view: FeedbackView = view
+        self.thread_channel_id: Optional[int] = thread_channel_id
         self.started: float = started
         self.ends: float = ends
         self._submitted: bool = False
@@ -211,6 +213,7 @@ class Feedback:
             user,
             message=message,
             view=view,
+            thread_channel_id=data.get("thread_channel"),
             started=data["started"],
             ends=ends,
         )
@@ -268,11 +271,35 @@ class Feedback:
         """
         self.event.set()
 
+    def get_log_url(self, log_data: Dict[str, Any]) -> str:
+        """
+        Returns the log url.
+        """
+        prefix = self.bot.config["log_url_prefix"].strip("/")
+        if prefix == "NONE":
+            prefix = ""
+        return f"{self.bot.config['log_url'].strip('/')}{'/' + prefix if prefix else ''}/{log_data['key']}"
+
+    def get_mod_ids(self, log_data: Dict[str, Any]) -> Set[int]:
+        """
+        Returns the IDs of Moderators or Staff that replied to the thread.
+        """
+        mod_ids = set()
+        messages = log_data.get("messages", [])
+        for msg in messages:
+            author = msg["author"]
+            if not author.get("mod", False):
+                continue
+            if int(author["id"]) not in mod_ids:
+                mod_ids.add(int(author["id"]))
+        return mod_ids
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "user": str(self.user.id),
             "message": str(self.message.id),
             "channel": str(self.message.channel.id),
+            "thread_channel": self.thread_channel_id,
             "started": self.started,
             "ends": self.ends,
         }
@@ -382,6 +409,7 @@ class FeedbackManager:
             user,
             message=message,
             view=view,
+            thread_channel_id=thread.channel.id if thread else None,
             started=started,
             ends=started + ends_senconds,
         )
@@ -406,6 +434,16 @@ class FeedbackManager:
         )
         if view.rating is not None:
             embed.add_field(name="Rating", value=view.rating.label)
+        feedback = view.feedback
+        thread_channel_id = feedback.thread_channel_id
+        if thread_channel_id:
+            log_data = await self.bot.api.get_log(thread_channel_id)
+            if log_data:
+                mod_ids = feedback.get_mod_ids(log_data)
+                if mod_ids:
+                    embed.add_field(name="Staff", value=", ".join(f"<@{i}>" for i in mod_ids))
+                log_url = feedback.get_log_url(log_data)
+                embed.add_field(name="Thread log", value=f'[`{log_data["key"]}`]({log_url})')
         user = view.user
         embed.set_author(name=str(user))
         embed.set_footer(text=f"User ID: {user.id}", icon_url=user.display_avatar)
