@@ -42,7 +42,7 @@ class AnnouncementModal(Modal):
 
     async def on_submit(self, interaction: Interaction) -> None:
         for child in self.children:
-            self.view.input_map[child.name]["default"] = child.value
+            self.view.inputs[child.name]["default"] = child.value
 
         await interaction.response.defer()
         self.stop()
@@ -53,8 +53,6 @@ class DropdownMenu(Select):
     def __init__(self, *, options: List[discord.SelectOption], **kwargs):
         super().__init__(
             placeholder="Choose a type",
-            min_values=1,
-            max_values=1,
             options=options,
             **kwargs,
         )
@@ -71,8 +69,8 @@ class DropdownMenu(Select):
 class AnnouncementViewButton(Button["AnnouncementView"]):
     def __init__(
         self,
-        label: str,
         *,
+        label: str,
         style: ButtonStyle = ButtonStyle.blurple,
         callback: ButtonCallbackT = MISSING,
     ):
@@ -107,7 +105,6 @@ class AnnouncementView(View):
         self.embed_data: Dict[str, Any] = {
             "description": {
                 "label": "Announcement",
-                "default": "This is an announcement.",
                 "style": TextStyle.long,
                 "max_length": _long_length,
             },
@@ -127,7 +124,7 @@ class AnnouncementView(View):
                 "max_length": 20,
             },
         }
-        self.input_map: Dict[str, Any] = {"content": self.content_data}
+        self.inputs: Dict[str, Any] = {"content": self.content_data}
 
         self._add_menu()
         self.generate_buttons()
@@ -175,7 +172,7 @@ class AnnouncementView(View):
                 "cancel": (ButtonStyle.red, self._action_cancel),
             }
         for label, item in buttons.items():
-            self.add_item(AnnouncementViewButton(label.title(), style=item[0], callback=item[1]))
+            self.add_item(AnnouncementViewButton(label=label.title(), style=item[0], callback=item[1]))
 
     def refresh(self) -> None:
         for child in self.children:
@@ -201,7 +198,7 @@ class AnnouncementView(View):
         self.clear_items()
 
     async def _action_edit(self, interaction: Interaction) -> None:
-        modal = AnnouncementModal(self, self.input_map)
+        modal = AnnouncementModal(self, self.inputs)
         await interaction.response.send_modal(modal)
         await modal.wait()
 
@@ -246,7 +243,7 @@ class AnnouncementView(View):
                 "required": False,
                 "max_length": _short_length,
             }
-            self.input_map.update(content=self.content_data, **self.embed_data)
+            self.inputs.update(content=self.content_data, **self.embed_data)
             description += (
                 "Click the `Edit` button below to set/edit the values.\n\n"
                 "__**Available fields:**__\n"
@@ -267,7 +264,7 @@ class AnnouncementView(View):
         await self.update_view()
 
     async def on_modal_submit(self, interaction: Interaction) -> None:
-        self.announcement.content = self.input_map["content"].get("default")
+        self.announcement.content = self.inputs["content"].get("default")
         errors = []
         if self.announcement.type == AnnouncementType.EMBED:
             try:
@@ -282,16 +279,21 @@ class AnnouncementView(View):
                 "color",
             ]
             for elem in elems:
-                kwargs = {elem: self.input_map[elem].get("default") for elem in elems}
+                kwargs = {elem: self.inputs[elem].get("default") for elem in elems}
             try:
                 self.announcement.create_embed(**kwargs)
             except Exception as exc:
-                errors.append(f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```")
+                errors.append(f"{type(exc).__name__}: {str(exc)}")
 
         if errors:
             self.announcement.ready = False
-            for error in errors:
-                await interaction.followup.send(error, ephemeral=True)
+            content = "\n".join(f"{n}. {error}" for n, error in enumerate(errors, start=1))
+            embed = discord.Embed(
+                title="__Errors__",
+                color=self.ctx.bot.error_color,
+                description=content,
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             self.announcement.ready = True
         await self.update_view()

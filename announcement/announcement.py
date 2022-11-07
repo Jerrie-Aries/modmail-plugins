@@ -75,12 +75,10 @@ class Announcement(commands.Cog):
             "- **Normal** : Plain text announcement.\n"
             "- **Embed** : Embedded announcement. Image and thumbnail image are also supported."
         )
-        embed.set_footer(text="This panel will timeout after 10 minutes.")
         view.message = message = await ctx.send(embed=embed, view=view)
         await view.wait(input_event=True)
 
         if not announcement.posted:
-            await message.edit(view=view)
             return
 
         if delete:
@@ -109,7 +107,7 @@ class Announcement(commands.Cog):
             embed.description = f"Successfully published this {hyper_link} to all subscribed channels.\n\n"
         if view.confirm is not None:
             if not view.confirm:
-                embed.description += (
+                embed.description = (
                     f"To manually publish this {hyper_link}, use command:\n"
                     f"```\n{ctx.prefix}publish {announcement.channel.id}-{announcement.message.id}\n```"
                 )

@@ -56,6 +56,7 @@ class AnnouncementModel:
         self.message: discord.Message = MISSING
         self.content: str = MISSING
         self.embed: discord.Embed = MISSING
+        self.task: asyncio.Task = MISSING
 
     @property
     def posted(self) -> bool:
@@ -66,11 +67,14 @@ class AnnouncementModel:
         if flag:
             self.event.set()
         else:
+            if self.task is not MISSING:
+                self.task.cancel()
             self.event.clear()
 
     async def wait(self) -> None:
+        self.task = self.ctx.bot.loop.create_task(self.event.wait())
         try:
-            await self.event.wait()
+            await self.task
         except asyncio.CancelledError:
             pass
 
@@ -129,4 +133,8 @@ class AnnouncementModel:
         self.posted = True
 
     async def publish(self) -> None:
+        """
+        Publishes the announcement. This will only work if the channel type is a news channel
+        and if the announcement has not been posted yet.
+        """
         await self.message.publish()
