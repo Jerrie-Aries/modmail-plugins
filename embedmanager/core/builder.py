@@ -203,7 +203,7 @@ class EmbedBuilderView(View):
             content = "\n".join(f"{n}. {error}" for n, error in enumerate(errors, start=1))
             embed = discord.Embed(
                 title="__Errors__",
-                color=self.bot.main_color,
+                color=self.bot.error_color,
                 description=content,
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
