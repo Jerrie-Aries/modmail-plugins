@@ -51,4 +51,4 @@ to add the trivia plugin.
 
 ## Reporting bugs and errors
 If you encounter any bugs or errors, just open a new issue [here](https://github.com/Jerrie-Aries/modmail-plugins/issues/new) and report it.
-Or you can report it on Modmail's [support](https://discord.gg/j5e9p8w) server in [`#plugin-support`](https://discord.com/channels/515071617815019520/543040188541042699) channel.
+Or you can report it on Modmail's [support](https://discord.gg/zmdYe3ZVHG) server in [`#plugin-support`](https://discord.com/channels/1079074933008781362/1079077960876838992) channel.
