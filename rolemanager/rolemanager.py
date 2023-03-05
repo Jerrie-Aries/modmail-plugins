@@ -38,7 +38,7 @@ logger = getLogger(__name__)
 
 # <!-- Developer -->
 try:
-    from discord.ext.modmail_utils import ConfirmView, Limit, humanize_roles, human_timedelta, paginate
+    from discord.ext.modmail_utils import ConfirmView, Limit, humanize_roles, paginate
 except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
     raise RuntimeError(
@@ -53,9 +53,8 @@ from .core.converters import (
     AssignableRole,
     ObjectConverter,
     PERMS,
-    UnionEmoji,
 )
-from .core.models import ReactRules, TriggerType
+from .core.models import AutoRoleManager, ReactionRoleManager, ReactRules, TriggerType
 from .core.utils import (
     bind_string_format,
     get_audit_reason,
@@ -81,14 +80,15 @@ _rule_session = (
     "- `Unique` - Remove existing role when assigning another role in group.\n"
 )
 _bind_session = (
-    "Choose a color for the button using the dropdown menu below. If not selected, defaults to Blurple.\n\n"
     "__**Buttons:**__\n"
-    "- **Add** - Add a role-button or role-emoji bind to internal list. This only available if there were **no errors** when the values were submitted.\n"
+    "- **Add** - Add a role-button or role-emoji bind to internal list. The bind can only be added if "
+    "there were **no errors** when the values were submitted.\n"
     "- **Set** - Set or edit the current set values.\n"
     "- **Clear** - Reset all binds.\n\n"
     "__**Available fields:**__\n"
     "- `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
-    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
+    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, "
+    "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
     f"- `Label` - Button label (only available for button). Must not exceed {Limit.button_label} characters.\n"
 )
 
@@ -105,7 +105,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         self.bot: ModmailBot = bot
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
-        self.config: RoleManagerConfig = MISSING
+
+        self.config = RoleManagerConfig(self, self.db)
+        self.reactrole_manager: ReactionRoleManager = MISSING
+        self.autorole_manager: AutoRoleManager = MISSING
 
     async def cog_load(self) -> None:
         """
@@ -114,18 +117,19 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         self.bot.loop.create_task(self.initialize())
 
     async def cog_unload(self) -> None:
-        for entry in self.config.reactroles.entries:
+        for entry in self.reactrole_manager.entries:
             entry.view.stop()
-        self.config.reactroles.entries.clear()
+        self.reactrole_manager.entries.clear()
 
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         await self.populate_config()
 
     async def populate_config(self):
-        config = RoleManagerConfig(self, self.db)
-        await config.fetch()
-        self.config = config
+        data = await self.config.fetch()
+        self.autorole_manager = AutoRoleManager(self, data=data.pop("autoroles"))
+        reactroles = data.pop("reactroles")
+        self.reactrole_manager = ReactionRoleManager(self, data=reactroles)
 
     async def get_role_info(self, role: discord.Role) -> discord.Embed:
         if guild_roughly_chunked(role.guild) is False and self.bot.intents.members:
@@ -762,12 +766,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Add a role to be added to all new members on join.
         """
-        autoroles = self.config.autoroles
-        if role.id in autoroles.roles:
+        manager = self.autorole_manager
+        if role.id in manager.roles:
             raise commands.BadArgument(f'Role "{role}" is already in autorole list.')
 
-        autoroles.roles.append(role.id)
-        await self.config.update()
+        manager.roles.append(role.id)
+        await manager.update()
         embed = discord.Embed(
             color=self.bot.main_color,
             description=f"On member join, role {role.mention} will be added to the member.",
@@ -780,7 +784,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Remove an autorole.
         """
-        autoroles = self.config.autoroles
+        manager = self.autorole_manager
 
         if isinstance(role, discord.Role):
             role_id = role.id
@@ -788,11 +792,11 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             # to support removing id of role that already got deleted from server
             role_id = role
 
-        if role_id not in autoroles.roles:
+        if role_id not in manager.roles:
             raise commands.BadArgument(f'Role "{role}" is not in autorole list.')
 
-        autoroles.roles.remove(role_id)
-        await self.config.update()
+        manager.roles.remove(role_id)
+        await manager.update()
 
         embed = discord.Embed(
             color=self.bot.main_color,
@@ -808,23 +812,23 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         Run this command without argument to get the current set configuration.
         """
-        autoroles = self.config.autoroles
+        manager = self.autorole_manager
         if mode is None:
             em = discord.Embed(
                 color=self.bot.main_color,
-                description=f"The autorole is currently set to `{autoroles.is_enabled()}`.",
+                description=f"The autorole is currently set to `{manager.is_enabled()}`.",
             )
             return await ctx.send(embed=em)
 
         try:
             if mode:
-                autoroles.enable()
+                manager.enable()
             else:
-                autoroles.disable()
+                manager.disable()
         except ValueError as exc:
             raise commands.BadArgument(str(exc)) from exc
 
-        await self.config.update()
+        await manager.update()
 
         embed = discord.Embed(
             color=self.bot.main_color,
@@ -838,12 +842,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         List of roles set for the autorole on this server.
         """
-        autoroles = self.config.autoroles
-        if not autoroles.roles:
+        manager = self.autorole_manager
+        if not manager.roles:
             raise commands.BadArgument("There are no roles set for the autorole.")
 
         autorole_roles = []
-        for role_id in autoroles.roles:
+        for role_id in manager.roles:
             role = ctx.guild.get_role(role_id)
             if role is None:
                 # in case the role already got deleted from server, show anyway
@@ -879,11 +883,11 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if view.value is None:
             msg = "Time out. Action cancelled."
         elif view.value:
-            autoroles = self.config.autoroles
-            autoroles.roles.clear()
-            if autoroles.is_enabled():
-                autoroles.disable()
-            await self.config.update()
+            manager = self.autorole_manager
+            manager.roles.clear()
+            if manager.is_enabled():
+                manager.disable()
+            await manager.update()
             msg = "Data cleared."
         else:
             msg = "Action cancelled."
@@ -892,7 +896,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        await self.config.autoroles.handle_member_join(member)
+        await self.autorole_manager.handle_member_join(member)
 
     # ###################### #
     #     REACTION ROLES     #
@@ -914,23 +918,23 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         Run this command without argument to get the current set configuration.
         """
-        reactroles = self.config.reactroles
+        manager = self.reactrole_manager
         if mode is None:
             em = discord.Embed(
                 color=self.bot.main_color,
-                description=f"The reaction roles is currently set to `{reactroles.is_enabled()}`.",
+                description=f"The reaction roles is currently set to `{manager.is_enabled()}`.",
             )
             return await ctx.send(embed=em)
 
         try:
             if mode:
-                reactroles.enable()
+                manager.enable()
             else:
-                reactroles.disable()
+                manager.disable()
         except ValueError as exc:
             raise commands.BadArgument(str(exc)) from exc
 
-        await self.config.update()
+        await manager.update()
 
         embed = discord.Embed(
             color=self.bot.main_color,
@@ -964,14 +968,15 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             {"key": "bind", "description": _bind_session},
             {"key": "done", "description": done_session},
         ]
-        view = ReactionRoleCreationPanel(ctx, input_sessions=input_sessions)
+        reactrole = self.reactrole_manager.create_new()
+        view = ReactionRoleCreationPanel(ctx, reactrole, input_sessions=input_sessions)
         if title is None:
             title = "Reaction Roles"
         view.output_embed = discord.Embed(
             title=title,
             color=self.bot.main_color,
         )
-        view.placeholder_description = "Press the following buttons to receive the corresponding roles:\n\n"
+        view.preview_description = "Press the following buttons to receive the corresponding roles:\n\n"
 
         embed = discord.Embed(
             title="Reaction Roles Creation",
@@ -985,18 +990,15 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         if channel is None:
             channel = ctx.channel
-        message = await channel.send(embed=view.output_embed)
-        trigger_type = view.trigger_type
-        binds = view.binds
-        model = self.config.reactroles.create_new(
-            message, trigger_type=trigger_type, binds=binds, rules=view.rule, add=True
-        )
+        reactrole.message = message = await channel.send(embed=view.output_embed)
+        trigger_type = reactrole.trigger_type
+        self.reactrole_manager.add(reactrole)
         if trigger_type == TriggerType.REACTION:
-            for bind in binds:
-                await message.add_reaction(bind["emoji"])
+            for bind in reactrole.binds:
+                await message.add_reaction(bind.emoji)
                 await asyncio.sleep(0.2)
         else:
-            output_view = ReactionRoleView(self, message, model=model)
+            output_view = ReactionRoleView(self, message, model=reactrole)
             await message.edit(view=output_view)
 
         hyperlink = f"[message]({message.jump_url})"
@@ -1004,7 +1006,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         embed = view.message.embeds[0]
         embed.description = description
         await view.message.edit(embed=embed, view=view)
-        await self.config.update()
+        await reactrole.manager.update()
 
     @reactrole.command(name="edit", aliases=["add"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -1020,20 +1022,14 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         - Buttons can only be added on messages that were sent from this bot.
         """
         new = False
-        reactrole = self.config.reactroles.find_entry(message.id)
+        reactrole = self.reactrole_manager.find_entry(message.id)
         input_sessions = []
-        params = {}
         if reactrole is None:
             new = True
-            reactrole = self.config.reactroles.create_new(message)
+            reactrole = self.reactrole_manager.create_new(message=message)
             if message.author.id == self.bot.user.id:
                 input_sessions.append({"key": "type", "description": _type_session})
-            else:
-                params["trigger_type"] = TriggerType.REACTION
             input_sessions.append({"key": "rule", "description": _rule_session})
-        else:
-            params["trigger_type"] = reactrole.trigger_type
-            params["rule"] = reactrole.rules
 
         done_session = "Updated and linked {} to reaction roles {}."
         abs_sessions = [
@@ -1043,11 +1039,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         input_sessions.extend(abs_sessions)
         view = ReactionRoleCreationPanel(
             ctx,
-            binds=reactrole.binds,
+            reactrole,
             input_sessions=input_sessions,
-            **params,
         )
-        view.placeholder_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
+        view.preview_description = "__**Note:**__\nThis embed is not from the original message.\n\n"
         embed = discord.Embed(
             title="Reaction Roles Add",
             color=self.bot.main_color,
@@ -1058,25 +1053,19 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        roles_fmt = ", ".join(f"<@&{bind['role']}>" for bind in view.binds)
+        roles_fmt = ", ".join(f"<@&{bind.role.id}>" for bind in reactrole.binds)
         hyperlink = f"[message]({message.jump_url})"
         description = view.session_description.format(roles_fmt, hyperlink)
         embed = view.message.embeds[0]
         embed.description = description
         await view.message.edit(embed=embed, view=view)
 
-        reactrole.binds = view.binds
-        reactrole.rules = view.rule
-        if new:
-            reactrole.trigger_type = view.trigger_type
-
         if reactrole.trigger_type == TriggerType.REACTION:
             reactions = [str(r) for r in message.reactions]
             for bind in reactrole.binds:
-                emoji = bind["emoji"]
-                if emoji in reactions:
+                if str(bind.emoji) in reactions:
                     continue
-                await message.add_reaction(emoji)
+                await message.add_reaction(bind.emoji)
                 await asyncio.sleep(0.2)
         else:
             if new:
@@ -1085,8 +1074,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             await reactrole.view.update_view()
 
         if new:
-            self.config.reactroles.add(reactrole)
-        await self.config.update()
+            self.reactrole_manager.add(reactrole)
+        await reactrole.manager.update()
 
     @reactrole.command(name="rule")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -1112,7 +1101,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         else:
             message_id = message.id
 
-        reactrole = self.config.reactroles.find_entry(message_id)
+        reactrole = self.reactrole_manager.find_entry(message_id)
         if reactrole is None or not reactrole.binds:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
@@ -1133,7 +1122,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             )
 
         reactrole.rules = rules
-        await self.config.update()
+        await reactrole.manager.update()
         await ctx.send(
             embed=self.base_embed(f"Reaction role's rule for that message is now set to `{rules}`.")
         )
@@ -1156,7 +1145,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         else:
             message_id = message.id
 
-        reactrole = self.config.reactroles.find_entry(message_id)
+        reactrole = self.reactrole_manager.find_entry(message_id)
         if reactrole is None or not reactrole.binds:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
@@ -1173,10 +1162,10 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             raise commands.BadArgument("Action cancelled.")
 
         message = reactrole.message
-        self.config.reactroles.remove(message.id)
+        self.reactrole_manager.remove(message.id)
         if reactrole.view:
             await message.edit(view=None)
-        await self.config.update()
+        await reactrole.manager.update()
         await ctx.send(embed=self.base_embed("Reaction roles cleared for that message."))
 
     @reactrole_delete.command(name="bind", aliases=["link"])
@@ -1199,13 +1188,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         else:
             message_id = message.id
 
-        reactrole = self.config.reactroles.find_entry(message_id)
+        reactrole = self.reactrole_manager.find_entry(message_id)
         if reactrole is None:
             raise commands.BadArgument("There are no reaction roles set up for that message.")
 
         # we just do this manually here
         for bind in reactrole.binds:
-            if bind["role"] == str(role.id):
+            if bind.role == role:
                 reactrole.binds.remove(bind)
                 break
         else:
@@ -1214,7 +1203,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             )
         if reactrole.view:
             await reactrole.view.update_view()
-        await self.config.update()
+        await reactrole.manager.update()
         await ctx.send(
             embed=self.base_embed("That role bind to a button or emoji on that message is now deleted.")
         )
@@ -1225,9 +1214,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         Show a list of reaction roles set on this server.
         """
-        reactroles = self.config.reactroles
-        reactroles.resolve_broken()
-        entries = reactroles.entries
+        manager = self.reactrole_manager
+        manager.resolve_broken()
+        entries = manager.entries
         if not entries:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
@@ -1238,15 +1227,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             trigger_type = entry.trigger_type
             output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
             for bind in entry.binds:
-                emoji = bind.get("emoji") or bind.get("button", {}).get("emoji")
+                emoji = bind.emoji or getattr(bind.button, "emoji", None)
                 if trigger_type == TriggerType.INTERACTION:
-                    label = bind["button"].get("label")
+                    label = bind.button.label
                 else:
                     label = None
-                output.append(f"- {bind_string_format(emoji, label, bind['role'])}")
-            else:
-                if len(output) == 1:
-                    output.append("- `None`")
+                output.append(
+                    f"- {bind_string_format(str(emoji) if emoji else None, label, str(bind.role.id))}"
+                )
+
+            if len(output) == 1:
+                output.append("- `None`")
             react_roles.append("\n".join(output))
         if not react_roles:
             raise commands.BadArgument("There are no reaction roles set up here!")
@@ -1276,9 +1267,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         __**Notes:**__
         - The reaction roles binds are considered broken if they are linked to deleted roles.
         """
-        reactroles = self.config.reactroles
-        reactroles.resolve_broken()
-        entries = reactroles.entries
+        manager = self.reactrole_manager
+        manager.resolve_broken()
+        entries = manager.entries
         if not entries:
             raise commands.BadArgument("There are no reaction roles set up here!")
 
@@ -1286,8 +1277,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         for entry in entries:
             roles = []
             for bind in entry.binds:
-                role_id = bind["role"]
-                if entry.channel.guild.get_role(int(role_id)) is None:
+                role_id = bind.role.id
+                if entry.channel.guild.get_role(role_id) is None:
                     roles.append(role_id)
             if roles:
                 to_remove[entry] = roles
@@ -1307,7 +1298,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
                 if entry.view:
                     await entry.view.update_view()
                 n += 1
-            await self.config.update()
+            await manager.update()
         else:
             output = "No broken data or components."
         embed.description = output
@@ -1322,15 +1313,15 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         __**Notes:**__
         - Usually the data cannot be resolved due to the bot is missing permissions, or the message or channel was deleted.
         """
-        reactroles = self.config.reactroles
-        unresolved = reactroles.get_unresolved()
+        manager = self.reactrole_manager
+        unresolved = manager.get_unresolved()
         if not unresolved:
             raise commands.BadArgument("There is no unresolved data.")
         total = len(unresolved)
-        fixed = reactroles.resolve_broken()
+        fixed = manager.resolve_broken()
         embed = discord.Embed(color=self.bot.main_color, description=f"Fixed {fixed}/{total} broken data.")
         if fixed < total:
-            unresolved = reactroles.get_unresolved()
+            unresolved = manager.get_unresolved()
             embed.add_field(
                 name="Unresolved", value="\n".join(f"- {message_id}" for message_id in unresolved.keys())
             )
@@ -1356,29 +1347,35 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if not view.value:
             # cancelled or timed out
             raise commands.BadArgument("Action cancelled.")
-        for entry in self.config.reactroles.entries:
+        for entry in self.reactrole_manager.entries:
             if entry.view:
                 entry.view.stop()
                 await entry.message.edit(view=None)
-        self.config.reactroles.entries.clear()
+        self.reactrole_manager.entries.clear()
+        await self.reactrole_manager.update()
         await ctx.send(embed=self.base_embed("Data cleared."))
-        await self.config.update()
 
     @commands.Cog.listener("on_raw_reaction_add")
     @commands.Cog.listener("on_raw_reaction_remove")
     async def on_raw_reaction_add_or_remove(self, payload: discord.RawReactionActionEvent):
-        await self.config.reactroles.handle_reaction(payload)
+        manager = self.reactrole_manager
+        if not manager.is_enabled():
+            return
+        reactrole = manager.find_entry(payload.message_id)
+        if reactrole is None:
+            return
+        await reactrole.handle_reaction(payload)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
         if payload.guild_id is None:
             return
 
-        if not self.config.reactroles.find_entry(payload.message_id):
+        if not self.reactrole_manager.find_entry(payload.message_id):
             return
 
-        self.config.reactroles.remove(payload.message_id)
-        await self.config.update()
+        self.reactrole_manager.remove(payload.message_id)
+        await self.reactrole_manager.update()
 
     @commands.Cog.listener()
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
@@ -1386,13 +1383,13 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             return
         update_db = False
         for message_id in payload.message_ids:
-            reactrole = self.config.reactroles.find_entry(message_id)
+            reactrole = self.reactrole_manager.find_entry(message_id)
             if reactrole:
-                self.config.reactroles.entries.remove(reactrole)
+                self.reactrole_manager.entries.remove(reactrole)
                 update_db = True
 
         if update_db:
-            await self.config.update()
+            await self.reactrole_manager.update()
 
     # #################### #
     #       Targeter       #
@@ -1780,13 +1777,17 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         names = discord.Embed(title="Target Arguments - Names", color=self.bot.main_color)
         desc = (
-            "`--nick <nickone> <nicktwo>` - Users must have one of the passed nicks in their nickname.  If they don't have a nickname, they will instantly be excluded.\n"
-            "`--user <userone> <usertwo>` - Users must have one of the passed usernames in their real username.  This will not look at nicknames.\n"
+            "`--nick <nickone> <nicktwo>` - Users must have one of the passed nicks in their nickname. "
+            "If they don't have a nickname, they will instantly be excluded.\n"
+            "`--user <userone> <usertwo>` - Users must have one of the passed usernames in their real username. "
+            "This will not look at nicknames.\n"
             "`--name <nameone> <nametwo>` - Users must have one of the passed names in their nickname, and if they don't have one, their username.\n"
             "`--discrim <discrimone> <discrimtwo>` - Users must have one of the passed discriminators in their name.\n"
             "\n"
-            "`--not-nick <nickone> <nicktwo>` - Users must not have one of the passed nicks in their nickname.  If they don't have a nickname, they will instantly be excluded.\n"
-            "`--not-user <userone> <usertwo>` - Users must not have one of the passed usernames in their real username.  This will not look at nicknames.\n"
+            "`--not-nick <nickone> <nicktwo>` - Users must not have one of the passed nicks in their nickname. "
+            "If they don't have a nickname, they will instantly be excluded.\n"
+            "`--not-user <userone> <usertwo>` - Users must not have one of the passed usernames in their real username. "
+            "This will not look at nicknames.\n"
             "`--not-name <nameone> <nametwo>` - Users must not have one of the passed names in their username, and if they don't have one, their username.\n"
             "`--not-discrim <discrimone> <discrimtwo>` - Users must not have one of the passed discriminators in their name.\n"
             "\n"
@@ -1814,7 +1815,8 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         status = discord.Embed(title="Target Arguments - Profile", color=self.bot.main_color)
         desc = (
             "`--status <offline> <online> <dnd> <idle>` - Users' status must have at least one of the statuses passed.\n"
-            "`--device <mobile> <web> <desktop>` - Filters by their device statuses.  If they are not offline on any of the ones specified, they are included.\n"
+            "`--device <mobile> <web> <desktop>` - Filters by their device statuses. "
+            "If they are not offline on any of the ones specified, they are included.\n"
             "`--only-bots` - Users must be a bot.\n"
             "`--no-bots` - Users cannot be a bot.\n"
             "\n"
@@ -1830,12 +1832,12 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         dates = discord.Embed(title="Target Arguments - Dates", color=self.bot.main_color)
         desc = (
             "`--joined-on YYYY MM DD` - Users must have joined on the day specified.\n"
-            "`--joined-before YYYY MM DD` - Users must have joined before the day specified.  The day specified is not counted.\n"
-            "`--joined-after YYYY MM DD` - Users must have joined after the day specified.  The day specified is not counted.\n"
+            "`--joined-before YYYY MM DD` - Users must have joined before the day specified. The day specified is not counted.\n"
+            "`--joined-after YYYY MM DD` - Users must have joined after the day specified. The day specified is not counted.\n"
             "\n"
             "`--created-on YYYY MM DD` - Users must have created their account on the day specified.\n"
-            "`--created-before YYYY MM DD` - Users must have created their account before the day specified.  The day specified is not counted.\n"
-            "`--created-after YYYY MM DD` - Users must have created their account after the day specified.  The day specified is not counted."
+            "`--created-before YYYY MM DD` - Users must have created their account before the day specified. The day specified is not counted.\n"
+            "`--created-after YYYY MM DD` - Users must have created their account after the day specified. The day specified is not counted."
         )
         dates.description = desc
         dates.set_footer(text="Target Arguments - Dates")
@@ -1857,7 +1859,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
         special = discord.Embed(title="Target Arguments - Special Notes", color=self.bot.main_color)
         desc = (
-            "`--format` - How to display results.  At the moment, defaults to `menu` for showing the results in Discord.\n"
+            "`--format` - How to display results. At the moment, defaults to `menu` for showing the results in Discord.\n"
             "\n"
             "If at any time you need to include quotes at the beginning or ending of something (such as a nickname or a role), "
             "include a slash `\\` right before it."
