@@ -1,0 +1,18 @@
+[MASTER]
+# init-hook=import sys; sys.path.append(".")
+exit-zero=yes
+recursive=yes
+
+[MESSAGE CONTROL]
+disable=
+    broad-except,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring
+
+[FORMAT]
+max-line-length=110
+
+[REPORTS]
+output-format=text
+reports=yes
