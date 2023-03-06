@@ -47,7 +47,6 @@ class Modal(ui.Modal):
         self.view = view
         if hasattr(self.view, "modals"):
             self.view.modals.append(self)
-        view.modals.append(self)
         self.followup_callback = callback
         for key, value in options.items():
             self.add_item(TextInput(key, **value))
