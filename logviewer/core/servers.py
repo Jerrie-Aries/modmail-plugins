@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 
 import aiohttp
+import discord
 import jinja2
 
 from aiohttp import web
@@ -104,7 +105,11 @@ class LogviewerServer:
         favicon_path = static_path / "favicon.webp"
         if not favicon_path.exists():
             asset = self.bot.user.display_avatar.replace(size=32, format="webp")
-            await asset.save(favicon_path)
+            try:
+                await asset.save(favicon_path)
+            except discord.NotFound as exc:
+                logger.error("Unable to set 'favicon.webp' due to download failure.")
+                logger.error(f"{type(exc).__name__}: {str(exc)}")
         self._running = True
 
     async def stop(self) -> None:
