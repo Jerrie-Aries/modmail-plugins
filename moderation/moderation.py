@@ -1522,6 +1522,18 @@ class Moderation(commands.Cog):
     async def on_guild_channel_delete(self, *args, **kwargs) -> None:
         await self.logging.on_guild_channel_delete(*args, **kwargs)
 
+    @commands.Cog.listener()
+    async def on_raw_message_delete(self, *args, **kwargs) -> None:
+        await self.logging.on_raw_message_delete(*args, **kwargs)
+
+    @commands.Cog.listener()
+    async def on_raw_bulk_message_delete(self, *args, **kwargs) -> None:
+        await self.logging.on_raw_bulk_message_delete(*args, **kwargs)
+
+    @commands.Cog.listener()
+    async def on_raw_message_edit(self, *args, **kwargs) -> None:
+        await self.logging.on_raw_message_edit(*args, **kwargs)
+
 
 async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(Moderation(bot))
