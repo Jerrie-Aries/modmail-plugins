@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "log_channel": str(int()),
     "logging": False,
     "webhook": None,
+    "channel_whitelist": [],
 }
 
 
