@@ -37,12 +37,25 @@ class ModerationLogging:
         self.cog: Moderation = cog
         self.bot: ModmailBot = cog.bot
 
-    def is_enabled(self, guild: discord.Guild) -> Optional[bool]:
+    def is_enabled(self, guild: discord.Guild) -> bool:
         """
         Returns `True` if logging is enabled for the specified guild.
         """
         config = self.cog.guild_config(str(guild.id))
-        return config.get("logging", None)
+        return config.get("logging", False)
+
+    def is_whitelisted(self, guild: discord.Guild, channel: discord.TextChannel) -> bool:
+        """
+        Returns `True` if channel or its category is whitelisted.
+        """
+        config = self.cog.guild_config(str(guild.id))
+        whitelist_ids = config.get("channel_whitelist", [])
+        if str(channel.id) in whitelist_ids:
+            return True
+        category = channel.category
+        if category and str(category.id) in whitelist_ids:
+            return True
+        return False
 
     async def send_log(
         self,
@@ -472,8 +485,14 @@ class ModerationLogging:
         )
 
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        if not payload.guild_id:
+            return
         guild = self.bot.get_guild(payload.guild_id)
         if not guild or not self.is_enabled(guild):
+            return
+
+        channel = guild.get_channel(payload.channel_id)
+        if channel is None or self.is_whitelisted(guild, channel):
             return
 
         message = payload.cached_message
@@ -485,10 +504,8 @@ class ModerationLogging:
             color=action_colors.get(action, action_colors["normal"]),
             timestamp=discord.utils.utcnow(),
         )
-        message = payload.cached_message
         if message:
             content = message.content
-            channel_text = message.channel.mention
             info = (
                 f"Sent by: {message.author.mention}\n"
                 f"Message sent on: {discord.utils.format_dt(message.created_at)}\n"
@@ -497,14 +514,9 @@ class ModerationLogging:
             footer_text = f"Message ID: {message.id}\nChannel ID: {message.channel.id}"
         else:
             content = None
-            channel = guild.get_channel(payload.channel_id)
-            if channel is not None:
-                channel_text = channel.mention
-            else:
-                channel_text = "#deleted-channel"
             footer_text = f"Message ID: {payload.message_id}\nChannel ID: {payload.channel_id}"
 
-        embed.description = f"**A message was deleted in {channel_text}.**\n"
+        embed.description = f"**A message was deleted in {channel.mention}.**\n"
         if content:
             embed.description += content
         else:
@@ -518,8 +530,14 @@ class ModerationLogging:
         )
 
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        if not payload.guild_id:
+            return
         guild = self.bot.get_guild(payload.guild_id)
         if not guild or not self.is_enabled(guild):
+            return
+
+        channel = guild.get_channel(payload.channel_id)
+        if channel is None or self.is_whitelisted(guild, channel):
             return
 
         messages = sorted(payload.cached_messages, key=lambda msg: msg.created_at)
@@ -550,12 +568,7 @@ class ModerationLogging:
             color=action_colors.get(action, action_colors["normal"]),
             timestamp=discord.utils.utcnow(),
         )
-        channel = guild.get_channel(payload.channel_id)
-        if channel is not None:
-            channel_text = channel.mention
-        else:
-            channel_text = "#deleted-channel"
-        embed.description = f"**{plural(len(message_ids)):message} deleted from {channel_text}.**"
+        embed.description = f"**{plural(len(message_ids)):message} deleted from {channel.mention}.**"
         embed.set_footer(text=f"Channel ID: {payload.channel_id}")
         fp = io.BytesIO(bytes(upload_text, "utf-8"))
         send_params = {"file": discord.File(fp, "Messages.txt")}
@@ -574,10 +587,8 @@ class ModerationLogging:
         if not guild or not self.is_enabled(guild):
             return
 
-        # TODO: check whitelist
-
         channel = guild.get_channel(payload.channel_id)
-        if channel is None:
+        if channel is None or self.is_whitelisted(guild, channel):
             return
 
         message_id = payload.message_id

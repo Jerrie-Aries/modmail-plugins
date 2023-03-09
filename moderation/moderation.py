@@ -263,6 +263,97 @@ class Moderation(commands.Cog):
         embed = discord.Embed(description=description, color=self.bot.main_color)
         await ctx.send(embed=embed)
 
+    @logging_config.group(name="whitelist", aliases=["wl"], invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_whitelist(self, ctx: commands.Context):
+        """
+        Whitelist channels from logging.
+
+        This only affects the message update events which means any message update (edit or delete) in the specified channel will be ignored.
+        """
+        await ctx.send_help(ctx.command)
+
+    @logging_whitelist.command(name="add")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_whitelist_add(
+        self, ctx: commands.Context, *, channel: Union[discord.TextChannel, discord.CategoryChannel]
+    ):
+        """
+        Whitelist a channel from logging.
+
+        `channel` could be a text channel or a category, may be ID, mention, or name.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        whitelist_ids = config.get("channel_whitelist", [])
+        channel_id = str(channel.id)
+        if channel_id in whitelist_ids:
+            raise commands.BadArgument(f"Channel ID {channel_id} is already whitelisted.")
+        whitelist_ids.append(channel_id)
+        config["channel_whitelist"] = whitelist_ids
+        await config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description=f"Channel {channel.mention} is now whitelisted.",
+        )
+        await ctx.send(embed=embed)
+
+    @logging_whitelist.command(name="remove", aliases=["delete", "del"])
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_whitelist_remove(
+        self, ctx: commands.Context, *, channel: Union[discord.TextChannel, discord.CategoryChannel]
+    ):
+        """
+        Remove a channel from whitelist.
+
+        `channel` could be a text channel or a category, may be ID, mention, or name.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        whitelist_ids = config.get("channel_whitelist", [])
+        channel_id = str(channel.id)
+        if channel_id not in whitelist_ids:
+            raise commands.BadArgument(f"Channel ID {channel_id} is not whitelisted.")
+        whitelist_ids.remove(channel_id)
+        config["channel_whitelist"] = whitelist_ids
+        await config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description=f"Channel {channel.mention} is now removed from whitelisted channels.",
+        )
+        await ctx.send(embed=embed)
+
+    @logging_whitelist.command(name="list")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_whitelist_list(self, ctx: commands.Context):
+        """
+        Show a list of whitelisted channels if any.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        whitelist_ids = config.get("channel_whitelist", [])
+        if not whitelist_ids:
+            raise commands.BadArgument("There is no whitelist channel set.")
+        embed = discord.Embed(
+            title="__Whitelisted channels__",
+            color=self.bot.main_color,
+        )
+        embed.description = "\n".join(f"- <#{i}>" for i in whitelist_ids)
+        await ctx.send(embed=embed)
+
+    @logging_whitelist.command(name="clear")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_whitelist_clear(self, ctx: commands.Context):
+        """
+        Clear all whitelisted channels.
+        """
+        config = self.guild_config(str(ctx.guild.id))
+        whitelist_ids = config.get("channel_whitelist", [])
+        if not whitelist_ids:
+            raise commands.BadArgument("There is no whitelist channel set.")
+        whitelist_ids.clear()
+        config["channel_whitelist"] = whitelist_ids
+        await config.update()
+        embed = discord.Embed(color=self.bot.main_color, description="Channel whitelist is now cleared.")
+        await ctx.send(embed=embed)
+
     @logging_config.command(name="clear", aliases=["reset"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_clear(self, ctx: commands.Context):
