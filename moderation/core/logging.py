@@ -5,7 +5,6 @@ import io
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
-from discord.utils import MISSING
 from discord.ext.modmail_utils import plural
 
 from core.models import getLogger
@@ -130,7 +129,7 @@ class ModerationLogging:
                 embed.set_footer(text=f"Channel ID: {target.id}")
             else:
                 raise TypeError(
-                    f"Invalid type of target. Expected Member, User, GuildChannel, List, or None. Got {type(taget).__name__} instead."
+                    f"Invalid type of target. Expected Member, User, GuildChannel, List, or None. Got {type(target).__name__} instead."
                 )
 
         if reason is not None:
@@ -237,6 +236,7 @@ class ModerationLogging:
             after.guild,
             action="avatar update",
             target=after,
+            description=description,
         )
 
     async def _on_member_nick_update(
@@ -524,11 +524,11 @@ class ModerationLogging:
 
         messages = sorted(payload.cached_messages, key=lambda msg: msg.created_at)
         message_ids = payload.message_ids
-        upload_text = f"Deleted messages:\n\n"
+        upload_text = "Deleted messages:\n\n"
 
         if not messages:
             upload_text += "There are no known messages.\n"
-            upload_text += f"Message IDs: " + ", ".join(map(str, message_ids)) + "."
+            upload_text += "Message IDs: " + ", ".join(map(str, message_ids)) + "."
         else:
             known_message_ids = set()
             for message in messages:
@@ -543,7 +543,7 @@ class ModerationLogging:
                 )
             unknown_message_ids = message_ids ^ known_message_ids
             if unknown_message_ids:
-                upload_text += f"Unknown message IDs: " + ", ".join(map(str, unknown_message_ids)) + "."
+                upload_text += "Unknown message IDs: " + ", ".join(map(str, unknown_message_ids)) + "."
 
         action = "bulk message deleted"
         embed = discord.Embed(

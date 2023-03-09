@@ -14,7 +14,6 @@ from typing import (
     Dict,
     Optional,
     Union,
-    List,
     TYPE_CHECKING,
 )
 
