@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 
-from typing import List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.utils import MISSING
@@ -50,18 +50,18 @@ class ModerationLogging:
         guild: discord.Guild,
         *,
         action: str,
-        target: Union[
-            discord.Member,
-            discord.User,
-            List[discord.Member],
-            discord.RawMessageDeleteEvent,
-            discord.RawBulkMessageDeleteEvent,
-            discord.RawMessageUpdateEvent,
-        ],
-        description: str,
+        target: Optional[
+            Union[
+                discord.Member,
+                discord.User,
+                List[discord.Member],
+            ]
+        ] = None,
+        description: Optional[str] = None,
         moderator: Optional[discord.Member] = None,
         reason: Optional[str] = None,
-        **kwargs,
+        send_params: Optional[Dict[str, Any]] = None,
+        **kwargs: Dict[str, Any],
     ) -> None:
         """
         Sends logs to the log channel.
@@ -81,14 +81,17 @@ class ModerationLogging:
             Moderator that executed this moderation action.
         reason: Optional[str]
             Reason for this moderation action.
+        send_params: Optional[Dict[str, Any]]
+            Additional parameter to use when sending the log message.
         """
         config = self.cog.guild_config(str(guild.id))
         channel = config.log_channel
         if channel is None:
             return
 
-        send_params = {}
         webhook = config.webhook or await self._get_or_create_webhook(channel)
+        if send_params is None:
+            send_params = {}
         if webhook:
             if not config.webhook:
                 config.webhook = webhook
@@ -99,134 +102,36 @@ class ModerationLogging:
         else:
             send_method = channel.send
 
+        # In some events (e.g. message updates) the embed is already provided.
+        embed = kwargs.pop("embed", None)
+        if embed is None:
+            color = action_colors.get(action, action_colors["normal"])
+            embed = discord.Embed(
+                description=description,
+                color=color,
+                timestamp=discord.utils.utcnow(),
+            )
+
         # Parsing args and kwargs, and sending embed.
-        color = action_colors.get(action, action_colors["normal"])
-        embed = discord.Embed(
-            title=action.title(),
-            description=description,
-            color=color,
-            timestamp=discord.utils.utcnow(),
-        )
+        embed.title = action.title()
 
-        if isinstance(target, (discord.Member, discord.User)):
-            embed.set_thumbnail(url=target.display_avatar.url)
-            embed.add_field(name="User", value=target.mention)
-            embed.set_footer(text=f"User ID: {target.id}")
-        elif isinstance(target, list):
-            embed.add_field(
-                name="User" if len(target) == 1 else "Users",
-                value="\n".join(str(m) for m in target),
-            )
-        elif isinstance(target, discord.abc.GuildChannel):
-            embed.add_field(name="Channel", value=f"# {target.name}")
-            embed.set_footer(text=f"Channel ID: {target.id}")
-        elif isinstance(target, discord.RawMessageDeleteEvent):
-            message = target.cached_message
-            if message:
-                content = message.content
-                channel_text = message.channel.mention
-                info = (
-                    f"Sent by: {message.author.mention}\n"
-                    f"Message sent on: {discord.utils.format_dt(message.created_at)}\n"
+        if target is not None:
+            if isinstance(target, (discord.Member, discord.User)):
+                embed.set_thumbnail(url=target.display_avatar.url)
+                embed.add_field(name="User", value=target.mention)
+                embed.set_footer(text=f"User ID: {target.id}")
+            elif isinstance(target, list):
+                embed.add_field(
+                    name="User" if len(target) == 1 else "Users",
+                    value="\n".join(str(m) for m in target),
                 )
-                embed.add_field(name="Message info", value=info)
-                footer_text = f"Message ID: {message.id}\nChannel ID: {message.channel.id}"
+            elif isinstance(target, discord.abc.GuildChannel):
+                embed.add_field(name="Channel", value=f"# {target.name}")
+                embed.set_footer(text=f"Channel ID: {target.id}")
             else:
-                content = None
-                payload_channel = guild.get_channel(target.channel_id)
-                if payload_channel is not None:
-                    channel_text = payload_channel.mention
-                else:
-                    channel_text = "#deleted-channel"
-                footer_text = f"Message ID: {target.message_id}\nChannel ID: {target.channel_id}"
-            embed.description = f"**A message was deleted in {channel_text}.**\n"
-            if content:
-                embed.description += content
-            else:
-                footer_text = f"The message content cannot be retrieved.\n{footer_text}"
-            embed.set_footer(text=footer_text)
-        elif isinstance(target, discord.RawBulkMessageDeleteEvent):
-            messages = sorted(target.cached_messages, key=lambda msg: msg.created_at)
-            message_ids = target.message_ids
-            upload_text = f"Deleted messages:\n\n"
-
-            if not messages:
-                upload_text += "There are no known messages.\n"
-                upload_text += f"Message IDs: " + ", ".join(map(str, message_ids)) + "."
-            else:
-                known_message_ids = set()
-                for message in messages:
-                    known_message_ids.add(message.id)
-                    try:
-                        time = message.created_at.strftime("%b %-d, %Y at %-I:%M %p")
-                    except ValueError:
-                        time = message.created_at.strftime("%b %d, %Y at %I:%M %p")
-                    upload_text += (
-                        f"{time} • {message.author} ({message.author.id})\n"
-                        f"Message ID: {message.id}\n{message.content}\n\n"
-                    )
-                unknown_message_ids = message_ids ^ known_message_ids
-                if unknown_message_ids:
-                    upload_text += f"Unknown message IDs: " + ", ".join(map(str, unknown_message_ids)) + "."
-
-            payload_channel = guild.get_channel(target.channel_id)
-            if payload_channel is not None:
-                channel_text = payload_channel.mention
-            else:
-                channel_text = "#deleted-channel"
-            embed.description = f"**{plural(len(message_ids)):message} deleted from {channel_text}.**"
-            embed.set_footer(text=f"Channel ID: {target.channel_id}")
-            fp = io.BytesIO(bytes(upload_text, "utf-8"))
-            send_params["file"] = discord.File(fp, "Messages.txt")
-        elif isinstance(target, discord.RawMessageUpdateEvent):
-            payload_channel = guild.get_channel(target.channel_id)
-            if payload_channel is None:
-                return
-
-            message_id = target.message_id
-
-            new_content = target.data.get("content", "")
-            old_message = target.cached_message
-
-            if not new_content or (old_message and new_content == old_message.content):
-                # Currently does not support Embed edits
-                return
-
-            channel_text = payload_channel.mention
-            embed.description = f"**A message was updated in {channel_text}.**\n"
-            footer_text = f"Message ID: {target.message_id}\nChannel ID: {target.channel_id}"
-            info = None
-            if old_message:
-                # always ignore bot's message
-                if old_message.author.bot:
-                    return
-
-                embed.add_field(name="Before", value=old_message.content or "No Content")
-                info = (
-                    f"Sent by: {old_message.author.mention}\n"
-                    f"Message sent on: {discord.utils.format_dt(old_message.created_at)}\n"
+                raise TypeError(
+                    f"Invalid type of target. Expected Member, User, GuildChannel, List, or None. Got {type(taget).__name__} instead."
                 )
-            else:
-                try:
-                    message = await payload_channel.fetch_message(message_id)
-                    if message.author.bot:
-                        return
-                    info = (
-                        f"Sent by: {message.author.mention}\n"
-                        f"Message sent on: {discord.utils.format_dt(message.created_at)}\n"
-                    )
-                except discord.NotFound:
-                    pass
-                footer_text = f"The former message content cannot be found.\n{footer_text}"
-            embed.add_field(name="After", value=new_content or "No Content")
-            if info is not None:
-                embed.add_field(name="Message info", value=info)
-            embed.set_footer(text=footer_text)
-
-        else:
-            raise TypeError(
-                "Invalid type of parameter `target`. Expected type: `Member`, `User`, `Message`, or `List`."
-            )
 
         if reason is not None:
             embed.add_field(name="Reason", value=reason)
@@ -566,8 +471,6 @@ class ModerationLogging:
             **kwargs,
         )
 
-    # TODO: Message updates
-
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
         guild = self.bot.get_guild(payload.guild_id)
         if not guild or not self.is_enabled(guild):
@@ -577,22 +480,91 @@ class ModerationLogging:
         if message and message.author.bot:
             return
 
+        action = "message deleted"
+        embed = discord.Embed(
+            color=action_colors.get(action, action_colors["normal"]),
+            timestamp=discord.utils.utcnow(),
+        )
+        message = payload.cached_message
+        if message:
+            content = message.content
+            channel_text = message.channel.mention
+            info = (
+                f"Sent by: {message.author.mention}\n"
+                f"Message sent on: {discord.utils.format_dt(message.created_at)}\n"
+            )
+            embed.add_field(name="Message info", value=info)
+            footer_text = f"Message ID: {message.id}\nChannel ID: {message.channel.id}"
+        else:
+            content = None
+            channel = guild.get_channel(payload.channel_id)
+            if channel is not None:
+                channel_text = channel.mention
+            else:
+                channel_text = "#deleted-channel"
+            footer_text = f"Message ID: {payload.message_id}\nChannel ID: {payload.channel_id}"
+
+        embed.description = f"**A message was deleted in {channel_text}.**\n"
+        if content:
+            embed.description += content
+        else:
+            footer_text = f"The message content cannot be retrieved.\n{footer_text}"
+        embed.set_footer(text=footer_text)
+
         await self.send_log(
             guild,
-            action="message deleted",
-            description="",
-            target=payload,
+            action=action,
+            embed=embed,
         )
 
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
         guild = self.bot.get_guild(payload.guild_id)
         if not guild or not self.is_enabled(guild):
             return
+
+        messages = sorted(payload.cached_messages, key=lambda msg: msg.created_at)
+        message_ids = payload.message_ids
+        upload_text = f"Deleted messages:\n\n"
+
+        if not messages:
+            upload_text += "There are no known messages.\n"
+            upload_text += f"Message IDs: " + ", ".join(map(str, message_ids)) + "."
+        else:
+            known_message_ids = set()
+            for message in messages:
+                known_message_ids.add(message.id)
+                try:
+                    time = message.created_at.strftime("%b %-d, %Y at %-I:%M %p")
+                except ValueError:
+                    time = message.created_at.strftime("%b %d, %Y at %I:%M %p")
+                upload_text += (
+                    f"{time} • {message.author} ({message.author.id})\n"
+                    f"Message ID: {message.id}\n{message.content}\n\n"
+                )
+            unknown_message_ids = message_ids ^ known_message_ids
+            if unknown_message_ids:
+                upload_text += f"Unknown message IDs: " + ", ".join(map(str, unknown_message_ids)) + "."
+
+        action = "bulk message deleted"
+        embed = discord.Embed(
+            color=action_colors.get(action, action_colors["normal"]),
+            timestamp=discord.utils.utcnow(),
+        )
+        channel = guild.get_channel(payload.channel_id)
+        if channel is not None:
+            channel_text = channel.mention
+        else:
+            channel_text = "#deleted-channel"
+        embed.description = f"**{plural(len(message_ids)):message} deleted from {channel_text}.**"
+        embed.set_footer(text=f"Channel ID: {payload.channel_id}")
+        fp = io.BytesIO(bytes(upload_text, "utf-8"))
+        send_params = {"file": discord.File(fp, "Messages.txt")}
+
         await self.send_log(
             guild,
-            action="bulk message deleted",
-            description="",
-            target=payload,
+            action=action,
+            embed=embed,
+            send_params=send_params,
         )
 
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
@@ -604,9 +576,58 @@ class ModerationLogging:
 
         # TODO: check whitelist
 
+        channel = guild.get_channel(payload.channel_id)
+        if channel is None:
+            return
+
+        message_id = payload.message_id
+
+        new_content = payload.data.get("content", "")
+        old_message = payload.cached_message
+
+        if not new_content or (old_message and new_content == old_message.content):
+            # Currently does not support Embed edits
+            return
+
+        action = "message edited"
+        embed = discord.Embed(
+            color=action_colors.get(action, action_colors["normal"]),
+            timestamp=discord.utils.utcnow(),
+        )
+        channel_text = channel.mention
+        embed.description = f"**A message was updated in {channel_text}.**\n"
+        footer_text = f"Message ID: {payload.message_id}\nChannel ID: {payload.channel_id}"
+
+        info = None
+        if old_message:
+            # always ignore bot's message
+            if old_message.author.bot:
+                return
+
+            embed.add_field(name="Before", value=old_message.content or "No Content")
+            info = (
+                f"Sent by: {old_message.author.mention}\n"
+                f"Message sent on: {discord.utils.format_dt(old_message.created_at)}\n"
+            )
+        else:
+            try:
+                message = await channel.fetch_message(message_id)
+                if message.author.bot:
+                    return
+                info = (
+                    f"Sent by: {message.author.mention}\n"
+                    f"Message sent on: {discord.utils.format_dt(message.created_at)}\n"
+                )
+            except discord.NotFound:
+                pass
+            footer_text = f"The former message content cannot be found.\n{footer_text}"
+        embed.add_field(name="After", value=new_content or "No Content")
+        if info is not None:
+            embed.add_field(name="Message info", value=info)
+        embed.set_footer(text=footer_text)
+
         await self.send_log(
             guild,
-            action="message edited",
-            description="",
-            target=payload,
+            action=action,
+            embed=embed,
         )
