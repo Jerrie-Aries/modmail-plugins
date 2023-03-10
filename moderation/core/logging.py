@@ -5,9 +5,10 @@ import io
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
-from discord.ext.modmail_utils import plural
+from discord.ext.modmail_utils import Limit, plural
 
 from core.models import getLogger
+from core.utils import truncate
 
 
 if TYPE_CHECKING:
@@ -518,7 +519,7 @@ class ModerationLogging:
 
         embed.description = f"**A message was deleted in {channel.mention}.**\n"
         if content:
-            embed.description += content
+            embed.description += truncate(content, Limit.embed_description - len(embed.description))
         else:
             footer_text = f"The message content cannot be retrieved.\n{footer_text}"
         embed.set_footer(text=footer_text)
@@ -605,8 +606,7 @@ class ModerationLogging:
             color=action_colors.get(action, action_colors["normal"]),
             timestamp=discord.utils.utcnow(),
         )
-        channel_text = channel.mention
-        embed.description = f"**A message was updated in {channel_text}.**\n"
+        embed.description = f"**A message was updated in {channel.mention}.**\n"
         footer_text = f"Message ID: {payload.message_id}\nChannel ID: {payload.channel_id}"
 
         info = None
@@ -615,7 +615,9 @@ class ModerationLogging:
             if old_message.author.bot:
                 return
 
-            embed.add_field(name="Before", value=old_message.content or "No Content")
+            embed.add_field(
+                name="Before", value=truncate(old_message.content, Limit.embed_field_value) or "No Content"
+            )
             info = (
                 f"Sent by: {old_message.author.mention}\n"
                 f"Message sent on: {discord.utils.format_dt(old_message.created_at)}\n"
@@ -632,7 +634,7 @@ class ModerationLogging:
             except discord.NotFound:
                 pass
             footer_text = f"The former message content cannot be found.\n{footer_text}"
-        embed.add_field(name="After", value=new_content or "No Content")
+        embed.add_field(name="After", value=truncate(new_content, Limit.embed_field_value) or "No Content")
         if info is not None:
             embed.add_field(name="Message info", value=info)
         embed.set_footer(text=footer_text)

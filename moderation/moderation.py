@@ -189,6 +189,7 @@ class Moderation(commands.Cog):
         - Member roles update, `add`/`remove`
         - Nickname changes, `set`/`update`/`remove`
         - Channels, `created`/`deleted`
+        - Message updates, `deleted`/`edited`
 
         For initial setup, set the logging channel and enable the logging.
         Use commands:
