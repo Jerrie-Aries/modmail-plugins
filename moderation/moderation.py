@@ -943,7 +943,97 @@ class Moderation(commands.Cog):
             description=f"`{user}` has been banned.",
         )
 
-    @ban.command(name="custom", aliases=["--massban"])
+    @ban.command(name="multi")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def multiban(
+        self,
+        ctx: commands.Context,
+        members: commands.Greedy[Union[discord.Member, discord.User]],
+        *,
+        reason: ActionReason = None,
+    ):
+        """
+        Bans multiple members from the server.
+
+        This only works through banning via ID.
+
+        In order for this to work, the bot must have `Ban Members` permission.
+
+        **Examples:**
+        - `{prefix}multiban 204255221017214 159985870458322 Involved in server raid.`
+
+        **Notes:**
+        - To prevent from being rate limited with Discord API, you can only ban up to 10 members with single command.
+        """
+        if len(members) > 10:
+            raise commands.BadArgument(f"Too many members to ban given ({len(members)}/10).")
+        if reason is None:
+            reason = "No reason was provided."
+
+        total_members = len(members)
+        if total_members == 0:
+            raise commands.BadArgument("Missing members to ban.")
+
+        view = ConfirmView(bot=self.bot, user=ctx.author)
+        view.message = await ctx.send(
+            embed=discord.Embed(
+                color=self.bot.main_color,
+                description=f"This will ban **{plural(total_members):member}**. Are you sure?",
+            ),
+            view=view,
+        )
+
+        await view.wait()
+
+        if not view.value:
+            return
+
+        success = []
+        failed = []
+        done_embed = discord.Embed(title="Multiban", color=self.bot.main_color)
+        async with ctx.typing():
+            for member in members:
+                try:
+                    await ctx.guild.ban(
+                        member,
+                        reason=get_audit_reason(ctx.author, reason),
+                        delete_message_days=0,
+                    )
+                except discord.HTTPException:
+                    failed.append(member)
+                else:
+                    success.append(member)
+                await asyncio.sleep(0.5)
+        done_embed.description = f"Banned **{len(success)}/{total_members}** " + (
+            "member." if len(success) == 1 else "members."
+        )
+        done_embed.add_field(
+            name="Success",
+            value="\n".join(str(m) for m in success) if success else "None",
+            inline=False,
+        )
+        done_embed.add_field(
+            name="Failed",
+            value="\n".join(str(m) for m in failed) if failed else "None",
+            inline=False,
+        )
+        done_embed.add_field(name="Reason", value=reason, inline=False)
+        await ctx.send(embed=done_embed)
+
+        if not success:
+            return
+
+        await self.logging.send_log(
+            guild=ctx.guild,
+            action="multiban",
+            target=success,
+            moderator=ctx.author,
+            reason=reason,
+            description=f"Banned **{len(success)}/{total_members}** "
+            + ("member." if len(success) == 1 else "members."),
+        )
+
+    @ban.command(name="custom", aliases=["--mass"])
     @checks.has_permissions(PermissionLevel.OWNER)
     async def massban(self, ctx: commands.Context, *, args: str):
         """
@@ -1209,96 +1299,6 @@ class Moderation(commands.Cog):
 
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
-
-    @commands.command()
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def multiban(
-        self,
-        ctx: commands.Context,
-        members: commands.Greedy[Union[discord.Member, discord.User]],
-        *,
-        reason: ActionReason = None,
-    ):
-        """
-        Bans multiple members from the server.
-
-        This only works through banning via ID.
-
-        In order for this to work, the bot must have `Ban Members` permission.
-
-        **Examples:**
-        - `{prefix}multiban 204255221017214 159985870458322 Involved in server raid.`
-
-        **Notes:**
-        - To prevent from being rate limited with Discord API, you can only ban up to 10 members with single command.
-        """
-        if len(members) > 10:
-            raise commands.BadArgument(f"Too many members to ban given ({len(members)}/10).")
-        if reason is None:
-            reason = "No reason was provided."
-
-        total_members = len(members)
-        if total_members == 0:
-            raise commands.BadArgument("Missing members to ban.")
-
-        view = ConfirmView(bot=self.bot, user=ctx.author)
-        view.message = await ctx.send(
-            embed=discord.Embed(
-                color=self.bot.main_color,
-                description=f"This will ban **{plural(total_members):member}**. Are you sure?",
-            ),
-            view=view,
-        )
-
-        await view.wait()
-
-        if not view.value:
-            return
-
-        success = []
-        failed = []
-        done_embed = discord.Embed(title="Multiban", color=self.bot.main_color)
-        async with ctx.typing():
-            for member in members:
-                try:
-                    await ctx.guild.ban(
-                        member,
-                        reason=get_audit_reason(ctx.author, reason),
-                        delete_message_days=0,
-                    )
-                except discord.HTTPException:
-                    failed.append(member)
-                else:
-                    success.append(member)
-                await asyncio.sleep(0.5)
-        done_embed.description = f"Banned **{len(success)}/{total_members}** " + (
-            "member." if len(success) == 1 else "members."
-        )
-        done_embed.add_field(
-            name="Success",
-            value="\n".join(str(m) for m in success) if success else "None",
-            inline=False,
-        )
-        done_embed.add_field(
-            name="Failed",
-            value="\n".join(str(m) for m in failed) if failed else "None",
-            inline=False,
-        )
-        done_embed.add_field(name="Reason", value=reason, inline=False)
-        await ctx.send(embed=done_embed)
-
-        if not success:
-            return
-
-        await self.logging.send_log(
-            guild=ctx.guild,
-            action="multiban",
-            target=success,
-            moderator=ctx.author,
-            reason=reason,
-            description=f"Banned **{len(success)}/{total_members}** "
-            + ("member." if len(success) == 1 else "members."),
-        )
 
     @commands.command(usage="<member> [reason] [message_days]")
     @checks.has_permissions(PermissionLevel.MODERATOR)
