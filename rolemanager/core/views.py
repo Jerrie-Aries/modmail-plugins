@@ -45,9 +45,6 @@ class RoleManagerModal(Modal):
 
         await self.followup_callback(interaction, self)
 
-    async def on_error(self, interaction: Interaction, error: Exception) -> None:
-        logger.error("Ignoring exception in modal %r:", self, exc_info=error)
-
 
 class RoleManagerSelect(Select):
     def __init__(self, category: str, *args, **kwargs):
@@ -71,9 +68,6 @@ class RoleManagerView(View):
     ):
         super().__init__(message=message, timeout=timeout)
         self.cog: RoleManager = cog
-
-    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
-        logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
 
     async def update_view(self) -> None:
         self.refresh()
