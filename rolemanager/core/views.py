@@ -258,6 +258,10 @@ class ReactionRoleCreationPanel(RoleManagerView):
             label = child.label.lower()
             if label in ("done", "clear"):
                 child.disabled = len(self.model.binds + self.__underlying_binds) < 1
+            elif label == "preview":
+                child.disabled = (len(self.model.binds + self.__underlying_binds) < 1) and (
+                    not self.__bind or not self.__bind.is_set()
+                )
             elif label == "add":
                 child.disabled = not self.__bind or not self.__bind.is_set()
             else:
@@ -386,6 +390,10 @@ class ReactionRoleCreationPanel(RoleManagerView):
                 color=self.ctx.bot.main_color,
                 description=description,
             )
+
+        if self.model.trigger_type == TriggerType.REACTION:
+            embed.description += "\n\n*Note: Reactions cannot be added on this preview message.*"
+
         try:
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         except discord.HTTPException as exc:

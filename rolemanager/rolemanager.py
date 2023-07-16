@@ -67,20 +67,10 @@ from .core.views import ReactionRoleCreationPanel, ReactionRoleView
 
 
 # these probably will be used in couple of places so we define them outside
-_type_session = (
-    "Choose a trigger type for this reaction roles.\n\n"
-    "__**Available options:**__\n"
-    "- `Reaction` - Legacy reaction with emojis.\n"
-    "- `Interaction` - Interaction with new Discord buttons.\n"
-)
-_rule_session = (
-    "What is the rule for this reaction roles you want to set?\n\n"
-    "__**Available options:**__\n"
-    "- `Normal` - Allow users to have multiple roles in group.\n"
-    "- `Unique` - Remove existing role when assigning another role in group.\n"
-)
+_type_session = "Choose a trigger type for this reaction roles.\n\n"
+_rule_session = "What is the rule for this reaction roles you want to set?\n\n"
 _bind_session = (
-    "__**Buttons:**__\n"
+    "__**Button guide:**__\n"
     "- **Add** - Add a role-button or role-emoji bind to internal list. The bind can only be added if "
     "there were **no errors** when the values were submitted.\n"
     "- **Set** - Set or edit the current set values.\n"
