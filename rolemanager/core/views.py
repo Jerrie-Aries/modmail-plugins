@@ -135,8 +135,8 @@ class RoleManagerView(ui.View):
 
 
 _TRIGGER_TYPES = [
-    ("reaction", "Legacy reaction with emojis."),
-    ("interaction", "Interaction with new discord buttons."),
+    ("reaction", "Reaction with emojis."),
+    ("interaction", "Interaction with buttons."),
 ]
 _RULES = [
     ("normal", "Allow users to have multiple roles in group."),
