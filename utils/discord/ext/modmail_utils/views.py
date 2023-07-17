@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-from typing import (
-    Awaitable,
-    Callable,
-    List,
-    TypedDict,
-    Union,
-    TYPE_CHECKING,
-)
+from typing import List, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction
 from discord.utils import MISSING
 
-from .ui import Button, View
+from .ui import View
 
 
 __all__ = ("ConfirmView",)
@@ -21,13 +14,6 @@ __all__ = ("ConfirmView",)
 
 if TYPE_CHECKING:
     from bot import ModmailBot
-
-    ConfirmationButtonCallback = Callable[[Button, Interaction], Awaitable]
-
-    class ConfirmationButtonPayload(TypedDict):
-        label: str
-        style: ButtonStyle
-        callback: ConfirmationButtonCallback
 
 
 class ConfirmView(View):
@@ -48,7 +34,7 @@ class ConfirmView(View):
         Time before this view timed out. Defaults to `20` seconds.
     """
 
-    children: List[Button]
+    children: List[discord.ui.Button]
 
     def __init__(
         self,
@@ -59,23 +45,7 @@ class ConfirmView(View):
         self.bot: ModmailBot = bot
         self.user: Union[discord.Member, discord.User] = user
         super().__init__(timeout=timeout)
-
-        self.button_map: List[ConfirmationButtonPayload] = [
-            {
-                "label": "Yes",
-                "style": ButtonStyle.green,
-                "callback": self._action_confirm,
-            },
-            {
-                "label": "No",
-                "style": ButtonStyle.red,
-                "callback": self._action_cancel,
-            },
-        ]
-        self._selected_button: Button = MISSING
-
-        for payload in self.button_map:
-            self.add_item(Button(**payload))
+        self._selected_button: discord.ui.Button = MISSING
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
@@ -83,18 +53,39 @@ class ConfirmView(View):
         await interaction.response.send_message("These buttons cannot be controlled by you.", ephemeral=True)
         return False
 
-    async def _action_confirm(self, interaction: Interaction, button: Button):
+    @discord.ui.button(label="Yes", style=ButtonStyle.green)
+    async def accept_button(self, interaction: Interaction, button: discord.ui.Button):
         """
         Executed when the user presses the `confirm` button.
+
+        Example
+        -------
+        Changing the style and label:
+
+            view = ConfirmView(ctx.bot, ctx.author)
+            view.accept_button.style = discord.ButtonStyle.red
+            view.accept_button.label = "Delete"
+            view.deny_button.label = "Cancel"
+            view.message = await ctx.send(
+                "Are you sure you want to remove #very-important-channel?", view=view
+            )
+            await view.wait()
+            if view.value:
+                await ctx.send("Channel #very-important-channel deleted.")
+            else:
+                await ctx.send("Canceled.")
         """
+        self.interaction = interaction
         self._selected_button = button
         self.value = True
         await self._update_view(interaction)
 
-    async def _action_cancel(self, interaction: Interaction, button: Button):
+    @discord.ui.button(label="No", style=ButtonStyle.red)
+    async def deny_button(self, interaction: Interaction, button: discord.ui.Button):
         """
         Executed when the user presses the `cancel` button.
         """
+        self.interaction = interaction
         self._selected_button = button
         self.value = False
         await self._update_view(interaction)
@@ -114,4 +105,4 @@ class ConfirmView(View):
         for child in self.children:
             child.disabled = True
             if self._selected_button and child != self._selected_button:
-                child.style = discord.ButtonStyle.grey
+                child.style = ButtonStyle.grey
