@@ -121,7 +121,6 @@ class Bind:
         role: discord.Role = MISSING,
         emoji: Optional[Union[discord.Emoji, discord.PartialEmoji]] = None,
         button: Optional[Button] = None,
-        trigger_type: str = TriggerType.REACTION,
     ):
         self.model: ReactionRole = model
         self.role: discord.Role = role
@@ -158,7 +157,7 @@ class Bind:
         if role is None:
             raise ValueError(f"Role {data['role']} not found.")
         trigger_type = model.trigger_type
-        kwargs = {"role": role, "trigger_type": trigger_type}
+        kwargs = {"role": role}
         if trigger_type == TriggerType.INTERACTION:
             payload = data["button"]
             emoji = payload.get("emoji")
