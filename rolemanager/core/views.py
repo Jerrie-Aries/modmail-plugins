@@ -11,7 +11,7 @@ from discord.utils import MISSING
 from core.models import getLogger
 
 from .converters import AssignableRole, UnionEmoji
-from .enums import TriggerType
+from .enums import ReactRules, TriggerType
 from .utils import bind_string_format, error_embed
 
 
@@ -432,10 +432,10 @@ class ReactionRoleCreationPanel(RoleManagerView):
         await interaction.response.defer()
         category = select.category
         if category in ("type", "rule"):
+            value = option.value.upper()
             if category == "rule":
-                self.model.rule = option.value.upper()
+                self.model.rules = ReactRules.from_value(value)
             else:
-                value = option.value.upper()
                 self.model.trigger_type = TriggerType.from_value(value)
             self.__index += 1
             embed = self.message.embeds[0]

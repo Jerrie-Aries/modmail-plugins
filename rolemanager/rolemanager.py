@@ -1230,7 +1230,9 @@ class RoleManager(commands.Cog, name=__plugin_name__):
             message = entry.message
             rules = entry.rules
             trigger_type = entry.trigger_type
-            output = [f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type}`, `{rules}`"]
+            output = [
+                f"[Reaction Role #{index}]({message.jump_url}) - `{trigger_type.value}`, `{rules.value}`"
+            ]
             for bind in entry.binds:
                 emoji = bind.emoji or getattr(bind.button, "emoji", None)
                 if trigger_type == TriggerType.INTERACTION:
