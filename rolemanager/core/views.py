@@ -11,13 +11,13 @@ from discord.utils import MISSING
 from core.models import getLogger
 
 from .converters import AssignableRole, UnionEmoji
-from .models import Bind, TriggerType
+from .enums import TriggerType
 from .utils import bind_string_format, error_embed
 
 
 if TYPE_CHECKING:
     from ..rolemanager import RoleManager
-    from .models import ReactionRole
+    from .models import Bind, ReactionRole
 
     Callback = Callable[..., Awaitable]
 
@@ -104,6 +104,9 @@ class RoleManagerView(ui.View):
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
+
+    def refresh(self) -> None:
+        pass
 
     async def update_view(self, **kwargs) -> None:
         self.refresh()
@@ -323,7 +326,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             emoji = bind.emoji
             label = None
         else:
-            raise TypeError(f"`{self.model.trigger_type}` is invalid for reaction roles trigger type.")
+            raise TypeError(f"`{self.model.trigger_type.value}` is invalid for reaction roles trigger type.")
 
         self.__underlying_binds.append(bind)
         self.__bind = MISSING
@@ -433,7 +436,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
                 self.model.rule = option.value.upper()
             else:
                 value = option.value.upper()
-                self.model.trigger_type = value
+                self.model.trigger_type = TriggerType.from_value(value)
             self.__index += 1
             embed = self.message.embeds[0]
             embed.description = self.session_description
@@ -495,7 +498,7 @@ class ReactionRoleCreationPanel(RoleManagerView):
             await interaction.response.defer()
             # resolve bind data
             if self.__bind is MISSING:
-                self.__bind = Bind(self.model)
+                self.__bind = self.model.new_bind()
 
             self.__bind.role = ret.pop("role")
             if self.model.trigger_type == TriggerType.REACTION:

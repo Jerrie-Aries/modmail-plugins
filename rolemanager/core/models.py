@@ -7,37 +7,24 @@ from discord.utils import MISSING
 
 from core.models import getLogger
 
+from .enums import ReactRules, TriggerType
+from .views import Button, ReactionRoleView
+
 
 if TYPE_CHECKING:
     from ..rolemanager import RoleManager
-    from .views import Button, ReactionRoleView
     from .types import AutoRoleConfigPayload, ReactRolePayload, ReactRoleConfigPayload
-else:
-    Button = None
-    ReactionRoleView = None
 
 
 __all__ = [
     "AutoRoleManager",
     "Bind",
-    "ReactRules",
     "ReactionRole",
     "ReactionRoleManager",
 ]
 
 
 logger = getLogger(__name__)
-
-
-class ReactRules:
-    NORMAL = "NORMAL"  # Allow multiple.
-    UNIQUE = "UNIQUE"  # Remove existing role when assigning another role in group.
-    VERIFY = "VERIFY"  # Not Implemented yet.
-
-
-class TriggerType:
-    REACTION = "REACTION"
-    INTERACTION = "INTERACTION"
 
 
 class AutoRoleManager:
@@ -128,7 +115,7 @@ class Bind:
         self.button: Optional[Button] = button
 
     @property
-    def trigger_type(self) -> str:
+    def trigger_type(self) -> TriggerType:
         return self.model.trigger_type
 
     def is_set(self) -> bool:
@@ -197,9 +184,9 @@ class ReactionRole:
     ----------
     message : Union[discord.PartialMessage, discord.Message]
         The message where the reactions are attached to.
-    trigger_type: str
+    trigger_type: TriggerType
         The type of trigger that this reaction roles response to.
-        Should be reaction or interaction.
+        Should be TriggerType.REACTION or TriggerType.INTERACTION.
     binds : List[Bind]
         List of bind data attached to the message.
     rules : str
@@ -211,13 +198,13 @@ class ReactionRole:
         *,
         message: Union[discord.PartialMessage, discord.Message] = MISSING,
         binds: List[Bind] = MISSING,
-        trigger_type: str = TriggerType.REACTION,
-        rules: str = ReactRules.NORMAL,
+        trigger_type: TriggerType = TriggerType.REACTION,
+        rules: ReactRules = ReactRules.NORMAL,
     ):
         self.message: Union[discord.PartialMessage, discord.Message] = message
         self.binds: List[Bind] = binds if binds is not MISSING else []
-        self.trigger_type: str = trigger_type
-        self.rules: str = rules
+        self.trigger_type: TriggerType = trigger_type
+        self.rules: ReactRules = rules
         self.manager: ReactionRoleManager = MISSING  # set from ReactionRoleManager.add
         self.view: ReactionRoleView = MISSING
 
@@ -253,21 +240,18 @@ class ReactionRole:
         ValueError
             Channel with provided ID from the data not found.
         """
-        global Button
-        if Button is None:
-            from .views import Button
 
         channel_id = data.pop("channel")
         channel = manager.cog.bot.get_channel(channel_id)
         if channel is None:
             raise ValueError(f"Channel with ID {channel_id} not found.")
         message = discord.PartialMessage(id=data.pop("message"), channel=channel)
-        trigger_type = data.pop("type", TriggerType.REACTION)
+        trigger_type = TriggerType.from_value(data.pop("type", TriggerType.REACTION.value))
 
         instance = cls(
             message=message,
             trigger_type=trigger_type,
-            rules=data.pop("rules"),
+            rules=ReactRules.from_value(data.pop("rules")),
         )
 
         binds = []
@@ -284,20 +268,11 @@ class ReactionRole:
             manager.cog.bot.add_view(instance.view, message_id=message.id)
         return instance
 
-    def delete_set_roles(self, role_list: List[str]) -> None:
-        for role_id in role_list:
-            for bind in self.binds:
-                if role_id == str(bind.role.id):
-                    self.binds.remove(bind)
-
-    def resolve_unique(self, member: discord.Member, role: discord.Role) -> List[discord.Role]:
-        ret = []
-        for bind in self.binds:
-            if role.id == bind.role.id:
-                continue
-            if bind.role in member.roles:
-                ret.append(bind.role)
-        return ret
+    def new_bind(self) -> Bind:
+        """
+        Return a new Bind instance.
+        """
+        return Bind(self)
 
     def get_bind_from(
         self,
@@ -314,6 +289,21 @@ class ReactionRole:
         if button:
             return discord.utils.find(lambda bind: bind.button.custom_id == button.custom_id, self.binds)
         return discord.utils.find(lambda bind: bind.emoji == emoji, self.binds)
+
+    def delete_set_roles(self, role_list: List[str]) -> None:
+        for role_id in role_list:
+            for bind in self.binds:
+                if role_id == str(bind.role.id):
+                    self.binds.remove(bind)
+
+    def resolve_unique(self, member: discord.Member, role: discord.Role) -> List[discord.Role]:
+        ret = []
+        for bind in self.binds:
+            if role.id == bind.role.id:
+                continue
+            if bind.role in member.roles:
+                ret.append(bind.role)
+        return ret
 
     async def handle_interaction(self, interaction: discord.Interaction, button: Button) -> None:
         await interaction.response.defer()
@@ -376,8 +366,8 @@ class ReactionRole:
             "message": self.message.id,
             "channel": self.channel.id,
             "binds": [bind.to_dict() for bind in self.binds],
-            "rules": self.rules,
-            "type": self.trigger_type,
+            "rules": self.rules.value,
+            "type": self.trigger_type.value,
         }
 
 
@@ -395,8 +385,6 @@ class ReactionRoleManager:
         self._populate_entries_from_data(data=data.pop("data"))
 
     def _populate_entries_from_data(self, *, data: List[ReactRolePayload]) -> None:
-        global ReactionRoleView
-        from .views import ReactionRoleView  # circular
 
         for entry in data:
             try:
@@ -490,9 +478,9 @@ class ReactionRoleManager:
         self,
         *,
         message: Union[discord.PartialMessage, discord.Message] = MISSING,
-        trigger_type: str = TriggerType.REACTION,
+        trigger_type: TriggerType = TriggerType.REACTION,
         binds: List[Bind] = None,
-        rules: str = ReactRules.NORMAL,
+        rules: ReactRules = ReactRules.NORMAL,
         add: bool = False,
     ) -> ReactionRole:
         """
@@ -502,12 +490,12 @@ class ReactionRoleManager:
         ----------
         message : Union[discord.PartialMessage, discord.Message]
             The message where the reactions are attached to.
-        trigger_type: str
+        trigger_type: TriggerType
             The type of trigger that this reaction roles response to.
-            Should be reaction or interaction.
+            Should be TriggerType.REACTION or TriggerType.INTERACTION.
         binds : List[Bind]
             List of bind data attached to the message.
-        rules : str
+        rules : ReactRules
             The rules applied for the reactions.
         add : bool
             Whether or not the instance created should be added to the entries.

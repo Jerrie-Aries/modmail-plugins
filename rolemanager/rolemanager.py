@@ -54,7 +54,8 @@ from .core.converters import (
     ObjectConverter,
     PERMS,
 )
-from .core.models import AutoRoleManager, ReactionRoleManager, ReactRules, TriggerType
+from .core.enums import ReactRules, TriggerType
+from .core.models import AutoRoleManager, ReactionRoleManager
 from .core.utils import (
     bind_string_format,
     get_audit_reason,
@@ -1113,22 +1114,22 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         if rules is None:
             return await ctx.send(
                 embed=self.base_embed(
-                    f"Reaction role rules for that message is currently set to `{old_rules}`."
+                    f"Reaction role rules for that message is currently set to `{old_rules.value}`."
                 )
             )
-
+        rules = ReactRules.from_value(rules)
         if rules not in (ReactRules.NORMAL, ReactRules.UNIQUE):
-            raise commands.BadArgument(f"`{rules}` is not a valid option for reaction role's rule.")
+            raise commands.BadArgument(f"Invalid option for reaction role's rule.")
 
         if rules == old_rules:
             raise commands.BadArgument(
-                f"Reaction role's rule for that message is already set to `{old_rules}`."
+                f"Reaction role's rule for that message is already set to `{old_rules.value}`."
             )
 
         reactrole.rules = rules
         await reactrole.manager.update()
         await ctx.send(
-            embed=self.base_embed(f"Reaction role's rule for that message is now set to `{rules}`.")
+            embed=self.base_embed(f"Reaction role's rule for that message is now set to `{rules.value}`.")
         )
 
     @reactrole.group(name="delete", aliases=["remove"], invoke_without_command=True)
