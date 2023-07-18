@@ -744,13 +744,52 @@ class RoleManager(commands.Cog, name=__plugin_name__):
 
     @commands.group(name="autorole", usage="<option>", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def _autorole(self, ctx: commands.Context):
+    async def autorole_group(self, ctx: commands.Context):
         """
         Manage autoroles.
         """
         await ctx.send_help(ctx.command)
 
-    @_autorole.command(name="add")
+    @autorole_group.command(name="enable")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def autorole_enable(self, ctx: commands.Context, mode: bool = None):
+        """
+        Enable the autorole on member join.
+
+        Run this command without argument to get the current set configuration.
+        """
+        manager = self.autorole_manager
+        if mode is None:
+            enabled = manager.is_enabled()
+            description = f"The autorole is currently set to `{enabled}`.\n\n"
+            description += (
+                "To "
+                + ("disable" if enabled else "enable")
+                + f", use command:\n`{self.bot.prefix}{ctx.command.qualified_name} {not enabled}`"
+            )
+            em = discord.Embed(
+                color=self.bot.main_color,
+                description=description,
+            )
+            return await ctx.send(embed=em)
+
+        try:
+            if mode:
+                manager.enable()
+            else:
+                manager.disable()
+        except ValueError as exc:
+            raise commands.BadArgument(str(exc)) from exc
+
+        await manager.update()
+
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description=("Enabled " if mode else "Disabled ") + "the autorole.",
+        )
+        await ctx.send(embed=embed)
+
+    @autorole_group.command(name="add")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_add(self, ctx: commands.Context, *, role: AssignableRole):
         """
@@ -768,7 +807,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @_autorole.command(name="remove", aliases=["delete"])
+    @autorole_group.command(name="remove", aliases=["delete"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_remove(self, ctx: commands.Context, *, role: Union[AssignableRole, int]):
         """
@@ -794,39 +833,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @_autorole.command(name="enable")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def autorole_enable(self, ctx: commands.Context, mode: bool = None):
-        """
-        Enable the autorole on member join.
-
-        Run this command without argument to get the current set configuration.
-        """
-        manager = self.autorole_manager
-        if mode is None:
-            em = discord.Embed(
-                color=self.bot.main_color,
-                description=f"The autorole is currently set to `{manager.is_enabled()}`.",
-            )
-            return await ctx.send(embed=em)
-
-        try:
-            if mode:
-                manager.enable()
-            else:
-                manager.disable()
-        except ValueError as exc:
-            raise commands.BadArgument(str(exc)) from exc
-
-        await manager.update()
-
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description=("Enabled " if mode else "Disabled ") + "the autorole.",
-        )
-        await ctx.send(embed=embed)
-
-    @_autorole.command(name="list")
+    @autorole_group.command(name="list")
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def autorole_list(self, ctx: commands.Context):
         """
@@ -856,7 +863,7 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @_autorole.command(name="clear")
+    @autorole_group.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def autorole_clear(self, ctx: commands.Context):
         """
@@ -910,9 +917,16 @@ class RoleManager(commands.Cog, name=__plugin_name__):
         """
         manager = self.reactrole_manager
         if mode is None:
+            enabled = manager.is_enabled()
+            description = f"The reaction roles is currently set to `{enabled}`.\n\n"
+            description += (
+                "To "
+                + ("disable" if enabled else "enable")
+                + f", use command:\n`{self.bot.prefix}{ctx.command.qualified_name} {not enabled}`"
+            )
             em = discord.Embed(
                 color=self.bot.main_color,
-                description=f"The reaction roles is currently set to `{manager.is_enabled()}`.",
+                description=description,
             )
             return await ctx.send(embed=em)
 
