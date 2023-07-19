@@ -73,14 +73,13 @@ _rule_session = "What is the rule for this reaction roles you want to set?\n\n"
 _bind_session = (
     "__**Button guide:**__\n"
     "- **Add** - Add a role-button or role-emoji bind to internal list. The bind can only be added if "
-    "there were **no errors** when the values were submitted.\n"
-    "- **Set** - Set or edit the current set values.\n"
-    "- **Clear** - Reset all binds.\n\n"
-    "__**Available fields:**__\n"
-    "- `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
-    "- `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, "
+    "there were *no errors* when the values were submitted (from **Set**).\n"
+    "- **Set** - Set or edit the current set values. Available fields are:\n"
+    " - `Role` - The role to bind to the emoji or button. May be a role ID, name, or format of `<@&roleid>`.\n"
+    " - `Emoji` - Emoji to bind (reaction), or shown on the button (interaction). May be a unicode emoji, "
     "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
-    f"- `Label` - Button label (only available for button). Must not exceed {Limit.button_label} characters.\n"
+    f" - `Label` - Button label (only available for button). Must not exceed {Limit.button_label} characters.\n"
+    "- **Clear** - Clear all binds.\n\n"
 )
 
 
