@@ -208,9 +208,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 errors.append(f"{type(exc).__name__}: {str(exc)}")
                 continue
             if isinstance(entity, discord.CategoryChannel):
-                if entity == self.bot.main_category:
-                    errors.append("ValueError: Category must be different than the main category.")
-                    continue
                 # check exists
                 for data in self.config.contact["select"]["options"]:
                     category_id = data["category"]
@@ -259,7 +256,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         - `{prefix}contactmenu config [option] [value]`
         Otherwise default settings will be used.
 
-        Or you can customise the settings later, then to apply new settings use command:
+        Or you can customise the settings later, then apply the new settings with command:
         - `{prefix}contactmenu refresh`
 
         `channel` if specified, may be a channel ID, mention, or name.
@@ -594,13 +591,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         help=(
             "Add and customize the dropdown for contact menu.\n\n"
             "A select option can be linked to a custom category where the thread will be created.\n\n"
-            "__**Available options:**__\n"
+            "__**Available fields:**__\n"
             "- **Emoji** : Emoji for select option. May be a unicode emoji, format of `:name:`, `<:name:id>` "
             "or `<a:name:id>` (animated emoji).\n"
-            f"- **Label** : Label for select option. Must be {Limit.select_label} or fewer in length.\n"
+            f"- **Label** : Label for select option. Must be {Limit.select_label} or fewer in length. "
+            "This field is required.\n"
             f"- **Description** : Short description for the option. Must not exceed {Limit.select_description} characters.\n"
             "- **Category** : The discord category channel where the thread will be created if the user choose the option. "
-            "This field is required and the value must be different than the `main category`.\n"
+            "This field is required.\n"
         ),
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
