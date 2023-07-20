@@ -255,7 +255,12 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def cm_create(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
         """
         Create a contact message and add contact components to it.
-        Button and dropdown settings will be retrieved from config.
+        Button and dropdown settings will be retrieved from config. If you want to have custom settings, make sure to set those first with:
+        - `{prefix}contactmenu config [option] [value]`
+        Otherwise default settings will be used.
+
+        Or you can customise the settings later, then to apply new settings use command:
+        - `{prefix}contactmenu refresh`
 
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, fallbacks to current channel.
@@ -286,7 +291,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             footer_text = f"{self.bot.guild.name}: Contact menu"
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
-        message = await channel.send(embed=embed)
+        manager.message = message = await channel.send(embed=embed)
         view = ContactView(self, message)
         await message.edit(view=view)
         self.config.contact["message"] = str(message.id)
@@ -300,7 +305,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_attach(self, ctx: commands.Context, *, message: discord.Message):
         """
-        Attach the contact components to the message specified.
+        Attach contact components to the message specified.
         Button and dropdown settings will be retrieved from config.
 
         `message` may be a message ID, link, or format of `channelid-messageid`.
@@ -351,7 +356,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_disable(self, ctx: commands.Context):
         """
-        Clear the contact components attached to the contact menu message.
+        Clear contact components attached to the contact menu message.
         This will remove the button and dropdown, and stop listening to interactions made on the message.
         """
         manager = self.contact_manager
@@ -403,7 +408,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Contact embed",
             color=self.bot.main_color,
-            description=ctx.command.help,
+            description=ctx.command.help.format(prefix=self.bot.prefix),
         )
         embed.set_footer(text="Press Set to set/edit the values")
         embed_config = self.config.contact.get("embed")
