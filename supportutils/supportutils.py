@@ -86,10 +86,11 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         view = item.view
         args = view.input_session.split(" ")
         if len(args) == 1:
-            prefix = None
-            session = args[0]
+            prefix, session, suffix = None, args[0], None
+        elif len(args) == 2:
+            prefix, session, suffix = args, None
         else:
-            prefix, session = args
+            prefix, session, suffix = args
 
         valid_sessions = ("button", "dropdown", "embed")
         options = {}
@@ -104,19 +105,28 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
         elif session == valid_sessions[1]:
-            elements = [
-                ("emoji", 256),
-                ("label", Limit.button_label),
-                ("description", Limit.select_description),
-                ("category", 256),
-            ]
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "required": elem[0] in ("label", "category"),
-                    "default": view.inputs.get(elem[0]),
+            if suffix == "placeholder":
+                options[suffix] = {
+                    "label": suffix.title(),
+                    "max_length": Limit.select_placeholder,
+                    "required": True,
+                    "default": view.inputs.get(suffix)
+                    or getattr(self.config, prefix, {})["select"].get(suffix),
                 }
+            else:
+                elements = [
+                    ("emoji", 256),
+                    ("label", Limit.button_label),
+                    ("description", Limit.select_description),
+                    ("category", 256),
+                ]
+                for elem in elements:
+                    options[elem[0]] = {
+                        "label": elem[0].title(),
+                        "max_length": elem[1],
+                        "required": elem[0] in ("label", "category"),
+                        "default": view.inputs.get(elem[0]),
+                    }
         elif session == valid_sessions[2]:
             elements = [
                 ("title", Limit.embed_title),
@@ -559,31 +569,48 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         ),
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_dropdown_placeholder(
-        self, ctx: commands.Context, *, placeholder: Optional[str] = None
-    ):
+    async def cm_config_dropdown_placeholder(self, ctx: commands.Context):
         """
         Placeholder text shown on the dropdown menu if nothing is selected.
         """
-        if placeholder is None:
-            current = self.config.contact["select"]["placeholder"]
-            embed = discord.Embed(
-                color=self.bot.main_color,
-                description=f"Placeholder text for dropdown menu is currently set to:\n`{current}`",
+        embed = discord.Embed(
+            title="Contact menu option",
+            color=self.bot.main_color,
+            description=ctx.command.help,
+        )
+        current = self.config.contact["select"]["placeholder"]
+        embed.add_field(name="Current value", value=f"`{current}`")
+        embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
+        view = SupportUtilityView(ctx, input_session="contact dropdown placeholder")
+        buttons = [
+            ("set", discord.ButtonStyle.grey, self._button_callback),
+            ("cancel", discord.ButtonStyle.red, view._action_cancel),
+        ]
+        for elem in buttons:
+            key = elem[0]
+            button = Button(
+                label=key.title(),
+                style=elem[1],
+                callback=elem[2],
             )
-            await ctx.send(embed=embed)
-            return
-        if len(placeholder) >= Limit.select_placeholder:
-            raise commands.BadArgument(
-                f"Placeholder text must be {Limit.select_placeholder} or fewer in length."
-            )
+            view.add_item(button)
+        view.message = message = await ctx.send(embed=embed, view=view)
 
+        await view.wait()
+        await message.edit(view=view)
+
+        if not view.value:
+            return
+
+        # retrieve inputs and parse
+        placeholder = view.extras["placeholder"]
         self.config.contact["select"]["placeholder"] = placeholder
         await self.config.update()
         embed = discord.Embed(
-            color=self.bot.main_color, description=f"Placeholder is now set to:\n{placeholder}"
+            color=self.bot.main_color,
+            description=f"Placeholder is now set to:\n{placeholder}",
         )
-        await ctx.send(embed=embed)
+        await view.interaction.followup.send(embed=embed)
 
     @cm_config_dropdown.command(
         name="add",
