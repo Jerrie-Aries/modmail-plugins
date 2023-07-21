@@ -282,7 +282,8 @@ class FeedbackView(BaseView):
         user: discord.Member,
         cog: SupportUtility,
         *,
-        message: discord.Message,
+        feedback: Feedback,
+        message: discord.Message = MISSING,
         thread: Optional[Thread] = None,
         timeout: Optional[float] = None,
     ):
@@ -290,8 +291,9 @@ class FeedbackView(BaseView):
         self.thread: Optional[Thread] = thread
         super().__init__(cog, message=message, timeout=timeout)
         self.manager: FeedbackManager = self.cog.feedback_manager
-        self.feedback: Feedback = MISSING  # assigned in Feedback
-        self._rating: Optional[discord.SelectOption] = None
+        feedback.view = self
+        self.feedback: Feedback = feedback
+        self.rating: Optional[discord.SelectOption] = None
 
         self.add_dropdown()
         self.add_button()
@@ -313,7 +315,7 @@ class FeedbackView(BaseView):
                     options=options,
                     placeholder=rating_config.get("placeholder"),
                     callback=self._dropdown_callback,
-                    custom_id=f"feedback_dropdown:{self.message.channel.id}-{self.message.id}",
+                    custom_id=f"feedback_dropdown",
                     row=0,
                 )
             )
@@ -336,16 +338,9 @@ class FeedbackView(BaseView):
             "label": label,
             "style": style,
             "callback": self._button_callback,
-            "custom_id": f"feedback_button:{self.message.channel.id}-{self.message.id}",
+            "custom_id": f"feedback_button",
         }
         self.add_item(Button(**payload))
-
-    @property
-    def rating(self) -> Optional[discord.SelectOption]:
-        """
-        Returns the rating option the user had chosen from dropdown.
-        """
-        return self._rating
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user == self.user:
@@ -359,7 +354,7 @@ class FeedbackView(BaseView):
         select: DropdownMenu,
         option: discord.SelectOption,
     ) -> None:
-        self._rating = option
+        self.rating = option
         await interaction.response.edit_message(view=select.view)
 
     async def _button_callback(self, *args, **kwargs) -> None:
@@ -373,9 +368,5 @@ class FeedbackView(BaseView):
             "style": discord.TextStyle.long,
             "required": True,
         }
-        modal = Modal(self, {"feedback": text_input}, self.manager.feedback_submit, title="Feedback")
+        modal = Modal(self, {"feedback": text_input}, self.feedback.submit, title="Feedback")
         await interaction.response.send_modal(modal)
-        await modal.wait()
-
-        if self.value:
-            self.feedback.submitted = True

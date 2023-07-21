@@ -255,7 +255,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         - `{prefix}contactmenu config [option] [value]`
         Otherwise default settings will be used.
 
-        Or you can customise the settings later, then apply the new settings with command:
+        Or you can customize the settings later, then apply the new settings with command:
         - `{prefix}contactmenu refresh`
 
         `channel` if specified, may be a channel ID, mention, or name.
