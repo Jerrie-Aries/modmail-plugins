@@ -86,20 +86,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         view = item.view
         args = view.input_session.split(" ")
         if len(args) == 1:
-            prefix = None
-            session = args[0]
+            prefix, session, suffix = None, args[0], None
+        elif len(args) == 2:
+            prefix, session, suffix = args, None
         else:
-            prefix, session = args
+            prefix, session, suffix = args
 
         valid_sessions = ("button", "dropdown", "embed")
-        if session not in valid_sessions:
-            raise ValueError(
-                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
-                f"got `{session}` instead."
-            )
-
         options = {}
-        if session == "button":
+        if session == valid_sessions[0]:
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
             button_config = getattr(self.config, prefix, {}).get("button")
             for elem in elements:
@@ -109,7 +104,30 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": False,
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
-        elif session == "embed":
+        elif session == valid_sessions[1]:
+            if suffix == "placeholder":
+                options[suffix] = {
+                    "label": suffix.title(),
+                    "max_length": Limit.select_placeholder,
+                    "required": True,
+                    "default": view.inputs.get(suffix)
+                    or getattr(self.config, prefix, {})["select"].get(suffix),
+                }
+            else:
+                elements = [
+                    ("emoji", 256),
+                    ("label", Limit.button_label),
+                    ("description", Limit.select_description),
+                    ("category", 256),
+                ]
+                for elem in elements:
+                    options[elem[0]] = {
+                        "label": elem[0].title(),
+                        "max_length": elem[1],
+                        "required": elem[0] in ("label", "category"),
+                        "default": view.inputs.get(elem[0]),
+                    }
+        elif session == valid_sessions[2]:
             elements = [
                 ("title", Limit.embed_title),
                 ("description", Limit.text_input_max),
@@ -125,19 +143,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
         else:
-            elements = [
-                ("emoji", 256),
-                ("label", Limit.button_label),
-                ("description", Limit.select_description),
-                ("category", 256),
-            ]
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "required": elem[0] in ("label", "category"),
-                    "default": view.inputs.get(elem[0]),
-                }
+            raise ValueError(
+                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
+                f"got `{session}` instead."
+            )
         return options
 
     async def _button_callback(self, interaction: discord.Interaction, item: Button) -> None:
@@ -208,9 +217,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 errors.append(f"{type(exc).__name__}: {str(exc)}")
                 continue
             if isinstance(entity, discord.CategoryChannel):
-                if entity == self.bot.main_category:
-                    errors.append("ValueError: Category must be different than the main category.")
-                    continue
                 # check exists
                 for data in self.config.contact["select"]["options"]:
                     category_id = data["category"]
@@ -255,7 +261,12 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     async def cm_create(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
         """
         Create a contact message and add contact components to it.
-        Button and dropdown settings will be retrieved from config.
+        Button and dropdown settings will be retrieved from config. If you want to have custom settings, make sure to set those first with:
+        - `{prefix}contactmenu config [option] [value]`
+        Otherwise default settings will be used.
+
+        Or you can customize the settings later, then apply the new settings with command:
+        - `{prefix}contactmenu refresh`
 
         `channel` if specified, may be a channel ID, mention, or name.
         If not specified, fallbacks to current channel.
@@ -286,9 +297,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             footer_text = f"{self.bot.guild.name}: Contact menu"
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
-        message = await channel.send(embed=embed)
-        view = ContactView(self, message)
-        await message.edit(view=view)
+        view = ContactView(self)
+        manager.message = view.message = await channel.send(embed=embed, view=view)
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
@@ -300,7 +310,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_attach(self, ctx: commands.Context, *, message: discord.Message):
         """
-        Attach the contact components to the message specified.
+        Attach contact components to the message specified.
         Button and dropdown settings will be retrieved from config.
 
         `message` may be a message ID, link, or format of `channelid-messageid`.
@@ -351,7 +361,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_disable(self, ctx: commands.Context):
         """
-        Clear the contact components attached to the contact menu message.
+        Clear contact components attached to the contact menu message.
         This will remove the button and dropdown, and stop listening to interactions made on the message.
         """
         manager = self.contact_manager
@@ -403,7 +413,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Contact embed",
             color=self.bot.main_color,
-            description=ctx.command.help,
+            description=ctx.command.help.format(prefix=self.bot.prefix),
         )
         embed.set_footer(text="Press Set to set/edit the values")
         embed_config = self.config.contact.get("embed")
@@ -558,44 +568,62 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         ),
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_dropdown_placeholder(
-        self, ctx: commands.Context, *, placeholder: Optional[str] = None
-    ):
+    async def cm_config_dropdown_placeholder(self, ctx: commands.Context):
         """
         Placeholder text shown on the dropdown menu if nothing is selected.
         """
-        if placeholder is None:
-            current = self.config.contact["select"]["placeholder"]
-            embed = discord.Embed(
-                color=self.bot.main_color,
-                description=f"Placeholder text for dropdown menu is currently set to:\n`{current}`",
+        embed = discord.Embed(
+            title="Contact menu option",
+            color=self.bot.main_color,
+            description=ctx.command.help,
+        )
+        current = self.config.contact["select"]["placeholder"]
+        embed.add_field(name="Current value", value=f"`{current}`")
+        embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
+        view = SupportUtilityView(ctx, input_session="contact dropdown placeholder")
+        buttons = [
+            ("set", discord.ButtonStyle.grey, self._button_callback),
+            ("cancel", discord.ButtonStyle.red, view._action_cancel),
+        ]
+        for elem in buttons:
+            key = elem[0]
+            button = Button(
+                label=key.title(),
+                style=elem[1],
+                callback=elem[2],
             )
-            await ctx.send(embed=embed)
-            return
-        if len(placeholder) >= Limit.select_placeholder:
-            raise commands.BadArgument(
-                f"Placeholder text must be {Limit.select_placeholder} or fewer in length."
-            )
+            view.add_item(button)
+        view.message = message = await ctx.send(embed=embed, view=view)
 
+        await view.wait()
+        await message.edit(view=view)
+
+        if not view.value:
+            return
+
+        # retrieve inputs and parse
+        placeholder = view.extras["placeholder"]
         self.config.contact["select"]["placeholder"] = placeholder
         await self.config.update()
         embed = discord.Embed(
-            color=self.bot.main_color, description=f"Placeholder is now set to:\n{placeholder}"
+            color=self.bot.main_color,
+            description=f"Placeholder is now set to:\n{placeholder}",
         )
-        await ctx.send(embed=embed)
+        await view.interaction.followup.send(embed=embed)
 
     @cm_config_dropdown.command(
         name="add",
         help=(
             "Add and customize the dropdown for contact menu.\n\n"
             "A select option can be linked to a custom category where the thread will be created.\n\n"
-            "__**Available options:**__\n"
+            "__**Available fields:**__\n"
             "- **Emoji** : Emoji for select option. May be a unicode emoji, format of `:name:`, `<:name:id>` "
             "or `<a:name:id>` (animated emoji).\n"
-            f"- **Label** : Label for select option. Must be {Limit.select_label} or fewer in length.\n"
+            f"- **Label** : Label for select option. Must be {Limit.select_label} or fewer in length. "
+            "This field is required.\n"
             f"- **Description** : Short description for the option. Must not exceed {Limit.select_description} characters.\n"
             "- **Category** : The discord category channel where the thread will be created if the user choose the option. "
-            "This field is required and the value must be different than the `main category`.\n"
+            "This field is required.\n"
         ),
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
