@@ -151,7 +151,7 @@ class ContactView(BaseView):
             "emoji": emoji,
             "label": label,
             "style": style,
-            "custom_id": f"contact_button:{self.message.channel.id}-{self.message.id}",
+            "custom_id": f"contact_button",
             "callback": self.handle_interaction,
         }
         self.add_item(Button(**payload))
