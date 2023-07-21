@@ -10,7 +10,7 @@
         "\n**Version:**\n`{0}`"
     ],
     "author": "Jerrie-Aries",
-    "version": "2.2.2",
+    "version": "2.3.0",
     "bot_version": "4.0.0",
     "dpy_version": "2.0.0",
     "cogs_required": ["Extended Utils"]

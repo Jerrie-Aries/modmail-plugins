@@ -54,6 +54,8 @@ class DropdownMenu(ui.Select):
     async def callback(self, interaction: Interaction) -> None:
         assert self.view is not None
         option = self.get_option(self.values[0])
+        for opt in self.options:
+            opt.default = opt.value in self.values
         self.view.interaction = interaction
         await self.followup_callback(interaction, self, option=option)
 
@@ -129,7 +131,6 @@ class ContactView(BaseView):
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
         self.select_options = self.manager.config["select"]["options"]
-        self.add_dropdown()  # dropdown comes first
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -144,7 +145,7 @@ class ContactView(BaseView):
             "emoji": emoji,
             "label": label,
             "style": style,
-            "custom_id": f"contact_button:{self.message.channel.id}-{self.message.id}",
+            "custom_id": f"contact_button",
             "callback": self.handle_interaction,
         }
         self.add_item(Button(**payload))
@@ -154,17 +155,8 @@ class ContactView(BaseView):
         Entry point when a user made interaction on this view's components.
         """
         user = interaction.user
-        dropdown = None
-        for child in self.children:
-            if isinstance(child, DropdownMenu):
-                if child.values:
-                    dropdown = child
-                    break
-
         if self.bot.guild.get_member(user.id) is None:
             await interaction.response.defer()
-            if dropdown:
-                await self.refresh_dropdown(dropdown)
             return False
         exists = await self.bot.threads.find(recipient=user)
         embed = discord.Embed(color=self.bot.error_color)
@@ -186,77 +178,61 @@ class ContactView(BaseView):
             return True
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        if dropdown:
-            await self.refresh_dropdown(dropdown)
         return False
 
-    def add_dropdown(self) -> None:
-        """
-        Add dropdown if any. Otherwise, return silently.
-        """
-        options = []
-        for data in self.select_options:
-            options.append(
-                discord.SelectOption(
-                    emoji=data.get("emoji"), label=data["label"], description=data.get("description")
-                )
-            )
-        if options:
-            self.add_item(
-                DropdownMenu(
-                    options=options,
-                    placeholder=self.manager.config["select"].get("placeholder"),
-                    callback=self.handle_interaction,
-                    custom_id=f"contact_dropdown:{self.message.channel.id}-{self.message.id}",
-                    row=0,
-                )
-            )
-
-    async def refresh_dropdown(self, item: Optional[DropdownMenu] = None) -> None:
-        """
-        Reset the dropdown selected values and placeholder.
-        Refresh the view.
-        """
-        # need to do this to reset the dropdown placeholder and chosen values since
-        # all users are allowed to use interaction on this view.
-        # this might affect performance or get InteractionNotFound error.
-        if item is None:
-            for child in self.children:
-                if not isinstance(child, DropdownMenu):
-                    continue
-                item = child
-                break
-        item.values.clear()
-        item.placeholder = self.manager.config["select"].get("placeholder")
-        await self.message.edit(view=self)
-
-    async def handle_interaction(
-        self, interaction: Interaction, item: Union[Button, DropdownMenu], **kwargs
+    async def _dropdown_callback(
+        self,
+        interaction: discord.Interaction,
+        select: DropdownMenu,
+        option: discord.SelectOption,
     ) -> None:
+        await interaction.response.defer()
+        view = select.view
+        view.inputs["contact_dropdown"] = option
+        view.stop()
+        await view.message.delete()
+
+    async def handle_interaction(self, interaction: Interaction, button: Button) -> None:
         """
         Entry point for interactions on this view after all check has passed.
         Thread creation and sending response will be done from here.
         """
-        if not isinstance(item, (Button, DropdownMenu)):
-            raise TypeError(
-                f"Invalid type of item received. Expected Button or DropdownMenu, got {type(item).__name__} instead."
-            )
-
         await interaction.response.defer()
         user = interaction.user
+
         category = None
-        if isinstance(item, DropdownMenu):
-            option = kwargs.pop("option")
+        if self.select_options:
+            view = BaseView(self.cog)
+            options = []
+            for data in self.select_options:
+                options.append(
+                    discord.SelectOption(
+                        emoji=data.get("emoji"), label=data["label"], description=data.get("description")
+                    )
+                )
+            view.add_item(
+                DropdownMenu(
+                    options=options,
+                    placeholder=self.manager.config["select"].get("placeholder"),
+                    callback=self._dropdown_callback,
+                )
+            )
+            view.message = await interaction.followup.send(view=view, ephemeral=True)
+            await view.wait()
+            if not view.inputs:
+                return
+            option = view.inputs["contact_dropdown"]
+            category_id = None
             for data in self.select_options:
                 if data.get("label") == option.label:
                     category_id = data.get("category")
-                    if not category_id:
-                        break
-                    entity = self.bot.get_channel(int(category_id))
-                    if entity:
-                        category = entity
                     break
-            await self.refresh_dropdown(item)
+            if category_id is None:
+                raise ValueError(f"Category ID for {option.label} was not set.")
+            category = self.bot.get_channel(int(category_id))
+            if category is None:
+                # just log, the thread will be created in main category
+                logger.error(f"Category with ID {category_id} not found.")
 
         thread = await self.manager.create(
             recipient=user,
@@ -300,7 +276,8 @@ class FeedbackView(BaseView):
         user: discord.Member,
         cog: SupportUtility,
         *,
-        message: discord.Message,
+        feedback: Feedback,
+        message: discord.Message = MISSING,
         thread: Optional[Thread] = None,
         timeout: Optional[float] = None,
     ):
@@ -308,8 +285,9 @@ class FeedbackView(BaseView):
         self.thread: Optional[Thread] = thread
         super().__init__(cog, message=message, timeout=timeout)
         self.manager: FeedbackManager = self.cog.feedback_manager
-        self.feedback: Feedback = MISSING  # assigned in Feedback
-        self._rating: Optional[discord.SelectOption] = None
+        feedback.view = self
+        self.feedback: Feedback = feedback
+        self.rating: Optional[discord.SelectOption] = None
 
         self.add_dropdown()
         self.add_button()
@@ -331,7 +309,7 @@ class FeedbackView(BaseView):
                     options=options,
                     placeholder=rating_config.get("placeholder"),
                     callback=self._dropdown_callback,
-                    custom_id=f"feedback_dropdown:{self.message.channel.id}-{self.message.id}",
+                    custom_id=f"feedback_dropdown",
                     row=0,
                 )
             )
@@ -354,16 +332,9 @@ class FeedbackView(BaseView):
             "label": label,
             "style": style,
             "callback": self._button_callback,
-            "custom_id": f"feedback_button:{self.message.channel.id}-{self.message.id}",
+            "custom_id": f"feedback_button",
         }
         self.add_item(Button(**payload))
-
-    @property
-    def rating(self) -> Optional[discord.SelectOption]:
-        """
-        Returns the rating option the user had chosen from dropdown.
-        """
-        return self._rating
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user == self.user:
@@ -374,11 +345,11 @@ class FeedbackView(BaseView):
     async def _dropdown_callback(
         self,
         interaction: discord.Interaction,
-        item: DropdownMenu,
+        select: DropdownMenu,
         option: discord.SelectOption,
     ) -> None:
-        await interaction.response.defer()
-        self._rating = option
+        self.rating = option
+        await interaction.response.edit_message(view=select.view)
 
     async def _button_callback(self, *args, **kwargs) -> None:
         """
@@ -391,9 +362,5 @@ class FeedbackView(BaseView):
             "style": discord.TextStyle.long,
             "required": True,
         }
-        modal = Modal(self, {"feedback": text_input}, self.manager.feedback_submit, title="Feedback")
+        modal = Modal(self, {"feedback": text_input}, self.feedback.submit, title="Feedback")
         await interaction.response.send_modal(modal)
-        await modal.wait()
-
-        if self.value:
-            self.feedback.submitted = True

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from .views import Modal
 
 
-ends_senconds: int = 60 * 60 * 24
+ends_seconds: int = 60 * 60 * 24
 
 
 class ContactManager:
@@ -151,22 +151,21 @@ class Feedback:
         manager: FeedbackManager,
         user: discord.Member,
         *,
-        message: Union[discord.Message, discord.PartialMessage],
-        view: FeedbackView,
-        thread_channel_id: Optional[int],
-        started: float,
-        ends: float,
+        thread_channel_id: Optional[int] = None,
+        # these three should be manually assigned if not passed
+        message: Union[discord.Message, discord.PartialMessage] = MISSING,
+        started: float = MISSING,
+        ends: float = MISSING,
     ):
         self.bot: ModmailBot = manager.bot
         self.cog: SupportUtility = manager.cog
         self.manager: FeedbackManager = manager
         self.user: discord.Member = user
         self.message: Union[discord.Message, discord.PartialMessage] = message
-        view.feedback = self
-        self.view: FeedbackView = view
         self.thread_channel_id: Optional[int] = thread_channel_id
         self.started: float = started
         self.ends: float = ends
+        self.view: FeedbackView = MISSING  # assigned in FeedbackView
         self._submitted: bool = False
         self.timed_out: bool = False
         self.cancelled: bool = False
@@ -183,6 +182,15 @@ class Feedback:
         if not isinstance(other, Feedback):
             return False
         return self.user.id == other.user.id
+
+    def resolve_runtime(self) -> None:
+        """
+        A helper to resolve and assign `.started` and `.ends` attributes.
+        """
+        if not self.message:
+            raise TypeError("message attribute is not set.")
+        self.started = self.message.created_at.timestamp()
+        self.ends = self.started + ends_seconds
 
     @classmethod
     async def from_data(cls, manager: FeedbackManager, *, data: Dict[str, Any]) -> Feedback:
@@ -207,16 +215,15 @@ class Feedback:
         if channel is None:
             channel = user.dm_channel
         message = discord.PartialMessage(channel=channel, id=int(data["message"]))
-        view = FeedbackView(user, manager.cog, message=message)
         instance = cls(
             manager,
             user,
-            message=message,
-            view=view,
             thread_channel_id=data.get("thread_channel"),
+            message=message,
             started=data["started"],
             ends=ends,
         )
+        view = FeedbackView(user, manager.cog, feedback=instance, message=message)
         bot.add_view(view, message_id=message.id)
         bot.loop.create_task(instance.run())
         return instance
@@ -293,6 +300,42 @@ class Feedback:
             if int(author["id"]) not in mod_ids:
                 mod_ids.add(int(author["id"]))
         return mod_ids
+
+    async def submit(self, interaction: discord.Interaction, modal: Modal) -> None:
+        """
+        Called when the user submits their feedback.
+        """
+        self.submitted = True
+        modal.stop()
+
+        description = "__**Feedback:**__\n\n"
+        description += self.view.inputs.get("feedback") or "No content."
+        embed = discord.Embed(
+            color=discord.Color.dark_orange(),
+            description=description,
+            timestamp=discord.utils.utcnow(),
+        )
+        if self.view.rating is not None:
+            embed.add_field(name="Rating", value=self.view.rating.label)
+        thread_channel_id = self.thread_channel_id
+        if thread_channel_id:
+            log_data = await self.bot.api.get_log(thread_channel_id)
+            if log_data:
+                mod_ids = self.get_mod_ids(log_data)
+                if mod_ids:
+                    embed.add_field(name="Staff", value=", ".join(f"<@{i}>" for i in mod_ids))
+                log_url = self.get_log_url(log_data)
+                embed.add_field(name="Thread log", value=f'[`{log_data["key"]}`]({log_url})')
+        user = self.user
+        embed.set_author(name=str(user))
+        embed.set_footer(text=f"User ID: {user.id}", icon_url=user.display_avatar)
+        await self.manager.channel.send(embed=embed)
+
+        embed = discord.Embed(
+            description=self.manager.config.get("response", "Thanks for your time."),
+            color=self.bot.main_color,
+        )
+        await interaction.response.send_message(embed=embed)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -400,57 +443,14 @@ class FeedbackManager:
             footer_text = "Your feedback will be submitted to our staff"
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
-        message = await user.send(embed=embed)
-        view = FeedbackView(user, self.cog, message=message, thread=thread)
-        await message.edit(view=view)
-        started = message.created_at.timestamp()
         feedback = Feedback(
             self,
             user,
-            message=message,
-            view=view,
             thread_channel_id=thread.channel.id if thread else None,
-            started=started,
-            ends=started + ends_senconds,
         )
+        view = FeedbackView(user, self.cog, feedback=feedback, thread=thread)
+        view.message = feedback.message = message = await user.send(embed=embed, view=view)
+        feedback.resolve_runtime()
         self.add(feedback)
         await self.cog.config.update()
         self.bot.loop.create_task(feedback.run())
-
-    async def feedback_submit(self, interaction: discord.Interaction, modal: Modal) -> None:
-        """
-        Called when the user submits their feedback.
-        """
-        view = modal.view
-        view.value = True
-        modal.stop()
-
-        description = "__**Feedback:**__\n\n"
-        description += view.inputs.get("feedback") or "No content."
-        embed = discord.Embed(
-            color=discord.Color.dark_orange(),
-            description=description,
-            timestamp=discord.utils.utcnow(),
-        )
-        if view.rating is not None:
-            embed.add_field(name="Rating", value=view.rating.label)
-        feedback = view.feedback
-        thread_channel_id = feedback.thread_channel_id
-        if thread_channel_id:
-            log_data = await self.bot.api.get_log(thread_channel_id)
-            if log_data:
-                mod_ids = feedback.get_mod_ids(log_data)
-                if mod_ids:
-                    embed.add_field(name="Staff", value=", ".join(f"<@{i}>" for i in mod_ids))
-                log_url = feedback.get_log_url(log_data)
-                embed.add_field(name="Thread log", value=f'[`{log_data["key"]}`]({log_url})')
-        user = view.user
-        embed.set_author(name=str(user))
-        embed.set_footer(text=f"User ID: {user.id}", icon_url=user.display_avatar)
-        await self.channel.send(embed=embed)
-
-        embed = discord.Embed(
-            description=self.config.get("response", "Thanks for your time."),
-            color=self.bot.main_color,
-        )
-        await interaction.response.send_message(embed=embed)
