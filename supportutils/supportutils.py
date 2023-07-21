@@ -88,7 +88,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if len(args) == 1:
             prefix, session, suffix = None, args[0], None
         elif len(args) == 2:
-            prefix, session, suffix = args, None
+            prefix, session, suffix = *args, None
         else:
             prefix, session, suffix = args
 
