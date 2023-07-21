@@ -195,7 +195,7 @@ class ContactView(BaseView):
         await interaction.response.defer()
         view = select.view
         view.inputs["contact_dropdown"] = option
-        view.disable_and_stop()
+        view.stop()
         await view.message.delete()
 
     async def handle_interaction(self, interaction: Interaction, button: Button) -> None:
@@ -359,8 +359,8 @@ class FeedbackView(BaseView):
         select: DropdownMenu,
         option: discord.SelectOption,
     ) -> None:
-        await interaction.response.defer()
         self._rating = option
+        await interaction.response.edit_message(view=select.view)
 
     async def _button_callback(self, *args, **kwargs) -> None:
         """

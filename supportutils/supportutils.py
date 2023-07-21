@@ -92,14 +92,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             prefix, session = args
 
         valid_sessions = ("button", "dropdown", "embed")
-        if session not in valid_sessions:
-            raise ValueError(
-                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
-                f"got `{session}` instead."
-            )
-
         options = {}
-        if session == "button":
+        if session == valid_sessions[0]:
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
             button_config = getattr(self.config, prefix, {}).get("button")
             for elem in elements:
@@ -109,7 +103,21 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": False,
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
-        elif session == "embed":
+        elif session == valid_sessions[1]:
+            elements = [
+                ("emoji", 256),
+                ("label", Limit.button_label),
+                ("description", Limit.select_description),
+                ("category", 256),
+            ]
+            for elem in elements:
+                options[elem[0]] = {
+                    "label": elem[0].title(),
+                    "max_length": elem[1],
+                    "required": elem[0] in ("label", "category"),
+                    "default": view.inputs.get(elem[0]),
+                }
+        elif session == valid_sessions[2]:
             elements = [
                 ("title", Limit.embed_title),
                 ("description", Limit.text_input_max),
@@ -125,19 +133,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
         else:
-            elements = [
-                ("emoji", 256),
-                ("label", Limit.button_label),
-                ("description", Limit.select_description),
-                ("category", 256),
-            ]
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "required": elem[0] in ("label", "category"),
-                    "default": view.inputs.get(elem[0]),
-                }
+            raise ValueError(
+                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
+                f"got `{session}` instead."
+            )
         return options
 
     async def _button_callback(self, interaction: discord.Interaction, item: Button) -> None:
