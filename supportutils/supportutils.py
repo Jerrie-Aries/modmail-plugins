@@ -92,7 +92,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         else:
             prefix, session, suffix = args
 
-        valid_sessions = ("button", "dropdown", "embed")
+        valid_sessions = ("button", "dropdown", "embed", "response")
         options = {}
         if session == valid_sessions[0]:
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
@@ -142,6 +142,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": elem[0] == "description",
                     "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
+        elif session == valid_sessions[3]:
+            options[session] = {
+                "label": session.title(),
+                "max_length": Limit.text_input_max,
+                "style": discord.TextStyle.long,
+                "required": True,
+                "default": view.inputs.get(session) or getattr(self.config, prefix, {})[session],
+            }
         else:
             raise ValueError(
                 f"Invalid view input session. Expected {human_join(valid_sessions)}, "
@@ -601,7 +609,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        # retrieve inputs and parse
         placeholder = view.extras["placeholder"]
         self.config.contact["select"]["placeholder"] = placeholder
         await self.config.update()
@@ -658,7 +665,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        # retrieve inputs and parse
         payload = {}
         updated = []
         for key in list(view.extras):
@@ -1098,22 +1104,47 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
     @fb_config.command(name="response")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_config_response(self, ctx: commands.Context, *, response: Optional[str] = None):
+    async def fb_config_response(self, ctx: commands.Context):
         """
         Response message that will be sent to the user after submitting the feedback.
-
-        Leave `response` parameter empty to see the current value.
         """
-        embed = discord.Embed(color=self.bot.main_color)
-        feedback_config = self.config.feedback
-        if response is None:
-            embed.description = f"Feedback response is currently set to:\n\n{feedback_config['response']}"
-            return await ctx.send(embed=embed)
+        embed = discord.Embed(
+            title="Feedback response",
+            color=self.bot.main_color,
+            description=ctx.command.help,
+        )
+        current = self.config.feedback["response"]
+        embed.add_field(name="Current value", value=f"`{current}`")
+        embed.set_footer(text="Press Set to set/edit the feedback response")
+        view = SupportUtilityView(ctx, input_session="feedback response")
+        buttons = [
+            ("set", discord.ButtonStyle.grey, self._button_callback),
+            ("cancel", discord.ButtonStyle.red, view._action_cancel),
+        ]
+        for elem in buttons:
+            key = elem[0]
+            button = Button(
+                label=key.title(),
+                style=elem[1],
+                callback=elem[2],
+            )
+            view.add_item(button)
+        view.message = message = await ctx.send(embed=embed, view=view)
 
-        feedback_config["response"] = response
+        await view.wait()
+        await message.edit(view=view)
+
+        if not view.value:
+            return
+
+        response = view.extras["response"]
+        self.config.feedback["response"] = response
         await self.config.update()
-        embed.description = f"Feedback response is now set to:\n\n{response}"
-        await ctx.send(embed=embed)
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description=f"Feedback response is now set to:\n{response}",
+        )
+        await view.interaction.followup.send(embed=embed)
 
     @fb_config.group(name="rating", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
