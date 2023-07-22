@@ -85,18 +85,19 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         view = item.view
         args = view.input_session.split(" ")
-        if len(args) == 1:
-            prefix, session, suffix = None, args[0], None
-        elif len(args) == 2:
+        if not 1 < len(args) < 4:
+            raise ValueError("Unable to unpack. args length must only be 2 or 3.")
+        if len(args) == 2:
             prefix, session, suffix = *args, None
         else:
             prefix, session, suffix = args
 
-        valid_sessions = ("button", "dropdown", "embed", "response")
+        valid_sessions = ("button", "dropdown", "embed", "rating", "response")
+        suffixes = ("placeholder",)
         options = {}
         if session == valid_sessions[0]:
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
-            button_config = getattr(self.config, prefix, {}).get("button")
+            button_config = getattr(self.config, prefix, {}).get(session)
             for elem in elements:
                 options[elem[0]] = {
                     "label": elem[0].title(),
@@ -104,14 +105,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": False,
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
-        elif session == valid_sessions[1]:
-            if suffix == "placeholder":
+        elif session in (valid_sessions[1], valid_sessions[3]):
+            if suffix == suffixes[0]:
+                key = session if session == valid_sessions[3] else "select"
                 options[suffix] = {
                     "label": suffix.title(),
                     "max_length": Limit.select_placeholder,
                     "required": True,
-                    "default": view.inputs.get(suffix)
-                    or getattr(self.config, prefix, {})["select"].get(suffix),
+                    "default": view.inputs.get(suffix) or getattr(self.config, prefix, {})[key].get(suffix),
                 }
             else:
                 elements = [
@@ -133,7 +134,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 ("description", Limit.text_input_max),
                 ("footer", Limit.embed_footer),
             ]
-            embed_config = getattr(self.config, prefix, {}).get("embed")
+            embed_config = getattr(self.config, prefix, {}).get(session)
             for elem in elements:
                 options[elem[0]] = {
                     "label": elem[0].title(),
@@ -142,7 +143,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": elem[0] == "description",
                     "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
-        elif session == valid_sessions[3]:
+        elif session == valid_sessions[4]:
             options[session] = {
                 "label": session.title(),
                 "max_length": Limit.text_input_max,
@@ -494,10 +495,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
             f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
             "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
-            "    - `Blurple`\n"
-            "    - `Green`\n"
-            "    - `Red`\n"
-            "    - `Grey`\n"
+            " - `Blurple`\n"
+            " - `Green`\n"
+            " - `Red`\n"
+            " - `Grey`\n"
         ),
         invoke_without_command=True,
     )
@@ -624,7 +625,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             color=self.bot.main_color,
             description=ctx.command.help,
         )
-        embed.set_footer(text="Press Add to add a dropdown option")
+        embed.set_footer(text="Press Add to add new dropdown option")
         view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
@@ -988,10 +989,10 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
             f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
             "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
-            "    - `Blurple`\n"
-            "    - `Green`\n"
-            "    - `Red`\n"
-            "    - `Grey`\n"
+            " - `Blurple`\n"
+            " - `Green`\n"
+            " - `Red`\n"
+            " - `Grey`\n"
         ),
         invoke_without_command=True,
     )
@@ -1134,30 +1135,35 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         ),
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_rating_placeholder(self, ctx: commands.Context, *, placeholder: Optional[str] = None):
+    async def fb_config_rating_placeholder(self, ctx: commands.Context, *, placeholder: Optional[str] = None):
         """
         Placeholder text shown on the dropdown menu if nothing is selected.
         """
-        if placeholder is None:
-            current = self.config.feedback["rating"]["placeholder"]
-            embed = discord.Embed(
-                color=self.bot.main_color,
-                description=f"Placeholder text for rating dropdown menu is currently set to:\n`{current}`",
-            )
-            await ctx.send(embed=embed)
-            return
-        if len(placeholder) >= Limit.select_placeholder:
-            raise commands.BadArgument(
-                f"Placeholder text must be {Limit.select_placeholder} or fewer in length."
-            )
+        embed = discord.Embed(
+            title="Feedback rating placeholder",
+            color=self.bot.main_color,
+            description=ctx.command.help,
+        )
+        current = self.config.feedback["rating"]["placeholder"]
+        embed.add_field(name="Current value", value=f"`{current}`")
+        embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
+        view = self.get_config_view(ctx, embed.title.lower())
+        view.message = message = await ctx.send(embed=embed, view=view)
 
+        await view.wait()
+        await message.edit(view=view)
+
+        if not view.value:
+            return
+
+        placeholder = view.extras["placeholder"]
         self.config.feedback["rating"]["placeholder"] = placeholder
         await self.config.update()
         embed = discord.Embed(
             color=self.bot.main_color,
             description=f"Placeholder for rating dropdown is now set to:\n{placeholder}",
         )
-        await ctx.send(embed=embed)
+        await view.interaction.followup.send(embed=embed)
 
     @fb_config.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
