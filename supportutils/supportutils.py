@@ -254,6 +254,23 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         view.value = True
         modal.stop()
 
+    def get_config_view(self, ctx: commands.Context, input_session: str) -> SupportUtilityView:
+        view = SupportUtilityView(ctx, input_session=input_session)
+        set_label = "add" if input_session == "contact dropdown" else "set"
+        buttons = [
+            (set_label, discord.ButtonStyle.grey, self._button_callback),
+            ("cancel", discord.ButtonStyle.red, view._action_cancel),
+        ]
+        for elem in buttons:
+            key = elem[0]
+            button = Button(
+                label=key.title(),
+                style=elem[1],
+                callback=elem[2],
+            )
+            view.add_item(button)
+        return view
+
     @commands.group(aliases=["conmenu"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def contactmenu(self, ctx: commands.Context):
@@ -432,19 +449,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 for key in ("title", "description", "footer")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="contact embed")
-        buttons = [
-            ("set", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -515,19 +520,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{button_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="contact button")
-        buttons = [
-            ("set", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -581,26 +574,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Placeholder text shown on the dropdown menu if nothing is selected.
         """
         embed = discord.Embed(
-            title="Contact menu option",
+            title="Contact dropdown placeholder",
             color=self.bot.main_color,
             description=ctx.command.help,
         )
         current = self.config.contact["select"]["placeholder"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
-        view = SupportUtilityView(ctx, input_session="contact dropdown placeholder")
-        buttons = [
-            ("set", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -639,24 +620,12 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Add and customize the dropdown for contact menu.
         """
         embed = discord.Embed(
-            title="Contact menu option",
+            title="Contact dropdown",
             color=self.bot.main_color,
             description=ctx.command.help,
         )
         embed.set_footer(text="Press Add to add a dropdown option")
-        view = SupportUtilityView(ctx, input_session="contact dropdown")
-        buttons = [
-            ("add", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -974,19 +943,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 for key in ("title", "description", "footer")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="feedback embed")
-        buttons = [
-            ("set", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -1057,19 +1014,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{feedback_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = SupportUtilityView(ctx, input_session="feedback button")
-        buttons = [
-            ("set", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -1116,19 +1061,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.feedback["response"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the feedback response")
-        view = SupportUtilityView(ctx, input_session="feedback response")
-        buttons = [
-            ("set", discord.ButtonStyle.grey, self._button_callback),
-            ("cancel", discord.ButtonStyle.red, view._action_cancel),
-        ]
-        for elem in buttons:
-            key = elem[0]
-            button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
-            )
-            view.add_item(button)
+        view = self.get_config_view(ctx, embed.title.lower())
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
