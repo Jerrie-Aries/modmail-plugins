@@ -1100,13 +1100,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `mode` may be `True` or `False` (case insensitive).
         Leave `mode` empty to retrieve the current set value.
         """
-        rating_config = self.config.feedback.get("rating", {})
-        # TODO: remove as this is just temporary for migration
-        if not rating_config:
-            rating_config = self.config.deepcopy(self.config.defaults["feedback"]["rating"])
-            self.config.feedback["rating"] = rating_config
-            await self.config.update()
-
+        rating_config = self.config.feedback["rating"]
         enabled = rating_config.get("enable", False)
         if mode is None:
             embed = discord.Embed(
@@ -1135,7 +1129,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         ),
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_config_rating_placeholder(self, ctx: commands.Context, *, placeholder: Optional[str] = None):
+    async def fb_config_rating_placeholder(self, ctx: commands.Context):
         """
         Placeholder text shown on the dropdown menu if nothing is selected.
         """
