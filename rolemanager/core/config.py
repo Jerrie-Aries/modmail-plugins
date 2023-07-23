@@ -38,6 +38,19 @@ class RoleManagerConfig(Config):
         if not data:
             # empty dict returned from .fetch()
             data = self.deepcopy(_default_config)
+        else:
+            data = self._resolve_keys(data)
+        return data
+
+    def _resolve_keys(self, data: Dict[str, Any]) -> ConfigPayload:
+        """
+        This is to prevent unnecessarily updating the database with default config on startup
+        mainly when first time loading this plugin.
+        """
+        keys = _default_config.keys()
+        for key in keys:
+            if key not in data:
+                data[key] = self.deepcopy(_default_config[key])
         return data
 
     async def update(self, *, data: Dict[str, Any] = None) -> None:
