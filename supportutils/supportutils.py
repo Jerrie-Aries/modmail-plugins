@@ -324,7 +324,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed.set_footer(text=footer_text, icon_url=self.bot.guild.icon)
 
         view = ContactView(self)
-        manager.message = view.message = await channel.send(embed=embed, view=view)
+        manager.message = view.message = message = await channel.send(embed=embed, view=view)
         self.config.contact["message"] = str(message.id)
         self.config.contact["channel"] = str(message.channel.id)
         await self.config.update()
