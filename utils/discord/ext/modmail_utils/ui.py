@@ -179,9 +179,10 @@ class View(ui.View):
         """
         pass
 
-    async def update_message(self, *, view: View = MISSING, **kwargs) -> None:
+    async def edit_message(self, *, view: View = MISSING, **kwargs) -> None:
         """
-        Update this View's current state on a message.
+        Edit the message assigned for this view.
+        View's current state will be updated as well.
 
         This will only work if the `.message` attribute is set.
         Additonal keyword arguments can also be passed.
@@ -222,7 +223,6 @@ class View(ui.View):
         """
         Called on View's timeout. This will disable all components and update the message.
         """
-        self.disable_all()
-        self._stop_modals()
+        self.disable_and_stop()
         if self.message:
-            await self.update_message()
+            await self.edit_message()

@@ -49,6 +49,9 @@ class ConfirmView(View):
         The author that triggered this confirmation view.
     timeout : float
         Time before this view timed out. Defaults to `20` seconds.
+    delete : bool
+        Whether to delete the message after timeout or successful interaction
+        has been made. For cleaner output, this defaults to `True`.
     """
 
     children: List[discord.ui.Button]
@@ -57,14 +60,19 @@ class ConfirmView(View):
         self,
         bot: ModmailBot,
         user: Union[discord.Member, discord.User],
+        *,
         timeout: float = 20.0,
+        delete: bool = True,
     ):
         self.bot: ModmailBot = bot
         self.user: Union[discord.Member, discord.User] = user
+        self._delete_when_complete: bool = delete
         super().__init__(timeout=timeout)
         self._selected_button: discord.ui.Button = MISSING
 
     async def interaction_check(self, interaction: Interaction) -> bool:
+        if self.message is MISSING:
+            self.message = interaction.message
         if self.user.id == interaction.user.id:
             return True
         await interaction.response.send_message("These buttons cannot be controlled by you.", ephemeral=True)
@@ -90,16 +98,16 @@ class ConfirmView(View):
         self.value = False
         await self.conclude(interaction)
 
-    async def conclude(self, interaction: Interaction):
+    async def conclude(self, interaction: Interaction) -> None:
         """
         Finalize and stop the view after interaction is made.
 
         Depends on the `.message` attribute, if it is ephemeral the message will be deleted.
         Otherwise it will be updated with all buttons disabled.
         """
-        if self.message.flags.ephemeral:
+        if self.message.flags.ephemeral or self._delete_when_complete:
             await interaction.response.defer()
-            await self.message.delete()
+            await interaction.delete_original_response()
         else:
             self.refresh()
             await interaction.response.edit_message(view=self)
@@ -107,16 +115,21 @@ class ConfirmView(View):
 
     def refresh(self) -> None:
         """
-        Disables the buttons on the view. Unselected button will be greyed out.
+        Refresh the buttons on this view. If interaction has been made the buttons
+        will be disabled.
+        Unselected button will be greyed out.
         """
         for child in self.children:
-            child.disabled = True
+            child.disabled = self.value is not None
             if self._selected_button and child != self._selected_button:
-                child.style = ButtonStyle.grey
+                child.style = discord.ButtonStyle.grey
 
     async def on_timeout(self) -> None:
-        if self.message.flags.ephemeral:
+        self.stop()
+        if not self.message:
+            return
+        if self._delete_when_complete:
             await self.message.delete()
         else:
             self.refresh()
-            await self.message.edit(view=view)
+            await self.message.edit(view=self)
