@@ -24,6 +24,23 @@ class ConfirmView(View):
     After one of them is selected, the view will stop which means the bot will no longer listen to
     interactions on this view, and the buttons will be disabled.
 
+    Example
+    -------
+    Changing the style and label:
+
+        view = ConfirmView(ctx.bot, ctx.author)
+        view.accept_button.style = discord.ButtonStyle.red
+        view.accept_button.label = "Delete"
+        view.deny_button.label = "Cancel"
+        view.message = await ctx.send(
+            "Are you sure you want to remove #very-important-channel?", view=view
+        )
+        await view.wait()
+        if view.value:
+            await ctx.send("Channel #very-important-channel deleted.")
+        else:
+            await ctx.send("Canceled.")
+
     Parameters
     -----------
     bot : ModmailBot
@@ -57,28 +74,11 @@ class ConfirmView(View):
     async def accept_button(self, interaction: Interaction, button: discord.ui.Button):
         """
         Executed when the user presses the `confirm` button.
-
-        Example
-        -------
-        Changing the style and label:
-
-            view = ConfirmView(ctx.bot, ctx.author)
-            view.accept_button.style = discord.ButtonStyle.red
-            view.accept_button.label = "Delete"
-            view.deny_button.label = "Cancel"
-            view.message = await ctx.send(
-                "Are you sure you want to remove #very-important-channel?", view=view
-            )
-            await view.wait()
-            if view.value:
-                await ctx.send("Channel #very-important-channel deleted.")
-            else:
-                await ctx.send("Canceled.")
         """
         self.interaction = interaction
         self._selected_button = button
         self.value = True
-        await self._update_view(interaction)
+        await self.conclude(interaction)
 
     @discord.ui.button(label="No", style=ButtonStyle.red)
     async def deny_button(self, interaction: Interaction, button: discord.ui.Button):
@@ -88,14 +88,21 @@ class ConfirmView(View):
         self.interaction = interaction
         self._selected_button = button
         self.value = False
-        await self._update_view(interaction)
+        await self.conclude(interaction)
 
-    async def _update_view(self, interaction: Interaction):
+    async def conclude(self, interaction: Interaction):
         """
-        Disable buttons and stop the view after interaction is made.
+        Finalize and stop the view after interaction is made.
+
+        Depends on the `.message` attribute, if it is ephemeral the message will be deleted.
+        Otherwise it will be updated with all buttons disabled.
         """
-        self.refresh()
-        await interaction.response.edit_message(view=self)
+        if self.message.flags.ephemeral:
+            await interaction.response.defer()
+            await self.message.delete()
+        else:
+            self.refresh()
+            await interaction.response.edit_message(view=self)
         self.stop()
 
     def refresh(self) -> None:
@@ -106,3 +113,10 @@ class ConfirmView(View):
             child.disabled = True
             if self._selected_button and child != self._selected_button:
                 child.style = ButtonStyle.grey
+
+    async def on_timeout(self) -> None:
+        if self.message.flags.ephemeral:
+            await self.message.delete()
+        else:
+            self.refresh()
+            await self.message.edit(view=view)

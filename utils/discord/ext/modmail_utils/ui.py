@@ -132,7 +132,6 @@ class View(ui.View):
                 f"Invalid type of value for 'extras' parameter. Expected dict, got {type(extras).__name__} instead."
             )
         self.extras: Dict[str, Any] = extras
-
         self._underlying_modals: List[Modal] = []
 
     @property
@@ -185,19 +184,23 @@ class View(ui.View):
         Update this View's current state on a message.
 
         This will only work if the `.message` attribute is set.
+        Additonal keyword arguments can also be passed.
         """
         if view is MISSING:
             view = self
         await self.message.edit(view=view, **kwargs)
+
+    def _stop_modals(self) -> None:
+        for modal in self.modals:
+            if modal.is_dispatching() or not modal.is_finished():
+                modal.stop()
 
     def stop(self) -> None:
         """
         Stop the View from listening to interactions.
         Internally this will also stop the underlying Modal instances.
         """
-        for modal in self.modals:
-            if modal.is_dispatching() or not modal.is_finished():
-                modal.stop()
+        self._stop_modals()
         super().stop()
 
     def disable_all(self) -> None:
@@ -219,6 +222,7 @@ class View(ui.View):
         """
         Called on View's timeout. This will disable all components and update the message.
         """
-        self.disable_and_stop()
+        self.disable_all()
+        self._stop_modals()
         if self.message:
             await self.update_message()
