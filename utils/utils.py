@@ -90,7 +90,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
     async def install_packages(self) -> None:
         """
-        Install additional packages. Currently we only use `modmail-utils` custom package.
+        Currently we only use `modmail-utils` custom package.
         This method was adapted from cogs/plugins.py.
         """
         req = self.package_path
@@ -130,7 +130,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             text = f.read()
         return re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', text, re.MULTILINE).group(1)
 
-    @commands.group(name="ext-utils", invoke_without_command=True)
+    @commands.group(name="ext-utils", aliases=["eutils"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def ext_utils(self, ctx: commands.Context):
         """
@@ -195,13 +195,18 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
     async def utils_reorder(self, ctx: commands.Context):
         """
         Reorder the plugins loading order.
-        Generally no need to run this command, but put here just in case.
+        Generally there is no need to run this command, but it is put here just in case.
         This is just to make sure the plugins that require this plugin will load last or after this plugin is loaded.
         """
         plugins_cog = self.bot.get_cog("Plugins")
         ordered = []
+        utils_pos = False
         for plugin in plugins_cog.loaded_plugins:
+            if plugin.name == "utils":
+                utils_pos = True
+                continue
             try:
+
                 extension = self.bot.extensions[plugin.ext_string]
                 if not hasattr(extension, "__plugin_info__"):
                     continue
@@ -215,7 +220,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             if self.qualified_name not in cogs_required:
                 continue
 
-            if str(plugin) in self.bot.config["plugins"]:
+            if not utils_pos and str(plugin) in self.bot.config["plugins"]:
                 # just remove and append it back
                 self.bot.config["plugins"].remove(str(plugin))
                 self.bot.config["plugins"].append(str(plugin))
@@ -224,12 +229,14 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(color=self.bot.main_color)
         if ordered:
             await self.bot.config.update()
-            description = "Reordered the plugins.\n"
-            description += "```\n"
-            description += "\n".join(ordered)
-            description += "\n```"
+            description = "__**Reordered:**__\n"
+            description += "```\n" + "\n".join(ordered) + "\n```"
+            description += (
+                "\n\n__**Note:**__\nYou may need to restart the bot to reload the reordered plugins."
+            )
         else:
-            description = "Nothing changed."
+            embed.color = self.bot.error_color
+            description = "The plugins are already properly ordered."
         embed.description = description
         await ctx.send(embed=embed)
 
