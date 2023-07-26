@@ -42,14 +42,14 @@ class ModerationLogging:
         """
         Returns `True` if logging is enabled for the specified guild.
         """
-        config = self.cog.guild_config(str(guild.id))
+        config = self.cog.guild_config(guild.id)
         return config.get("logging", False)
 
     def is_whitelisted(self, guild: discord.Guild, channel: discord.TextChannel) -> bool:
         """
         Returns `True` if channel or its category is whitelisted.
         """
-        config = self.cog.guild_config(str(guild.id))
+        config = self.cog.guild_config(guild.id)
         whitelist_ids = config.get("channel_whitelist", [])
         if str(channel.id) in whitelist_ids:
             return True
@@ -97,7 +97,7 @@ class ModerationLogging:
         send_params: Optional[Dict[str, Any]]
             Additional parameter to use when sending the log message.
         """
-        config = self.cog.guild_config(str(guild.id))
+        config = self.cog.guild_config(guild.id)
         channel = config.log_channel
         if channel is None:
             return
@@ -170,7 +170,7 @@ class ModerationLogging:
         channel : discord.TextChannel
             The channel to get or create the webhook from.
         """
-        config = self.cog.guild_config(str(channel.guild.id))
+        config = self.cog.guild_config(channel.guild.id)
         wh_url = config.get("webhook")
         if wh_url:
             wh = discord.Webhook.from_url(

@@ -166,7 +166,8 @@ class Moderation(commands.Cog):
 
             self.config_cache[str(guild.id)] = config
 
-    def guild_config(self, guild_id: str) -> ModConfig:
+    def guild_config(self, guild_id: Union[int, str]) -> ModConfig:
+        guild_id = str(guild_id)
         config = self.config_cache.get(guild_id)
         if config is None:
             guild = self.bot.get_guild(int(guild_id))
@@ -206,7 +207,7 @@ class Moderation(commands.Cog):
 
         Run this command without argument to see the current set configurations.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         embed = discord.Embed(
             title="Logging Config",
             color=self.bot.main_color,
@@ -225,7 +226,7 @@ class Moderation(commands.Cog):
 
         Leave `channel` empty to see the current set channel.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         if channel is None:
             channel = self.bot.get_channel(int(config.get("log_channel")))
             if channel:
@@ -252,7 +253,7 @@ class Moderation(commands.Cog):
 
         Leave `mode` empty to see the current set value.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         if mode is None:
             mode = config.get("logging")
             description = "Logging feature is currently " + ("`enabled`" if mode else "`disabled`") + "."
@@ -284,7 +285,7 @@ class Moderation(commands.Cog):
 
         `channel` could be a text channel or a category, may be ID, mention, or name.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         whitelist_ids = config.get("channel_whitelist", [])
         channel_id = str(channel.id)
         if channel_id in whitelist_ids:
@@ -308,7 +309,7 @@ class Moderation(commands.Cog):
 
         `channel` could be a text channel or a category, may be ID, mention, or name.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         whitelist_ids = config.get("channel_whitelist", [])
         channel_id = str(channel.id)
         if channel_id not in whitelist_ids:
@@ -328,7 +329,7 @@ class Moderation(commands.Cog):
         """
         Show a list of whitelisted channels if any.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         whitelist_ids = config.get("channel_whitelist", [])
         if not whitelist_ids:
             raise commands.BadArgument("There is no whitelist channel set.")
@@ -345,7 +346,7 @@ class Moderation(commands.Cog):
         """
         Clear all whitelisted channels.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         whitelist_ids = config.get("channel_whitelist", [])
         if not whitelist_ids:
             raise commands.BadArgument("There is no whitelist channel set.")
@@ -361,7 +362,7 @@ class Moderation(commands.Cog):
         """
         Reset the moderation logging configurations to default.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         for key in config.keys():
             config.remove(key)
         config.webhook = MISSING
