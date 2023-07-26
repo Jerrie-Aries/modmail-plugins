@@ -214,8 +214,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                     getattr(extension, "__cogs_required__", None)
                     or extension.__plugin_info__["cogs_required"]
                 )
-            except (AttributeError, KeyError) as exc:
-                logger.error(f"{type(exc).__name__}: {str(exc)}", exc_info=True)
+            except (AttributeError, KeyError):
                 continue
 
             if self.qualified_name not in cogs_required:
