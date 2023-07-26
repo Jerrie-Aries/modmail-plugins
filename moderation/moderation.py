@@ -170,7 +170,7 @@ class Moderation(commands.Cog):
         config = self.config_cache.get(guild_id)
         if config is None:
             guild = self.bot.get_guild(int(guild_id))
-            default = ModConfig(self.bot, self.db, guild, data={})
+            default = ModConfig(self, self.db, guild, data={})
             self.config_cache[guild_id] = default
             config = default
         return config
