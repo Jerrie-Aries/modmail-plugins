@@ -150,11 +150,18 @@ class Config(BaseConfig):
             f"<{self.__class__.__name__} cog='{self.cog.qualified_name}' id='{self._id}' cache={self._cache}>"
         )
 
-    async def fetch(self) -> DataT:
+    async def fetch(self, *, resolve_default_keys: bool = True) -> DataT:
         """
         Fetches the data from database. If the response data is `None` default data will be returned.
 
         By default if cache is enabled, this will automatically refresh the cache after the data is retrieved.
+
+        Parameters
+        -----------
+        resolve_default_keys : bool
+            Check if all default keys exist in the fetched data. If any key does not exist,
+            the default and its value will be set. For this to work, a dictionary for `.defaults` attribute
+            must be set. Defaults to `True`.
 
         Returns
         -------
@@ -168,6 +175,12 @@ class Config(BaseConfig):
             else:
                 # empty dict to resolve AttributeError in `.refresh`
                 data = {}
+
+        if self.defaults is not None and resolve_default_keys:
+            for key, value in self.defaults.items():
+                if key not in data:
+                    data[key] = self.deepcopy(value)
+
         if self.cache_enabled():
             self.refresh(data=data)
         return data
