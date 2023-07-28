@@ -7,6 +7,7 @@ import discord
 from discord.utils import MISSING
 
 from core.models import getLogger
+from core.thread import Thread
 
 from .views import ContactView, FeedbackView
 
@@ -16,7 +17,6 @@ logger = getLogger(__name__)
 
 if TYPE_CHECKING:
     from bot import ModmailBot
-    from core.thread import Thread
     from ..supportutils import SupportUtility
     from .views import Modal
 
@@ -77,20 +77,30 @@ class ContactManager:
         self.message = MISSING
         self.view = MISSING
 
-    async def create(
+    async def create_thread(
         self,
         recipient: Union[discord.Member, discord.User],
         *,
         category: discord.CategoryChannel = None,
-    ) -> Optional[Thread]:
+        interaction: Optional[discord.Interaction] = None,
+    ) -> Thread:
         """
-        Handles thread creation. Adapted from core/thread.py.
+        Thread creation that was initiated by successful interaction on Contact Menu.
         """
-
         # checks for existing thread in cache
-        thread = await self.bot.threads.create(recipient, creator=recipient, category=category)
-        if thread.cancelled:
-            return None
+        thread = self.bot.threads.cache.get(recipient.id)
+        if thread:
+            # unlike in core/thread.py, we will not do the .wait_until_ready and .CancelledError stuff here
+            # just send error message and return
+            embed = discord.Embed(
+                color=self.bot.error_color,
+                description="Something went wrong. A thread for you already exists.",
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True, delete_after=10)
+            return
+
+        thread = Thread(self.bot.threads, recipient)
+        self.bot.threads.cache[recipient.id] = thread
 
         embed = discord.Embed(
             title=self.bot.config["thread_creation_contact_title"],
@@ -98,8 +108,17 @@ class ContactManager:
             color=self.bot.main_color,
         )
         embed.set_footer(text=f"{recipient}", icon_url=recipient.display_avatar.url)
-        await recipient.send(embed=embed)
-        return thread
+        message = await recipient.send(embed=embed)
+        self.bot.loop.create_task(thread.setup(creator=recipient, category=category, initial_message=message))
+        del embed
+
+        embed = discord.Embed(
+            title="Created Thread",
+            description=f"Thread started by {recipient.mention}.",
+            color=self.bot.main_color,
+        )
+        await thread.wait_until_ready()
+        await thread.channel.send(embed=embed)
 
 
 class Feedback:

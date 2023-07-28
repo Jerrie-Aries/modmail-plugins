@@ -164,12 +164,12 @@ class ContactView(BaseView):
         user = interaction.user
         if user.id in self._in_progress or self.bot.guild.get_member(user.id) is None:
             return False
-        exists = await self.bot.threads.find(recipient=user)
+        thread = self.bot.threads.cache.get(user.id)
         embed = discord.Embed(color=self.bot.error_color)
-        if exists:
+        if thread:
             content = "A thread for you already exists"
-            if exists.channel:
-                content += f" in {exists.channel.mention}"
+            if thread.channel:
+                content += f" in {thread.channel.mention}"
             content += "."
             embed.description = content
         elif await self.bot.is_blocked(user):
@@ -199,7 +199,7 @@ class ContactView(BaseView):
 
     async def handle_interaction(self, interaction: Interaction, button: Button) -> None:
         """
-        Entry point for interactions on this view after all check has passed.
+        Entry point for interactions on this view after all checks have passed.
         Thread creation and sending response will be done from here.
         """
         user = interaction.user
@@ -209,25 +209,28 @@ class ContactView(BaseView):
             view = BaseView(self.cog, timeout=20)
             options = []
             for data in self.select_options:
-                options.append(
-                    discord.SelectOption(
-                        emoji=data.get("emoji"), label=data["label"], description=data.get("description")
-                    )
+                option = discord.SelectOption(
+                    emoji=data.get("emoji"), label=data["label"], description=data.get("description")
                 )
-            view.add_item(
-                DropdownMenu(
-                    options=options,
-                    placeholder=self.manager.config["select"].get("placeholder"),
-                    callback=self._dropdown_callback,
-                )
+                options.append(option)
+            dropdown = DropdownMenu(
+                options=options,
+                placeholder=self.manager.config["select"].get("placeholder"),
+                callback=self._dropdown_callback,
             )
+            view.add_item(dropdown)
             await interaction.response.send_message(view=view, ephemeral=True)
+            # InteractionResponse.send_message() returns None
+            # starting discord.py v2.1, it will have the delete_after kwarg
+            # as of now we will have to fetch the response message we just sent to be able to delete it later
             message = await interaction.original_response()
+
             await view.wait()
             await message.delete()
 
             if not view.inputs:
                 return
+
             option = view.inputs["contact_option"]
             interaction = view.inputs["interaction"]
             category_id = None
@@ -259,18 +262,8 @@ class ContactView(BaseView):
             self._in_progress.remove(user.id)
             return
 
-        thread = await self.manager.create(user, category=category)
-
+        await self.manager.create_thread(user, category=category, interaction=interaction)
         self._in_progress.remove(user.id)
-        if thread is None:
-            return
-
-        embed = discord.Embed(
-            title="Created Thread",
-            description=f"Thread started by {user.mention}.",
-            color=self.bot.main_color,
-        )
-        await thread.channel.send(embed=embed)
 
     async def force_stop(self) -> None:
         """
