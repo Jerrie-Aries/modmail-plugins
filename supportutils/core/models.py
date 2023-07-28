@@ -4,11 +4,9 @@ import asyncio
 from typing import Any, Dict, Optional, Set, Tuple, Union, TYPE_CHECKING
 
 import discord
-from discord.ext.modmail_utils import ConfirmView
 from discord.utils import MISSING
 
 from core.models import getLogger
-from core.thread import Thread
 
 from .views import ContactView, FeedbackView
 
@@ -18,6 +16,7 @@ logger = getLogger(__name__)
 
 if TYPE_CHECKING:
     from bot import ModmailBot
+    from core.thread import Thread
     from ..supportutils import SupportUtility
     from .views import Modal
 
@@ -83,51 +82,15 @@ class ContactManager:
         recipient: Union[discord.Member, discord.User],
         *,
         category: discord.CategoryChannel = None,
-        interaction: Optional[discord.Interaction] = None,
-    ) -> Thread:
+    ) -> Optional[Thread]:
         """
         Handles thread creation. Adapted from core/thread.py.
         """
 
         # checks for existing thread in cache
-        thread = self.bot.threads.cache.get(recipient.id)
-        if thread:
-            try:
-                await thread.wait_until_ready()
-            except asyncio.CancelledError:
-                logger.warning("Thread for %s cancelled, abort creating.", recipient)
-                return thread
-            else:
-                if thread.channel and self.bot.get_channel(thread.channel.id):
-                    logger.warning("Found an existing thread for %s, abort creating.", recipient)
-                    return thread
-                logger.warning("Found an existing thread for %s, closing previous thread.", recipient)
-                self.bot.loop.create_task(
-                    thread.close(closer=self.bot.user, silent=True, delete_channel=False)
-                )
-
-        thread = Thread(self.bot.threads, recipient)
-        self.bot.threads.cache[recipient.id] = thread
-
-        view = ConfirmView(bot=self.bot, user=recipient, timeout=20.0)
-        view.message = await interaction.followup.send(
-            embed=discord.Embed(
-                title=self.bot.config["confirm_thread_creation_title"],
-                description=self.bot.config["confirm_thread_response"],
-                color=self.bot.main_color,
-            ),
-            view=view,
-            ephemeral=True,
-        )
-
-        await view.wait()
-
-        if not view.value:
-            thread.cancelled = True
-
+        thread = await self.bot.threads.create(recipient, creator=recipient, category=category)
         if thread.cancelled:
-            del self.bot.threads.cache[recipient.id]
-            return thread
+            return None
 
         embed = discord.Embed(
             title=self.bot.config["thread_creation_contact_title"],
@@ -135,9 +98,7 @@ class ContactManager:
             color=self.bot.main_color,
         )
         embed.set_footer(text=f"{recipient}", icon_url=recipient.display_avatar.url)
-        message = await recipient.send(embed=embed)
-
-        self.bot.loop.create_task(thread.setup(creator=recipient, category=category, initial_message=message))
+        await recipient.send(embed=embed)
         return thread
 
 
@@ -449,7 +410,7 @@ class FeedbackManager:
             thread_channel_id=thread.channel.id if thread else None,
         )
         view = FeedbackView(user, self.cog, feedback=feedback, thread=thread)
-        view.message = feedback.message = message = await user.send(embed=embed, view=view)
+        view.message = feedback.message = await user.send(embed=embed, view=view)
         feedback.resolve_runtime()
         self.add(feedback)
         await self.cog.config.update()
