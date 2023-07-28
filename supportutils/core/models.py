@@ -96,7 +96,7 @@ class ContactManager:
                 color=self.bot.error_color,
                 description="Something went wrong. A thread for you already exists.",
             )
-            await interaction.followup.send(embed=embed, ephemeral=True, delete_after=10)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         thread = Thread(self.bot.threads, recipient)
