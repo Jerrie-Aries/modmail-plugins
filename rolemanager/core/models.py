@@ -12,6 +12,8 @@ from .views import Button, ReactionRoleView
 
 
 if TYPE_CHECKING:
+    from bot import ModmailBot
+
     from ..rolemanager import RoleManager
     from .types import AutoRoleConfigPayload, ReactRolePayload, ReactRoleConfigPayload
 
@@ -242,7 +244,7 @@ class ReactionRole:
         """
 
         channel_id = data.pop("channel")
-        channel = manager.cog.bot.get_channel(channel_id)
+        channel = manager.bot.get_channel(channel_id)
         if channel is None:
             raise ValueError(f"Channel with ID {channel_id} not found.")
         message = discord.PartialMessage(id=data.pop("message"), channel=channel)
@@ -265,7 +267,7 @@ class ReactionRole:
         instance.binds = binds
         if trigger_type == TriggerType.INTERACTION:
             instance.view = ReactionRoleView(manager.cog, message, model=instance)
-            manager.cog.bot.add_view(instance.view, message_id=message.id)
+            manager.bot.add_view(instance.view, message_id=message.id)
         return instance
 
     def new_bind(self) -> Bind:
@@ -306,7 +308,7 @@ class ReactionRole:
         return ret
 
     async def handle_interaction(self, interaction: discord.Interaction, button: Button) -> None:
-        bot = self.manager.cog.bot
+        bot = self.manager.bot
         embed = discord.Embed(color=bot.error_color)
         if not self.manager.is_enabled():
             embed.description = "Reaction roles feature is currently disabled."
@@ -346,7 +348,7 @@ class ReactionRole:
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def handle_reaction(self, payload: discord.RawReactionActionEvent) -> None:
-        guild = self.manager.cog.bot.get_guild(payload.guild_id)
+        guild = self.manager.bot.get_guild(payload.guild_id)
         member = payload.member or guild.get_member(payload.user_id)
         if member is None or member.bot or not guild.me.guild_permissions.manage_roles:
             return
@@ -384,6 +386,7 @@ class ReactionRoleManager:
 
     def __init__(self, cog: RoleManager, *, data: ReactRoleConfigPayload):
         self.cog: RoleManager = cog
+        self.bot: ModmailBot = cog.bot
         self._enable: bool = data.pop("enable", True)
         self.entries: Set[ReactionRole] = set()
 
