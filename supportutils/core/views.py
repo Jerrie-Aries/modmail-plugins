@@ -137,7 +137,7 @@ class ContactView(BaseView):
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
         self.select_options = self.manager.config["select"]["options"]
-        self._in_progress = set()
+        self._temp_cached_users = set()
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -162,7 +162,7 @@ class ContactView(BaseView):
         Entry point when a user made interaction on this view's components.
         """
         user = interaction.user
-        if user.id in self._in_progress or self.bot.guild.get_member(user.id) is None:
+        if user.id in self._temp_cached_users or self.bot.guild.get_member(user.id) is None:
             return False
         thread = self.bot.threads.cache.get(user.id)
         embed = discord.Embed(color=self.bot.error_color)
@@ -203,7 +203,7 @@ class ContactView(BaseView):
         Thread creation and sending response will be done from here.
         """
         user = interaction.user
-        self._in_progress.add(user.id)
+        self._temp_cached_users.add(user.id)
         category = None
         if self.select_options:
             view = BaseView(self.cog, timeout=20)
@@ -259,11 +259,11 @@ class ContactView(BaseView):
         await view.wait()
 
         if not view.value:
-            self._in_progress.remove(user.id)
+            self._temp_cached_users.remove(user.id)
             return
 
         await self.manager.create_thread(user, category=category, interaction=interaction)
-        self._in_progress.remove(user.id)
+        self._temp_cached_users.remove(user.id)
 
     async def force_stop(self) -> None:
         """
