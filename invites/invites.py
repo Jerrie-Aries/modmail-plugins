@@ -4,7 +4,7 @@ import json
 
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, TypedDict, TYPE_CHECKING
+from typing import Dict, List, Optional, Set, TypedDict, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -89,20 +89,11 @@ class Invites(commands.Cog):
         config = Config(self, self.db)
         config.defaults = {str(guild.id): config.copy(self.default_config) for guild in self.bot.guilds}
         await config.fetch()
-        update = False
-        for guild in self.bot.guilds:
-            gconfig = config.get(str(guild.id))
-            if gconfig is None:
-                gconfig = {k: v for k, v in self.default_config.items()}
-                update = True
-            config.cache[str(guild.id)] = gconfig
-
-        if update:
-            await config.update()
 
         self.config = config
 
-    def guild_config(self, guild_id: str) -> GuildConfigData:
+    def guild_config(self, guild_id: Union[int, str]) -> GuildConfigData:
+        guild_id = str(guild_id)
         config = self.config.get(guild_id)
         if config is None:
             config = {k: v for k, v in self.default_config.items()}
@@ -114,7 +105,7 @@ class Invites(commands.Cog):
         await self.bot.wait_until_ready()
 
         for guild in self.bot.guilds:
-            config = self.guild_config(str(guild.id))
+            config = self.guild_config(guild.id)
             if not config["enable"]:
                 continue
 
@@ -296,7 +287,7 @@ class Invites(commands.Cog):
 
         Run this command without argument to see current set configurations.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
 
         channel = ctx.guild.get_channel(int(config["channel"]))
         embed = discord.Embed(
@@ -326,7 +317,7 @@ class Invites(commands.Cog):
 
         Leave `channel` empty to see the current set channel.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         if channel is None:
             channel = self.bot.get_channel(int(config.get("channel")))
             if channel:
@@ -356,7 +347,7 @@ class Invites(commands.Cog):
 
         Leave `mode` empty to see the current set value.
         """
-        config = self.guild_config(str(ctx.guild.id))
+        config = self.guild_config(ctx.guild.id)
         if mode is None:
             mode = config.get("enable")
             description = (
@@ -380,7 +371,8 @@ class Invites(commands.Cog):
         """
         Reset the configuration settings to default value.
         """
-        self.config[str(ctx.guild.id)] = {k: v for k, v in self.default_config.items()}
+        guild_id = str(ctx.guild.id)
+        self.config[guild_id] = {k: v for k, v in self.default_config.items()}
         await self.config.update()
 
         embed = discord.Embed(
@@ -530,7 +522,7 @@ class Invites(commands.Cog):
 
     @commands.Cog.listener()
     async def on_invite_create(self, invite: discord.Invite):
-        config = self.guild_config(str(invite.guild.id))
+        config = self.guild_config(invite.guild.id)
         if not config["enable"]:
             return
 
@@ -554,7 +546,7 @@ class Invites(commands.Cog):
         embed : discord.Embed
             The embed object.
         """
-        config = self.guild_config(str(channel.guild.id))
+        config = self.guild_config(channel.guild.id)
         wh_url = config.get("webhook")
         if wh_url is None:
             webhook = await self._get_or_create_webhook(channel)
@@ -579,7 +571,7 @@ class Invites(commands.Cog):
         if member.bot:
             return
 
-        config = self.guild_config(str(member.guild.id))
+        config = self.guild_config(member.guild.id)
 
         if not config["enable"]:
             return
@@ -653,7 +645,7 @@ class Invites(commands.Cog):
         if member.bot:
             return
 
-        config = self.guild_config(str(member.guild.id))
+        config = self.guild_config(member.guild.id)
 
         if not config["enable"]:
             return
