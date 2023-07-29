@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable, List, Optional, Union, TYPE_CHECKIN
 import discord
 from discord import ButtonStyle, Interaction, ui
 from discord.ext import commands
-from discord.ext.modmail_utils import Limit
+from discord.ext.modmail_utils import ConfirmView, Limit
 from discord.ext.modmail_utils.ui import Button, Modal as uiModal, TextInput, View
 from discord.utils import MISSING
 
@@ -137,6 +137,7 @@ class ContactView(BaseView):
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
         self.select_options = self.manager.config["select"]["options"]
+        self._temp_cached_users = set()
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -161,15 +162,14 @@ class ContactView(BaseView):
         Entry point when a user made interaction on this view's components.
         """
         user = interaction.user
-        if self.bot.guild.get_member(user.id) is None:
-            await interaction.response.defer()
+        if user.id in self._temp_cached_users or self.bot.guild.get_member(user.id) is None:
             return False
-        exists = await self.bot.threads.find(recipient=user)
+        thread = self.bot.threads.cache.get(user.id)
         embed = discord.Embed(color=self.bot.error_color)
-        if exists:
+        if thread:
             content = "A thread for you already exists"
-            if exists.channel:
-                content += f" in {exists.channel.mention}"
+            if thread.channel:
+                content += f" in {thread.channel.mention}"
             content += "."
             embed.description = content
         elif await self.bot.is_blocked(user):
@@ -192,42 +192,47 @@ class ContactView(BaseView):
         select: DropdownMenu,
         option: discord.SelectOption,
     ) -> None:
-        await interaction.response.defer()
         view = select.view
-        view.inputs["contact_dropdown"] = option
+        view.inputs["contact_option"] = option
+        view.inputs["interaction"] = interaction
         view.stop()
-        await view.message.delete()
 
     async def handle_interaction(self, interaction: Interaction, button: Button) -> None:
         """
-        Entry point for interactions on this view after all check has passed.
+        Entry point for interactions on this view after all checks have passed.
         Thread creation and sending response will be done from here.
         """
-        await interaction.response.defer()
         user = interaction.user
-
+        self._temp_cached_users.add(user.id)
         category = None
         if self.select_options:
-            view = BaseView(self.cog)
+            view = BaseView(self.cog, timeout=20)
             options = []
             for data in self.select_options:
-                options.append(
-                    discord.SelectOption(
-                        emoji=data.get("emoji"), label=data["label"], description=data.get("description")
-                    )
+                option = discord.SelectOption(
+                    emoji=data.get("emoji"), label=data["label"], description=data.get("description")
                 )
-            view.add_item(
-                DropdownMenu(
-                    options=options,
-                    placeholder=self.manager.config["select"].get("placeholder"),
-                    callback=self._dropdown_callback,
-                )
+                options.append(option)
+            dropdown = DropdownMenu(
+                options=options,
+                placeholder=self.manager.config["select"].get("placeholder"),
+                callback=self._dropdown_callback,
             )
-            view.message = await interaction.followup.send(view=view, ephemeral=True)
+            view.add_item(dropdown)
+            await interaction.response.send_message(view=view, ephemeral=True)
+            # InteractionResponse.send_message() returns None
+            # starting discord.py v2.1, it will have the delete_after kwarg
+            # as of now we will have to fetch the response message we just sent to be able to delete it later
+            message = await interaction.original_response()
+
             await view.wait()
+            await message.delete()
+
             if not view.inputs:
                 return
-            option = view.inputs["contact_dropdown"]
+
+            option = view.inputs["contact_option"]
+            interaction = view.inputs["interaction"]
             category_id = None
             for data in self.select_options:
                 if data.get("label") == option.label:
@@ -240,22 +245,25 @@ class ContactView(BaseView):
                 # just log, the thread will be created in main category
                 logger.error(f"Category with ID {category_id} not found.")
 
-        thread = await self.manager.create(
-            recipient=user,
-            category=category,
-            interaction=interaction,
+        view = ConfirmView(bot=self.bot, user=user, timeout=20.0)
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title=self.bot.config["confirm_thread_creation_title"],
+                description=self.bot.config["confirm_thread_response"],
+                color=self.bot.main_color,
+            ),
+            view=view,
+            ephemeral=True,
         )
+        view.message = await interaction.original_response()
+        await view.wait()
 
-        if thread.cancelled:
+        if not view.value:
+            self._temp_cached_users.remove(user.id)
             return
 
-        await thread.wait_until_ready()
-        embed = discord.Embed(
-            title="Created Thread",
-            description=f"Thread started by {user.mention}.",
-            color=self.bot.main_color,
-        )
-        await thread.channel.send(embed=embed)
+        await self.manager.create_thread(user, category=category, interaction=interaction)
+        self._temp_cached_users.remove(user.id)
 
     async def force_stop(self) -> None:
         """
