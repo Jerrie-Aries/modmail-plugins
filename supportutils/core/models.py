@@ -141,7 +141,7 @@ class Feedback:
         self.cog: SupportUtility = manager.cog
         self.manager: FeedbackManager = manager
         self.user: discord.Member = user
-        self.message: Union[discord.Message, discord.PartialMessage] = message
+        self._message: Union[discord.Message, discord.PartialMessage] = message
         self.thread_channel_id: Optional[int] = thread_channel_id
         self.started: float = started
         self.ends: float = ends
@@ -163,13 +163,23 @@ class Feedback:
             return False
         return self.user.id == other.user.id
 
-    def resolve_runtime(self) -> None:
+    @property
+    def message(self) -> Union[discord.Message, discord.PartialMessage]:
+        """Returns the feedback prompt message object that was sent to user DMs."""
+        return self._message
+
+    @message.setter
+    def message(self, item: Union[discord.Message, discord.PartialMessage]) -> None:
         """
-        A helper to resolve and assign `.started` and `.ends` attributes.
+        Set the `.message` attribute. Values for `.started` and `.ends` attributes will also be automatically
+        set from here.
         """
-        if not self.message:
-            raise TypeError("message attribute is not set.")
-        self.started = self.message.created_at.timestamp()
+        if not isinstance(item, (discord.Message, discord.PartialMessage)):
+            raise TypeError(
+                f"Invalid type of item received. Expected Message or PartialMessage, got {type(item).__name__} instead."
+            )
+        self._message = item
+        self.started = item.created_at.timestamp()
         self.ends = self.started + ends_seconds
 
     @classmethod
@@ -430,7 +440,6 @@ class FeedbackManager:
         )
         view = FeedbackView(user, self.cog, feedback=feedback, thread=thread)
         view.message = feedback.message = await user.send(embed=embed, view=view)
-        feedback.resolve_runtime()
         self.add(feedback)
         await self.cog.config.update()
         self.bot.loop.create_task(feedback.run())
