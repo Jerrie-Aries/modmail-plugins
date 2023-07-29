@@ -306,25 +306,31 @@ class ReactionRole:
         return ret
 
     async def handle_interaction(self, interaction: discord.Interaction, button: Button) -> None:
-        await interaction.response.defer()
+        bot = self.manager.cog.bot
+        embed = discord.Embed(color=bot.error_color)
         if not self.manager.is_enabled():
-            embed = discord.Embed(
-                color=self.manager.cog.bot.error_color,
-                description="Reaction roles feature is currently disabled.",
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            embed.description = "Reaction roles feature is currently disabled."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         if self.trigger_type != TriggerType.INTERACTION:
+            embed.description = (
+                f"Wrong trigger type was set. Expected `{TriggerType.INTERACTION.value}`, "
+                f"got `{self.trigger_type.value}` instead."
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         member = self.channel.guild.get_member(interaction.user.id)
         bind = self.get_bind_from(button=button)
         if bind is None:
+            embed.description = "Something went wrong! No role was linked to that button."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
+        del embed
 
         role = bind.role
-        embed = discord.Embed(color=self.manager.cog.bot.main_color)
+        embed = discord.Embed(color=bot.main_color)
         if role not in member.roles:
             await member.add_roles(role, reason="Reaction role.")
             embed.description = f"Role {role.mention} has been added to you.\n\n"
@@ -333,11 +339,11 @@ class ReactionRole:
                 if to_remove:
                     await member.remove_roles(*to_remove, reason="Reaction role.")
                     embed.description += "__**Removed:**__\n" + "\n".join(r.mention for r in to_remove)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await member.remove_roles(role, reason="Reaction role.")
             embed.description = f"Role {role.mention} is now removed from you."
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def handle_reaction(self, payload: discord.RawReactionActionEvent) -> None:
         guild = self.manager.cog.bot.get_guild(payload.guild_id)
