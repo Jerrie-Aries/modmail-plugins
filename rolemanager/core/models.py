@@ -184,6 +184,8 @@ class ReactionRole:
 
     Parameters
     ----------
+    manager : ReactionRoleManager
+        The reaction role manager.
     message : Union[discord.PartialMessage, discord.Message]
         The message where the reactions are attached to.
     trigger_type: TriggerType
@@ -197,18 +199,20 @@ class ReactionRole:
 
     def __init__(
         self,
+        manager: ReactionRoleManager,
         *,
         message: Union[discord.PartialMessage, discord.Message] = MISSING,
         binds: List[Bind] = MISSING,
         trigger_type: TriggerType = TriggerType.REACTION,
         rules: ReactRules = ReactRules.NORMAL,
     ):
+        self.manager: ReactionRoleManager = manager
+        self.bot: ModmailBot = manager.bot
         self.message: Union[discord.PartialMessage, discord.Message] = message
         self.binds: List[Bind] = binds if binds is not MISSING else []
         self.trigger_type: TriggerType = trigger_type
         self.rules: ReactRules = rules
-        self.manager: ReactionRoleManager = MISSING  # set from ReactionRoleManager.add
-        self.view: ReactionRoleView = MISSING
+        self.view: ReactionRoleView = MISSING  # set in ReactionRoleView
 
     def __hash__(self):
         return hash((self.message.id, self.channel.id))
@@ -242,15 +246,16 @@ class ReactionRole:
         ValueError
             Channel with provided ID from the data not found.
         """
-
+        bot = manager.bot
         channel_id = data.pop("channel")
-        channel = manager.bot.get_channel(channel_id)
+        channel = bot.get_channel(channel_id)
         if channel is None:
             raise ValueError(f"Channel with ID {channel_id} not found.")
         message = discord.PartialMessage(id=data.pop("message"), channel=channel)
         trigger_type = TriggerType.from_value(data.pop("type", TriggerType.REACTION.value))
 
         instance = cls(
+            manager,
             message=message,
             trigger_type=trigger_type,
             rules=ReactRules.from_value(data.pop("rules")),
@@ -266,8 +271,8 @@ class ReactionRole:
 
         instance.binds = binds
         if trigger_type == TriggerType.INTERACTION:
-            instance.view = ReactionRoleView(manager.cog, message, model=instance)
-            manager.bot.add_view(instance.view, message_id=message.id)
+            view = ReactionRoleView(manager.cog, message, model=instance)
+            bot.add_view(view, message_id=message.id)
         return instance
 
     def new_bind(self) -> Bind:
@@ -308,8 +313,7 @@ class ReactionRole:
         return ret
 
     async def handle_interaction(self, interaction: discord.Interaction, button: Button) -> None:
-        bot = self.manager.bot
-        embed = discord.Embed(color=bot.error_color)
+        embed = discord.Embed(color=self.bot.error_color)
         if not self.manager.is_enabled():
             embed.description = "Reaction roles feature is currently disabled."
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -332,7 +336,7 @@ class ReactionRole:
         del embed
 
         role = bind.role
-        embed = discord.Embed(color=bot.main_color)
+        embed = discord.Embed(color=self.bot.main_color)
         if role not in member.roles:
             await member.add_roles(role, reason="Reaction role.")
             embed.description = f"Role {role.mention} has been added to you.\n\n"
@@ -348,7 +352,7 @@ class ReactionRole:
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def handle_reaction(self, payload: discord.RawReactionActionEvent) -> None:
-        guild = self.manager.bot.get_guild(payload.guild_id)
+        guild = self.bot.get_guild(payload.guild_id)
         member = payload.member or guild.get_member(payload.user_id)
         if member is None or member.bot or not guild.me.guild_permissions.manage_roles:
             return
@@ -426,15 +430,13 @@ class ReactionRoleManager:
 
     def add(self, instance: ReactionRole) -> None:
         """
-        Adds a ReactionRole object to entries. Internally this will also assign
-        the `.manager` attribute to the `ReactionRole` object.
+        Adds a ReactionRole object to entries.
         """
         if not isinstance(instance, ReactionRole):
             raise TypeError(
                 f"Invalid type. Expected type ReactionRole, got {instance.__class__.__name__} instead."
             )
         self.entries.add(instance)
-        instance.manager = self
 
     def remove(self, message_id: int) -> None:
         """
@@ -511,7 +513,7 @@ class ReactionRoleManager:
         """
         if binds is None:
             binds = []
-        instance = ReactionRole(message=message, trigger_type=trigger_type, binds=binds, rules=rules)
+        instance = ReactionRole(self, message=message, trigger_type=trigger_type, binds=binds, rules=rules)
         if add:
             self.add(instance)
         return instance
