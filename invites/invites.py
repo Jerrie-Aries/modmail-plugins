@@ -4,7 +4,7 @@ import json
 
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, TypedDict, Union, TYPE_CHECKING
+from typing import Optional, TypedDict, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -16,6 +16,8 @@ from core.paginator import EmbedPaginatorSession
 
 from .core.models import InviteTracker
 
+# temp for migration
+from .core.migration import db_migration
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -84,6 +86,10 @@ class Invites(commands.Cog):
         await self.populate_config()
         await self.tracker.populate_invites()
 
+        # temp for migration
+        if not self.config.get("migrated", False):
+            await db_migration(self)
+
     async def populate_config(self) -> None:
         """
         Populates the config cache with data from database.
@@ -98,7 +104,7 @@ class Invites(commands.Cog):
         guild_id = str(guild_id)
         config = self.config.get(guild_id)
         if config is None:
-            config = {k: v for k, v in self.default_config.items()}
+            config = self.config.copy(self.default_config)
             self.config[guild_id] = config
 
         return config
@@ -139,6 +145,20 @@ class Invites(commands.Cog):
 
         return wh
 
+    @staticmethod
+    def _resolve_invite_expire(invite: discord.Invite, fmt: bool = True) -> Optional[Union[datetime, str]]:
+        if invite.max_age:
+            expires_ts = datetime.timestamp(invite.created_at) + invite.max_age
+            expires = datetime.fromtimestamp(expires_ts)
+            if fmt:
+                expires = discord.utils.format_dt(expires, "F")
+        else:
+            expires = None
+
+        if fmt:
+            return str(expires)
+        return expires
+
     @commands.group(aliases=["invite"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def invites(self, ctx: commands.Context):
@@ -169,12 +189,12 @@ class Invites(commands.Cog):
         )
 
         embed.add_field(
-            name="Channel",
+            name="Channel:",
             value=f'{getattr(channel, "mention", "`None`")}',
             inline=False,
         )
-        embed.add_field(name="Enabled", value=f"`{config['enable']}`", inline=False)
-        embed.add_field(name="Webhook URL", value=f'`{config["webhook"]}`', inline=False)
+        embed.add_field(name="Enabled:", value=f"`{config['enable']}`", inline=False)
+        embed.add_field(name="Webhook URL:", value=f'`{config["webhook"]}`', inline=False)
         await ctx.send(embed=embed)
 
     @invites_config.command(name="channel")
@@ -235,7 +255,7 @@ class Invites(commands.Cog):
         await ctx.send(embed=embed)
 
         if mode:
-            self.tracker.invite_cache[ctx.guild.id] = {inv for inv in await ctx.guild.invites()}
+            self.tracker.invite_cache[ctx.guild.id] = set(await ctx.guild.invites())
 
     @invites_config.command(name="reset")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -244,16 +264,16 @@ class Invites(commands.Cog):
         Reset the configuration settings to default value.
         """
         guild_id = str(ctx.guild.id)
-        self.config[guild_id] = {k: v for k, v in self.default_config.items()}
+        self.config[guild_id] = self.config.copy(self.default_config)
         await self.config.update()
 
         embed = discord.Embed(
             description="Configuration settings has been reset to default.",
             color=self.bot.main_color,
         )
-        embed.add_field(name="Channel", value="`None`", inline=False)
-        embed.add_field(name="Enabled", value="`False`", inline=False)
-        embed.add_field(name="Webhook URL", value="`None`", inline=False)
+        embed.add_field(name="Channel:", value="`None`", inline=False)
+        embed.add_field(name="Enabled:", value="`False`", inline=False)
+        embed.add_field(name="Webhook URL:", value="`None`", inline=False)
         await ctx.send(embed=embed)
 
     @invites.command(name="refresh")
@@ -296,7 +316,7 @@ class Invites(commands.Cog):
             embed = embeds[0]
 
             for invite in reversed(sorted(invites_list, key=lambda invite: invite.uses)):
-                line = f"{invite.uses} - {invite.inviter.name}#{invite.inviter.discriminator} - `{invite.code}`\n"
+                line = f"{invite.uses} - {invite.inviter} (`{invite.inviter.id}`) - {invite.code}\n"
                 if entries == 25:
                     embed = discord.Embed(
                         title="List of Invites (Continued)",
@@ -325,8 +345,8 @@ class Invites(commands.Cog):
 
         fetched_invites = await ctx.guild.invites()
         embed.add_field(
-            name="Inviter:",
-            value=f"`{invite.inviter}`",
+            name="Created by:",
+            value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)",
         )
         embed.add_field(name="Channel:", value=invite.channel.mention)
         if invite in fetched_invites:
@@ -352,20 +372,6 @@ class Invites(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @staticmethod
-    def _resolve_invite_expire(invite: discord.Invite, fmt: bool = True) -> Optional[Union[datetime, str]]:
-        if invite.max_age:
-            expires_ts = datetime.timestamp(invite.created_at) + invite.max_age
-            expires = datetime.fromtimestamp(expires_ts)
-            if fmt:
-                expires = discord.utils.format_dt(expires, "F")
-        else:
-            expires = None
-
-        if fmt:
-            return str(expires)
-        return expires
-
     @invites.command(name="delete", aliases=["revoke"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def invites_delete(self, ctx: commands.Context, *, invite: discord.Invite):
@@ -381,7 +387,7 @@ class Invites(commands.Cog):
             color=discord.Color.blurple(),
             description=f"Deleted invite code: `{invite.code}`",
         )
-        embed.add_field(name="Inviter:", value=f"`{invite.inviter}`")
+        embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
         embed.add_field(name="Channel:", value=invite.channel.mention)
 
         expires = self._resolve_invite_expire(invite)
@@ -405,7 +411,7 @@ class Invites(commands.Cog):
 
         cached_invites = self.tracker.invite_cache.get(invite.guild.id)
         if cached_invites is None:
-            cached_invites = {inv for inv in await invite.guild.invites()}
+            cached_invites = set(await invite.guild.invites())
         else:
             cached_invites.update({invite})
         self.tracker.invite_cache[invite.guild.id] = cached_invites
@@ -420,16 +426,16 @@ class Invites(commands.Cog):
             color=discord.Color.blue(),
             description=invite.url,
         )
-        embed.add_field(name="Created by", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
-        embed.add_field(name="Channel", value=str(getattr(invite.channel, "mention", None)))
+        embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
+        embed.add_field(name="Channel:", value=str(getattr(invite.channel, "mention", None)))
         created = discord.utils.format_dt(invite.created_at, "F")
-        embed.add_field(name="Created at", value=created)
+        embed.add_field(name="Created at:", value=created)
 
         expires = self._resolve_invite_expire(invite)
-        embed.add_field(name="Expires at", value=expires)
+        embed.add_field(name="Expires at:", value=expires)
 
         max_usage = str(invite.max_uses) if invite.max_uses else "Unlimited"
-        embed.add_field(name="Max usage", value=max_usage)
+        embed.add_field(name="Max usage:", value=max_usage)
         await self.send_log_embed(channel, embed)
 
     async def send_log_embed(self, channel: discord.TextChannel, embed: discord.Embed) -> None:
@@ -516,7 +522,7 @@ class Invites(commands.Cog):
                     embed.add_field(name="Vanity:", value="True")
                 else:
                     embed.add_field(
-                        name="Invite created:",
+                        name="Invite created at:",
                         value=f"{discord.utils.format_dt(invite.created_at, 'F')}",
                     )
 
