@@ -75,12 +75,14 @@ async def db_migration(cog) -> None:
     try:
         await db.delete_many({"_id": {"$ne": "config"}})
     except Exception as exc:
-        logger.error(f"{type(exc).__name__}: {str(exc)}", exc_info=True)
+        logger.error(f"{type(exc).__name__}: {str(exc)}")
+        raise exc
 
     try:
         await db.insert_many(to_insert.values())
     except Exception as exc:
-        logger.error(f"{type(exc).__name__}: {str(exc)}", exc_info=True)
+        logger.error(f"{type(exc).__name__}: {str(exc)}")
+        raise exc
 
     cog.config.set("migrated", True)
     await cog.config.update()
