@@ -37,6 +37,9 @@ async def db_migration(cog) -> None:
     search_query = {"$and": [{"user_id": {"$exists": True}}, {"inviter": {"$exists": True}}]}
     count = await db.count_documents(search_query)
     if not count:
+        # no old user data, we consider it as migrated
+        cog.config.set("migrated", True)
+        await cog.config.update()
         return
 
     to_insert = {}
