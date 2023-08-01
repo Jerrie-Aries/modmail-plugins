@@ -145,20 +145,6 @@ class Invites(commands.Cog):
 
         return wh
 
-    @staticmethod
-    def _resolve_invite_expire(invite: discord.Invite, fmt: bool = True) -> Optional[Union[datetime, str]]:
-        if invite.max_age:
-            expires_ts = datetime.timestamp(invite.created_at) + invite.max_age
-            expires = datetime.fromtimestamp(expires_ts)
-            if fmt:
-                expires = discord.utils.format_dt(expires, "F")
-        else:
-            expires = None
-
-        if fmt:
-            return str(expires)
-        return expires
-
     @commands.group(aliases=["invite"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def invites(self, ctx: commands.Context):
@@ -357,11 +343,13 @@ class Invites(commands.Cog):
                     local = True
                     break
             if local:
-                expires = self._resolve_invite_expire(invite)
+                expires = invite.expires_at
+                if expires:
+                    expires = discord.utils.format_dt(expires, "F")
                 created = discord.utils.format_dt(invite.created_at, "F")
                 embed.add_field(name="Uses:", value=invite.uses)
                 embed.add_field(name="Created at:", value=created)
-                embed.add_field(name="Expires at:", value=expires)
+                embed.add_field(name="Expires at:", value=str(expires))
         else:
             embed.description += f"**Member count:**\n{invite.approximate_member_count}\n\n"
 
@@ -390,12 +378,14 @@ class Invites(commands.Cog):
         embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
         embed.add_field(name="Channel:", value=invite.channel.mention)
 
-        expires = self._resolve_invite_expire(invite)
+        expires = invite.expires_at
+        if expires:
+            expires = discord.utils.format_dt(expires, "F")
         created = discord.utils.format_dt(invite.created_at, "F")
 
         embed.add_field(name="Uses:", value=invite.uses)
         embed.add_field(name="Created at:", value=created)
-        embed.add_field(name="Expires at:", value=expires)
+        embed.add_field(name="Expires at:", value=str(expires))
         try:
             await invite.delete()
         except discord.Forbidden:
@@ -431,8 +421,10 @@ class Invites(commands.Cog):
         created = discord.utils.format_dt(invite.created_at, "F")
         embed.add_field(name="Created at:", value=created)
 
-        expires = self._resolve_invite_expire(invite)
-        embed.add_field(name="Expires at:", value=expires)
+        expires = invite.expires_at
+        if expires:
+            expires = discord.utils.format_dt(expires, "F")
+        embed.add_field(name="Expires at:", value=str(expires))
 
         max_usage = str(invite.max_uses) if invite.max_uses else "Unlimited"
         embed.add_field(name="Max usage:", value=max_usage)
@@ -526,8 +518,10 @@ class Invites(commands.Cog):
                         value=f"{discord.utils.format_dt(invite.created_at, 'F')}",
                     )
 
-                expires = self._resolve_invite_expire(invite)
-                embed.add_field(name="Invite expires:", value=expires)
+                expires = invite.expires_at
+                if expires:
+                    expires = discord.utils.format_dt(expires, "F")
+                embed.add_field(name="Invite expires:", value=str(expires))
                 embed.add_field(name="Invite uses:", value=f"{invite.uses}")
 
             else:
