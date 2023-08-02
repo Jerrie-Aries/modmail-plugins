@@ -60,7 +60,7 @@ class InviteTracker:
             Member object.
         """
         guild = member.guild
-        new_invs = {i for i in await guild.invites()}
+        new_invs = set(await guild.invites())
         pred_invs = []
         found = False
 
@@ -117,6 +117,7 @@ class InviteTracker:
 
     @staticmethod
     def invite_to_dict(invite: discord.Invite) -> Dict[str, Any]:
+        """Scheme of invite data."""
         created = invite.created_at.timestamp() if invite.created_at else invite.created_at
         expires = invite.expires_at.timestamp() if invite.expires_at else invite.expires_at
         inv_data = {
@@ -149,7 +150,7 @@ class InviteTracker:
         Parameters
         ----------
         member : discord.Member
-            Member object, belongs to member that newly joined the guild.
+            Member object.
         invite : discord.Invite
             Invite object that was retrieved from `get_used_invite` method.
         """
@@ -176,18 +177,34 @@ class InviteTracker:
         """
         await self.cog.db.find_one_and_update({"_id": str(member.id)}, {"$set": data}, upsert=True)
 
-    async def remove_user_data(self, member: discord.Member) -> None:
+    async def remove_user_data(self, user_id: int) -> None:
         """
         Removes user and invite data from the database.
 
+        Unlike `.save_user_data` and `update_user_data`, this method only takes user ID
+        as parameter just in case we do not have `discord.Member` object to pass.
+
         Parameters
         ----------
-        member : discord.Member
-            Member object, belongs to member that leaves the guild.
+        user_id : int
+            The ID of user to delete the data.
         """
-        await self.cog.db.find_one_and_delete({"_id": str(member.id)})
+        await self.cog.db.find_one_and_delete({"_id": str(user_id)})
 
     async def get_or_fetch_inviter(self, user_id: int) -> Optional[discord.User]:
+        """
+        A helper to aid with resolving user who created the invite.
+
+        The lookup strategy, in order:
+        - Custom cache (._fetched_users)
+        - Bot's internal cache
+        - Fetch from discord
+
+        Parameters
+        ----------
+        user_id : int
+            The ID of user to look up.
+        """
         user = self._fetched_users.get(user_id)
         if isinstance(user, (discord.User, discord.Member)):
             return user
@@ -198,6 +215,7 @@ class InviteTracker:
             try:
                 user = await self.bot.fetch_user(user_id)
             except discord.HTTPException:
+                # prabably deleted account, so we store as MISSING
                 self._fetched_users[user_id] = MISSING
                 return None
         self._fetched_users[user_id] = user

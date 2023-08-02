@@ -500,7 +500,9 @@ class Invites(commands.Cog):
                     embed.add_field(name="Vanity:", value="True")
                 else:
                     inviter = (
-                        f"{invite.inviter.name}\n(`{invite.inviter.id}`)" if invite.inviter else "`None`"
+                        f"Name: {invite.inviter.name}\nID: `{invite.inviter.id}`"
+                        if invite.inviter
+                        else "`None`"
                     )
                     embed.add_field(name="Invite created by:", value=inviter)
                     embed.add_field(
@@ -512,7 +514,7 @@ class Invites(commands.Cog):
             else:
                 embed.description += "\n⚠️ *More than 1 used invites are predicted.*\n"
         else:
-            embed.description += "\n⚠️ *Something went wrong, could not get invite info.*\n"
+            embed.description += "\n⚠️ *Something went wrong! Invite info could not be resolved.*\n"
         await self.send_log_embed(channel, embed)
 
         if len(pred_invs) == 1:
@@ -552,14 +554,15 @@ class Invites(commands.Cog):
             invdata = user_data["guilds"].pop(str(member.guild.id))
             embed.add_field(name="Invite code:", value=invdata["code"])
             embed.add_field(name="Invite channel:", value=f"<#{invdata['channel_id']}>")
-            inviter = await self.tracker.get_or_fetch_inviter(int(invdata["inviter_id"]))
+            inviter_id = invdata["inviter_id"]
+            inviter = await self.tracker.get_or_fetch_inviter(int(inviter_id))
             if inviter:
-                inviter = f"{inviter.name}\n(`{inviter.id}`)"
+                inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
             else:
-                inviter = f"(`{invdata['inviter_id']}`)"
+                inviter = f"(`{inviter_id}`)"
             embed.add_field(name="Invite created by:", value=inviter)
             if not user_data["guilds"]:
-                await self.tracker.remove_user_data(member)
+                await self.tracker.remove_user_data(member.id)
             else:
                 await self.tracker.update_user_data(member, data=user_data)
         await self.send_log_embed(channel, embed)
