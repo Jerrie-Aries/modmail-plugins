@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 import discord
+from discord.utils import MISSING
 
 from core.models import getLogger
 
@@ -25,6 +26,7 @@ class InviteTracker:
         self.cog: Invites = cog
         self.invite_cache: Dict[int, Set[discord.Invite]] = {}
         self.vanity_invites: Dict[int, Optional[discord.Invite]] = {}
+        self._fetched_users: Dict[int, Any] = {}
 
     async def populate_invites(self) -> None:
         await self.bot.wait_until_ready()
@@ -35,7 +37,7 @@ class InviteTracker:
                 continue
 
             logger.debug("Caching invites for guild (%s).", guild.name)
-            self.invite_cache[guild.id] = {inv for inv in await guild.invites()}
+            self.invite_cache[guild.id] = set(await guild.invites())
 
             if "VANITY_URL" in guild.features:
                 vanity_inv = await guild.vanity_invite()
@@ -112,3 +114,91 @@ class InviteTracker:
 
         self.invite_cache[guild.id] = new_invs
         return pred_invs
+
+    @staticmethod
+    def invite_to_dict(invite: discord.Invite) -> Dict[str, Any]:
+        created = invite.created_at.timestamp() if invite.created_at else invite.created_at
+        expires = invite.expires_at.timestamp() if invite.expires_at else invite.expires_at
+        inv_data = {
+            "code": invite.code,
+            "inviter_id": str(invite.inviter.id) if invite.inviter else None,
+            "channel_id": str(invite.channel.id) if invite.channel else None,
+            "created_at": created,
+            "expires_at": expires,
+            "max_age": invite.max_age,
+            "max_uses": invite.max_uses,
+        }
+        return inv_data
+
+    async def get_user_data(self, member: discord.Member) -> Optional[Dict[str, Any]]:
+        """
+        Fetches user data from database. If the data does not exist, `None` will be returned.
+
+        Parameters
+        ----------
+        member : discord.Member
+            Member object.
+        """
+        data = await self.cog.db.find_one({"_id": str(member.id)})
+        return data
+
+    async def save_user_data(self, member: discord.Member, invite: List[discord.Invite]) -> None:
+        """
+        Saves user and invite data into the database.
+
+        Parameters
+        ----------
+        member : discord.Member
+            Member object, belongs to member that newly joined the guild.
+        invite : discord.Invite
+            Invite object that was retrieved from `get_used_invite` method.
+        """
+        user_data = {
+            f"guilds.{member.guild.id}": self.invite_to_dict(invite),
+        }
+
+        await self.cog.db.find_one_and_update(
+            {"_id": str(member.id)},
+            {"$set": user_data},
+            upsert=True,
+        )
+
+    async def update_user_data(self, member: discord.Member, *, data: Dict[str, Any]) -> None:
+        """
+        Updates user data with new data provided.
+
+        Parameters
+        ----------
+        member : discord.Member
+            Member object.
+        data : Dict[str, Any]
+            The new data to update.
+        """
+        await self.cog.db.find_one_and_update({"_id": str(member.id)}, {"$set": data}, upsert=True)
+
+    async def remove_user_data(self, member: discord.Member) -> None:
+        """
+        Removes user and invite data from the database.
+
+        Parameters
+        ----------
+        member : discord.Member
+            Member object, belongs to member that leaves the guild.
+        """
+        await self.cog.db.find_one_and_delete({"_id": str(member.id)})
+
+    async def get_or_fetch_inviter(self, user_id: int) -> Optional[discord.User]:
+        user = self._fetched_users.get(user_id)
+        if isinstance(user, (discord.User, discord.Member)):
+            return user
+        if user is MISSING:
+            return None
+        user = self.bot.get_user(user_id)
+        if not user:
+            try:
+                user = await self.bot.fetch_user(user_id)
+            except discord.HTTPException:
+                self._fetched_users[user_id] = MISSING
+                return None
+        self._fetched_users[user_id] = user
+        return user

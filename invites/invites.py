@@ -145,6 +145,12 @@ class Invites(commands.Cog):
 
         return wh
 
+    @staticmethod
+    def _string_fmt_dt(dt: Optional[datetime]) -> str:
+        if dt is None:
+            return str(dt)
+        return discord.utils.format_dt(dt, "F")
+
     @commands.group(aliases=["invite"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def invites(self, ctx: commands.Context):
@@ -343,13 +349,9 @@ class Invites(commands.Cog):
                     local = True
                     break
             if local:
-                expires = invite.expires_at
-                if expires:
-                    expires = discord.utils.format_dt(expires, "F")
-                created = discord.utils.format_dt(invite.created_at, "F")
                 embed.add_field(name="Uses:", value=invite.uses)
-                embed.add_field(name="Created at:", value=created)
-                embed.add_field(name="Expires at:", value=str(expires))
+                embed.add_field(name="Created at:", value=self._string_fmt_dt(invite.created_at))
+                embed.add_field(name="Expires at:", value=self._string_fmt_dt(invite.expires_at))
         else:
             embed.description += f"**Member count:**\n{invite.approximate_member_count}\n\n"
 
@@ -377,15 +379,9 @@ class Invites(commands.Cog):
         )
         embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
         embed.add_field(name="Channel:", value=invite.channel.mention)
-
-        expires = invite.expires_at
-        if expires:
-            expires = discord.utils.format_dt(expires, "F")
-        created = discord.utils.format_dt(invite.created_at, "F")
-
         embed.add_field(name="Uses:", value=invite.uses)
-        embed.add_field(name="Created at:", value=created)
-        embed.add_field(name="Expires at:", value=str(expires))
+        embed.add_field(name="Created at:", value=self._string_fmt_dt(invite.created_at))
+        embed.add_field(name="Expires at:", value=self._string_fmt_dt(invite.expires_at))
         try:
             await invite.delete()
         except discord.Forbidden:
@@ -418,13 +414,8 @@ class Invites(commands.Cog):
         )
         embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
         embed.add_field(name="Channel:", value=str(getattr(invite.channel, "mention", None)))
-        created = discord.utils.format_dt(invite.created_at, "F")
-        embed.add_field(name="Created at:", value=created)
-
-        expires = invite.expires_at
-        if expires:
-            expires = discord.utils.format_dt(expires, "F")
-        embed.add_field(name="Expires at:", value=str(expires))
+        embed.add_field(name="Created at:", value=self._string_fmt_dt(invite.created_at))
+        embed.add_field(name="Expires at:", value=self._string_fmt_dt(invite.expires_at))
 
         max_usage = str(invite.max_uses) if invite.max_uses else "Unlimited"
         embed.add_field(name="Max usage:", value=max_usage)
@@ -468,7 +459,6 @@ class Invites(commands.Cog):
             return
 
         config = self.guild_config(member.guild.id)
-
         if not config["enable"]:
             return
         channel = member.guild.get_channel(int(config["channel"]))
@@ -476,7 +466,7 @@ class Invites(commands.Cog):
             return
 
         embed = discord.Embed(
-            title=f"{member} just joined.",
+            title=f"{member.name} just joined.",
             color=discord.Color.green(),
             timestamp=datetime.utcnow(),
         )
@@ -496,10 +486,6 @@ class Invites(commands.Cog):
         if pred_invs:
             vanity_inv = self.tracker.vanity_invites.get(member.guild.id)
             embed.add_field(
-                name="Invite created by:",
-                value="\n".join(getattr(i.inviter, "mention", "`None`") for i in pred_invs),
-            )
-            embed.add_field(
                 name="Invite code:",
                 value="\n".join(i.code if i != vanity_inv else "Vanity URL" for i in pred_invs),
             )
@@ -513,24 +499,24 @@ class Invites(commands.Cog):
                 if invite == vanity_inv:
                     embed.add_field(name="Vanity:", value="True")
                 else:
+                    inviter = (
+                        f"{invite.inviter.name}\n(`{invite.inviter.id}`)" if invite.inviter else "`None`"
+                    )
+                    embed.add_field(name="Invite created by:", value=inviter)
                     embed.add_field(
                         name="Invite created at:",
-                        value=f"{discord.utils.format_dt(invite.created_at, 'F')}",
+                        value=self._string_fmt_dt(invite.created_at),
                     )
-
-                expires = invite.expires_at
-                if expires:
-                    expires = discord.utils.format_dt(expires, "F")
-                embed.add_field(name="Invite expires:", value=str(expires))
+                embed.add_field(name="Invite expires:", value=self._string_fmt_dt(invite.expires_at))
                 embed.add_field(name="Invite uses:", value=f"{invite.uses}")
-
             else:
                 embed.description += "\n⚠️ *More than 1 used invites are predicted.*\n"
-
         else:
             embed.description += "\n⚠️ *Something went wrong, could not get invite info.*\n"
-
         await self.send_log_embed(channel, embed)
+
+        if len(pred_invs) == 1:
+            await self.tracker.save_user_data(member, pred_invs[0])
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
@@ -538,7 +524,6 @@ class Invites(commands.Cog):
             return
 
         config = self.guild_config(member.guild.id)
-
         if not config["enable"]:
             return
         channel = member.guild.get_channel(int(config["channel"]))
@@ -547,7 +532,7 @@ class Invites(commands.Cog):
 
         embed = discord.Embed(color=discord.Color.red(), timestamp=datetime.utcnow())
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.title = f"{member} left."
+        embed.title = f"{member.name} left."
         embed.set_footer(text=f"User ID: {member.id}")
         desc = f"{member.mention} just left the server."
         embed.description = desc + "\n"
@@ -562,6 +547,21 @@ class Invites(commands.Cog):
         if role_list:
             embed.description += "\n**Roles:**\n" + (" ".join(role_list)) + "\n"
 
+        user_data = await self.tracker.get_user_data(member)
+        if user_data and str(member.guild.id) in user_data["guilds"]:
+            invdata = user_data["guilds"].pop(str(member.guild.id))
+            embed.add_field(name="Invite code:", value=invdata["code"])
+            embed.add_field(name="Invite channel:", value=f"<#{invdata['channel_id']}>")
+            inviter = await self.tracker.get_or_fetch_inviter(int(invdata["inviter_id"]))
+            if inviter:
+                inviter = f"{inviter.name}\n(`{inviter.id}`)"
+            else:
+                inviter = f"(`{invdata['inviter_id']}`)"
+            embed.add_field(name="Invite created by:", value=inviter)
+            if not user_data["guilds"]:
+                await self.tracker.remove_user_data(member)
+            else:
+                await self.tracker.update_user_data(member, data=user_data)
         await self.send_log_embed(channel, embed)
 
 
