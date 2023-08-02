@@ -553,14 +553,22 @@ class Invites(commands.Cog):
         if user_data and str(member.guild.id) in user_data["guilds"]:
             invdata = user_data["guilds"].pop(str(member.guild.id))
             embed.add_field(name="Invite code:", value=invdata["code"])
-            embed.add_field(name="Invite channel:", value=f"<#{invdata['channel_id']}>")
-            inviter_id = invdata["inviter_id"]
-            inviter = await self.tracker.get_or_fetch_inviter(int(inviter_id))
-            if inviter:
-                inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
+
+            channel_id = invdata["channel"].get("id")
+            inv_channel = f"<#{channel_id}>" if channel_id else "`None`"
+            embed.add_field(name="Invite channel:", value=inv_channel)
+
+            inviter_id = invdata["inviter"].get("id")
+            if inviter_id:
+                inviter = await self.tracker.get_or_fetch_inviter(int(inviter_id))
+                if inviter:
+                    inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
+                else:
+                    inviter = f"(`{inviter_id}`)"
             else:
-                inviter = f"(`{inviter_id}`)"
+                inviter = "`None`"
             embed.add_field(name="Invite created by:", value=inviter)
+
             if not user_data["guilds"]:
                 await self.tracker.remove_user_data(member.id)
             else:

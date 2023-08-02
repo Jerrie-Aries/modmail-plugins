@@ -120,10 +120,16 @@ class InviteTracker:
         """Scheme of invite data."""
         created = invite.created_at.timestamp() if invite.created_at else invite.created_at
         expires = invite.expires_at.timestamp() if invite.expires_at else invite.expires_at
+        inviter = {}
+        if invite.inviter:
+            inviter["id"] = str(invite.inviter.id)
+        channel = {}
+        if invite.channel:
+            channel["id"] = str(invite.channel.id)
         inv_data = {
             "code": invite.code,
-            "inviter_id": str(invite.inviter.id) if invite.inviter else None,
-            "channel_id": str(invite.channel.id) if invite.channel else None,
+            "inviter": inviter,
+            "channel": channel,
             "created_at": created,
             "expires_at": expires,
             "max_age": invite.max_age,

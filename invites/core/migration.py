@@ -18,8 +18,8 @@ def is_multiline(data: Dict[str, Any]) -> bool:
 def _resolve_invite_data(data: Dict[str, Any]) -> Dict[str, Any]:
     invite = {
         "code": data["invite_code"],
-        "inviter_id": str(data["inviter"]["id"]),
-        "channel_id": data["invite_channel"].strip("<#>"),
+        "inviter": {"id": str(data["inviter"]["id"])},
+        "channel": {"id": data["invite_channel"].strip("<#>")},
         "created_at": None,
         "expires_at": None,
         "max_age": None,
