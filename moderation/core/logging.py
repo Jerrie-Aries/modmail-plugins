@@ -286,6 +286,13 @@ class ModerationLogging:
         description = f"`{after}`'s roles were updated."
         added = [role for role in after.roles if role not in before.roles]
         removed = [role for role in before.roles if role not in after.roles]
+
+        # bug? this happens in community guild if it has the built-in reaction roles in welcome screen
+        # not really sure what was the issue, but this fires twice. so to prevent from hitting rate limits,
+        # we just return
+        if not added and not removed:
+            return
+
         kwargs = {}
         if added:
             kwargs["added"] = "\n".join(r.mention for r in added)
