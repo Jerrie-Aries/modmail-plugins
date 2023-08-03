@@ -223,7 +223,7 @@ class InviteTracker:
         """
         Clear all data of all users in the database.
         """
-        await self.db.delete_many({"_id": {"$ne": "config"}})
+        await self.cog.db.delete_many({"_id": {"$ne": "config"}})
 
     async def get_or_fetch_inviter(self, user_id: int) -> Optional[discord.User]:
         """
