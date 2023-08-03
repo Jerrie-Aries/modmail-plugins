@@ -145,11 +145,15 @@ class InviteTracker:
         ----------
         member : discord.Member
             Member object.
-        """
-        data = await self.cog.db.find_one({"_id": str(member.id)})
-        return data
 
-    async def save_user_data(self, member: discord.Member, invite: List[discord.Invite]) -> None:
+        Returns
+        -------
+        Dict[str, Any]
+            The data that of the user if any. Otherwise returns `None`.
+        """
+        return await self.cog.db.find_one({"_id": str(member.id)})
+
+    async def save_user_data(self, member: discord.Member, invite: List[discord.Invite]) -> Dict[str, Any]:
         """
         Saves user and invite data into the database.
 
@@ -159,18 +163,24 @@ class InviteTracker:
             Member object.
         invite : discord.Invite
             Invite object that was retrieved from `get_used_invite` method.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The data that has been saved.
         """
         user_data = {
             f"guilds.{member.guild.id}": self.invite_to_dict(invite),
         }
 
-        await self.cog.db.find_one_and_update(
+        return await self.cog.db.find_one_and_update(
             {"_id": str(member.id)},
             {"$set": user_data},
             upsert=True,
+            return_document=True,
         )
 
-    async def update_user_data(self, member: discord.Member, *, data: Dict[str, Any]) -> None:
+    async def update_user_data(self, member: discord.Member, *, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Updates user data with new data provided.
 
@@ -180,10 +190,17 @@ class InviteTracker:
             Member object.
         data : Dict[str, Any]
             The new data to update.
-        """
-        await self.cog.db.find_one_and_update({"_id": str(member.id)}, {"$set": data}, upsert=True)
 
-    async def remove_user_data(self, user_id: int) -> None:
+        Returns
+        -------
+        Dict[str, Any]
+            The updated data.
+        """
+        return await self.cog.db.find_one_and_update(
+            {"_id": str(member.id)}, {"$set": data}, upsert=True, return_document=True
+        )
+
+    async def remove_user_data(self, user_id: int) -> Dict[str, Any]:
         """
         Removes user and invite data from the database.
 
@@ -194,15 +211,27 @@ class InviteTracker:
         ----------
         user_id : int
             The ID of user to delete the data.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The data that was deleted if any. Otherwise returns `None`.
         """
-        await self.cog.db.find_one_and_delete({"_id": str(user_id)})
+        return await self.cog.db.find_one_and_delete({"_id": str(user_id)})
+
+    async def clear_all_data(self) -> None:
+        """
+        Clear all data of all users in the database.
+        """
+        await self.db.delete_many({"_id": {"$ne": "config"}})
 
     async def get_or_fetch_inviter(self, user_id: int) -> Optional[discord.User]:
         """
         A helper to aid with resolving user who created the invite.
 
         The lookup strategy, in order:
-        - Custom cache (._fetched_users)
+        - Cache (._fetched_users). This is to prevent repeated API requests
+        to fetch same user.
         - Bot's internal cache
         - Fetch from discord
 

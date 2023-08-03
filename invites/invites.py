@@ -29,7 +29,7 @@ __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 # <!-- Developer -->
 try:
-    from discord.ext.modmail_utils import Config, datetime_formatter as dt_formatter
+    from discord.ext.modmail_utils import Config, ConfirmView, datetime_formatter as dt_formatter
 except ImportError as exc:
     required = __plugin_info__["cogs_required"][0]
     raise RuntimeError(
@@ -61,6 +61,7 @@ class Invites(commands.Cog):
         "channel": str(int()),
         "webhook": None,
         "enable": False,
+        "store_data": True,
     }
 
     def __init__(self, bot: ModmailBot):
@@ -99,6 +100,20 @@ class Invites(commands.Cog):
         await config.fetch()
 
         self.config = config
+        await self._resolve_new_default_key()
+
+    # temp for migration
+    async def _resolve_new_default_key(self) -> None:
+        update = False
+        for data in self.config.values():
+            if not isinstance(data, dict):
+                continue
+            for key in self.default_config.keys():
+                if key not in data:
+                    data[key] = self.config.copy(self.default_config[key])
+                    update = True
+        if update:
+            await self.config.update()
 
     def guild_config(self, guild_id: Union[int, str]) -> GuildConfigData:
         guild_id = str(guild_id)
@@ -225,7 +240,7 @@ class Invites(commands.Cog):
 
         `mode` is a boolean value, may be `True` or `False` (case insensitive).
 
-        **Examples:**
+        Examples:
         - `{prefix}invite config enable True`
         - `{prefix}invite config enable False`
 
@@ -266,6 +281,136 @@ class Invites(commands.Cog):
         embed.add_field(name="Channel:", value="`None`", inline=False)
         embed.add_field(name="Enabled:", value="`False`", inline=False)
         embed.add_field(name="Webhook URL:", value="`None`", inline=False)
+        await ctx.send(embed=embed)
+
+    @invites.group(name="store", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def invites_store(self, ctx: commands.Context):
+        """
+        Base command for user data storing.
+
+        The data storing feature was enabled by default. To disable, use command:
+        - `{prefix}invite store enable False`
+
+        If this feature is enabled, the user data and the invite used will be saved into the database when joining the server.
+        When the user leaves, the data will be retrieved and the information will be added to the log embed.
+        """
+        await ctx.send_help(ctx.command)
+
+    @invites_store.command(name="enable")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def inv_store_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable the data storing feature.
+
+        `mode` is a boolean value, may be `True` or `False` (case insensitive).
+
+        Examples:
+        - `{prefix}invite store enable True`
+        - `{prefix}invite store enable False`
+
+        Leave `mode` empty to see the current set value.
+
+        __**Note:**__
+        - This setting is enabled by default.
+        """
+        config = self.guild_config(ctx.guild.id)
+        if mode is None:
+            mode = config.get("store_data")
+            description = (
+                "Invites tracking data store is currently " + ("`enabled`" if mode else "`disabled`") + "."
+            )
+        else:
+            new_config = dict(enable=mode)
+            config.update(new_config)
+            description = ("Enabled " if mode else "Disabled ") + "data store for invites tracking."
+            await self.config.update()
+
+        embed = discord.Embed(description=description, color=self.bot.main_color)
+        await ctx.send(embed=embed)
+
+    @invites_store.command(name="get")
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def inv_store_get(self, ctx: commands.Context, *, member: discord.Member):
+        """
+        Retrieve info of invite data used by a user when joining the server.
+
+        `member` may be a user ID, mention or name.
+        """
+        data = await self.tracker.get_user_data(member)
+        if data is None or str(ctx.guild.id) not in data["guilds"]:
+            raise commands.BadArgument(f"Data for {member.name} does not exist.")
+
+        invdata = data["guilds"][str(ctx.guild.id)]
+        embed = discord.Embed(
+            title="User information",
+            description=f"{member.name} joined with invite [{invdata['code']}](https://discord.gg/{invdata['code']}).",
+            color=self.bot.main_color,
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(text=f"User ID: {member.id}")
+        embed.add_field(name="Invite code:", value=invdata["code"])
+
+        channel_id = invdata["channel"].get("id")
+        inv_channel = f"<#{channel_id}>" if channel_id else "`None`"
+        embed.add_field(name="Invite channel:", value=inv_channel)
+
+        inviter_id = invdata["inviter"].get("id")
+        if inviter_id:
+            inviter = await self.tracker.get_or_fetch_inviter(int(inviter_id))
+            if inviter:
+                inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
+            else:
+                inviter = f"(`{inviter_id}`)"
+        else:
+            inviter = "`None`"
+        embed.add_field(name="Invite created by:", value=inviter)
+        await ctx.send(embed=embed)
+
+    @invites_store.command(name="delete")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def inv_store_del(self, ctx: commands.Context, user_id: int):
+        """
+        Delete user data stored in the database.
+
+        This command is global which means the user with the specified ID does not have to be in the server.
+        """
+        data = await self.tracker.remove_user_data(user_id)
+        if data is None:
+            raise commands.BadArgument(f"Data for user ID `{user_id}` does not exist.")
+
+        embed = discord.Embed(
+            description=f"Data for user ID `{user_id}` is now removed.", color=self.bot.main_color
+        )
+        await ctx.send(embed=embed)
+
+    @invites_store.command(name="--clear")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def inv_store_clear(self, ctx: commands.Context):
+        """
+        Clear data of all users stored in the database.
+
+        `user` may be a user ID, mention or name.
+
+        __**Note:**__
+        - This operation cannot be undone.
+        """
+        embed = discord.Embed(
+            description=("Are you sure you want to delete all the data?"),
+            color=self.bot.main_color,
+        )
+        view = ConfirmView(self.bot, ctx.author)
+        view.message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+        if not view.value:
+            return
+
+        try:
+            await self.tracker.clear_all_data()
+        except Exception as exc:
+            raise commands.BadArgument(f"{type(exc).__name__}: {str(exc)}")
+        embed.description = "All data cleared."
         await ctx.send(embed=embed)
 
     @invites.command(name="refresh")
@@ -517,7 +662,7 @@ class Invites(commands.Cog):
             embed.description += "\n⚠️ *Something went wrong! Invite info could not be resolved.*\n"
         await self.send_log_embed(channel, embed)
 
-        if len(pred_invs) == 1:
+        if len(pred_invs) == 1 and config.get("store_data"):
             await self.tracker.save_user_data(member, pred_invs[0])
 
     @commands.Cog.listener()
@@ -528,6 +673,17 @@ class Invites(commands.Cog):
         config = self.guild_config(member.guild.id)
         if not config["enable"]:
             return
+
+        user_data = await self.tracker.get_user_data(member)
+        if user_data and str(member.guild.id) in user_data["guilds"]:
+            invdata = user_data["guilds"].pop(str(member.guild.id))
+            if not user_data["guilds"] or not config.get("store_data"):
+                await self.tracker.remove_user_data(member.id)
+            else:
+                await self.tracker.update_user_data(member, data=user_data)
+        else:
+            invdata = None
+
         channel = member.guild.get_channel(int(config["channel"]))
         if channel is None:
             return
@@ -549,9 +705,7 @@ class Invites(commands.Cog):
         if role_list:
             embed.description += "\n**Roles:**\n" + (" ".join(role_list)) + "\n"
 
-        user_data = await self.tracker.get_user_data(member)
-        if user_data and str(member.guild.id) in user_data["guilds"]:
-            invdata = user_data["guilds"].pop(str(member.guild.id))
+        if invdata:
             embed.add_field(name="Invite code:", value=invdata["code"])
 
             channel_id = invdata["channel"].get("id")
@@ -569,10 +723,6 @@ class Invites(commands.Cog):
                 inviter = "`None`"
             embed.add_field(name="Invite created by:", value=inviter)
 
-            if not user_data["guilds"]:
-                await self.tracker.remove_user_data(member.id)
-            else:
-                await self.tracker.update_user_data(member, data=user_data)
         await self.send_log_embed(channel, embed)
 
 
