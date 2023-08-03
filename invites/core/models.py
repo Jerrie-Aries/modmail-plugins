@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 import discord
@@ -14,6 +15,77 @@ if TYPE_CHECKING:
     from ..invites import Invites
 
 logger = getLogger(__name__)
+
+
+class PartialInvite:
+    """
+    Partially constructed invite object.
+    """
+
+    def __init__(
+        self,
+        tracker: InviteTracker,
+        code: str,
+        *,
+        inviter_id: Optional[int],
+        channel_id: Optional[int],
+        created_at: Optional[datetime],
+        expires_at: Optional[datetime],
+        max_age: Optional[int],
+        max_uses: Optional[int],
+    ):
+        self.tracker: InviteTracker = tracker
+        self.code: str = code
+        self.inviter_id: Optional[int] = inviter_id
+        self.inviter: discord.User = MISSING
+        self.channel_id: Optional[int] = channel_id
+        self.created_at: Optional[datetime] = created_at
+        self.expires_at: Optional[datetime] = expires_at
+        self.max_age: Optional[int] = max_age
+        self.max_uses: Optional[int] = max_uses
+
+    @property
+    def link(self) -> str:
+        return "https://discord.gg/" + self.code
+
+    @property
+    def channel(self) -> Optional[discord.GuildChannel]:
+        if not self.channel_id:
+            return None
+        return self.tracker.bot.get_channel(self.channel_id)
+
+    @classmethod
+    async def from_data(cls, tracker: InviteTracker, *, data: Dict[str, Any]) -> PartialInvite:
+        """
+        Construct this class from raw data retrieved from database.
+        All attributes should be resolved from here.
+        """
+        inviter_id = data["inviter"].get("id")
+        if inviter_id:
+            inviter_id = int(inviter_id)
+        channel_id = data["channel"].get("id")
+        if channel_id:
+            channel_id = int(channel_id)
+        created_at = data["created_at"]
+        if created_at:
+            created_at = datetime.fromtimestamp(created_at)
+        expires_at = data["expires_at"]
+        if expires_at:
+            expires_at = datetime.fromtimestamp(expires_at)
+        invite = cls(
+            tracker,
+            data["code"],
+            inviter_id=inviter_id,
+            channel_id=channel_id,
+            created_at=created_at,
+            expires_at=expires_at,
+            max_age=data["max_age"],
+            max_uses=data["max_uses"],
+        )
+        if inviter_id:
+            invite.inviter = await tracker.get_or_fetch_user(inviter_id)
+
+        return invite
 
 
 class InviteTracker:
@@ -152,6 +224,27 @@ class InviteTracker:
             The data that of the user if any. Otherwise returns `None`.
         """
         return await self.cog.db.find_one({"_id": str(member.id)})
+
+    async def get_invite_used_by(self, member: discord.Member) -> Optional[PartialInvite]:
+        """
+        Fetches invite data used by user from database.
+
+        Parameters
+        ----------
+        member : discord.Member
+            Member object.
+
+        Returns
+        -------
+        Optional[PartialInvite]
+            PartialInvite object constructed from raw data if exists. Otherwise returns `None`.
+        """
+        data = await self.get_user_data(member)
+        if data:
+            invdata = data["guilds"].get(str(member.guild.id))
+            if invdata:
+                return await PartialInvite.from_data(self, data=invdata)
+        return None
 
     async def save_user_data(self, member: discord.Member, invite: List[discord.Invite]) -> Dict[str, Any]:
         """

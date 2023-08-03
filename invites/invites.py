@@ -14,7 +14,7 @@ from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
 
-from .core.models import InviteTracker
+from .core.models import InviteTracker, PartialInvite
 
 # temp for migration
 from .core.migration import db_migration
@@ -108,9 +108,9 @@ class Invites(commands.Cog):
         for data in self.config.values():
             if not isinstance(data, dict):
                 continue
-            for key in self.default_config.keys():
+            for key, value in self.default_config.items():
                 if key not in data:
-                    data[key] = self.config.copy(self.default_config[key])
+                    data[key] = self.config.copy(value)
                     update = True
         if update:
             await self.config.update()
@@ -226,7 +226,7 @@ class Invites(commands.Cog):
             else:
                 description = "Invites logging channel is not set."
         else:
-            new_config = dict(channel=str(channel.id), webhook=None)
+            new_config = {"channel": str(channel.id), "webhook": None}
             config.update(new_config)
             await self.config.update()
             description = f"Log channel is now set to {channel.mention}."
@@ -255,7 +255,7 @@ class Invites(commands.Cog):
                 "Invites tracking logging is currently " + ("`enabled`" if mode else "`disabled`") + "."
             )
         else:
-            new_config = dict(enable=mode)
+            new_config = {"enable": mode}
             config.update(new_config)
             description = ("Enabled " if mode else "Disabled ") + "the logging for invites tracking."
             await self.config.update()
@@ -323,7 +323,7 @@ class Invites(commands.Cog):
                 "Invites tracking data store is currently " + ("`enabled`" if mode else "`disabled`") + "."
             )
         else:
-            new_config = dict(enable=mode)
+            new_config = {"enable": mode}
             config.update(new_config)
             description = ("Enabled " if mode else "Disabled ") + "data store for invites tracking."
             await self.config.update()
@@ -339,39 +339,35 @@ class Invites(commands.Cog):
 
         `member` may be a user ID, mention or name.
         """
-        data = await self.tracker.get_user_data(member)
-        if data is None or str(ctx.guild.id) not in data["guilds"]:
+        invite = await self.tracker.get_invite_used_by(member)
+        if invite is None:
             raise commands.BadArgument(f"Data for {member.name} does not exist.")
 
-        invdata = data["guilds"][str(ctx.guild.id)]
         embed = discord.Embed(
             title="User information",
-            description=(
-                f"{member.name} joined this server with invite "
-                f"[{invdata['code']}](https://discord.gg/{invdata['code']})."
-            ),
+            description=(f"{member.name} joined this server with invite [{invite.code}]({invite.link})."),
             color=self.bot.main_color,
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"User ID: {member.id}")
         embed.add_field(name="Joined at:", value=discord.utils.format_dt(member.joined_at, "F"))
-        embed.add_field(name="Invite code:", value=invdata["code"])
+        embed.add_field(name="Invite code:", value=invite.code)
 
-        channel_id = invdata["channel"].get("id")
-        inv_channel = f"<#{channel_id}>" if channel_id else "`None`"
+        inv_channel = invite.channel
+        if inv_channel:
+            inv_channel = inv_channel.mention
+        else:
+            channel_id = invite.channel_id
+            inv_channel = f"<#{invite.channel_id}>" if channel_id else "`None`"
         embed.add_field(name="Invite channel:", value=inv_channel)
 
-        inviter_id = invdata["inviter"].get("id")
-        if inviter_id:
-            inviter = await self.tracker.get_or_fetch_user(int(inviter_id))
-            if inviter:
-                inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
-            else:
-                inviter = f"(`{inviter_id}`)"
+        if invite.inviter:
+            inviter = f"Name: {invite.inviter.name}\nID: `{invite.inviter.id}`"
         else:
-            inviter = "`None`"
+            inviter_id = invite.inviter_id
+            inviter = f"(`{inviter_id}`)" if inviter_id else "`None`"
         embed.add_field(name="Invite created by:", value=inviter)
-        embed.add_field(name="Invite created at:", value=self._string_fmt_dt(invdata["created_at"]))
+        embed.add_field(name="Invite created at:", value=self._string_fmt_dt(invite.created_at))
         await ctx.send(embed=embed)
 
     @invites_store.command(name="delete")
@@ -713,21 +709,21 @@ class Invites(commands.Cog):
             embed.description += "\n**Roles:**\n" + (" ".join(role_list)) + "\n"
 
         if invdata:
+            invite = await PartialInvite.from_data(self.tracker, data=invdata)
             embed.add_field(name="Invite code:", value=invdata["code"])
-
-            channel_id = invdata["channel"].get("id")
-            inv_channel = f"<#{channel_id}>" if channel_id else "`None`"
+            inv_channel = invite.channel
+            if inv_channel:
+                inv_channel = inv_channel.mention
+            else:
+                channel_id = invite.channel_id
+                inv_channel = f"<#{invite.channel_id}>" if channel_id else "`None`"
             embed.add_field(name="Invite channel:", value=inv_channel)
 
-            inviter_id = invdata["inviter"].get("id")
-            if inviter_id:
-                inviter = await self.tracker.get_or_fetch_user(int(inviter_id))
-                if inviter:
-                    inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
-                else:
-                    inviter = f"(`{inviter_id}`)"
+            if invite.inviter:
+                inviter = f"Name: {invite.inviter.name}\nID: `{invite.inviter.id}`"
             else:
-                inviter = "`None`"
+                inviter_id = invite.inviter_id
+                inviter = f"(`{inviter_id}`)" if inviter_id else "`None`"
             embed.add_field(name="Invite created by:", value=inviter)
 
         await self.send_log_embed(channel, embed)
