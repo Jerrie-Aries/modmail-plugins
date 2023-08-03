@@ -679,7 +679,7 @@ class Invites(commands.Cog):
 
         user_data = await self.tracker.get_user_data(member)
         if user_data and str(member.guild.id) in user_data["guilds"]:
-            invdata = user_data["guilds"].pop(str(member.guild.id))
+            invdata = user_data["guilds"].pop(str(member.guild.id)).get("invite")
             if not user_data["guilds"] or not config.get("store_data"):
                 await self.tracker.remove_user_data(member.id)
             else:

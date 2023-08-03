@@ -55,7 +55,7 @@ async def db_migration(cog) -> None:
         invite = _resolve_invite_data(old_doc)
         userdoc = {
             "_id": str(old_doc["user_id"]),
-            "guilds": {str(old_doc["guild_id"]): invite},
+            "guilds": {str(old_doc["guild_id"]): {"invite": invite}},
         }
         # find dupe data for same user
         find_filter = {
@@ -68,7 +68,7 @@ async def db_migration(cog) -> None:
             # only do if it does not have multiple invites
             if not is_multiline(dupe_doc):
                 ginvite = _resolve_invite_data(dupe_doc)
-                userdoc["guilds"][str(dupe_doc["guild_id"])] = ginvite
+                userdoc["guilds"][str(dupe_doc["guild_id"])] = {"invite": ginvite}
 
         to_insert[userdoc["_id"]] = userdoc
 

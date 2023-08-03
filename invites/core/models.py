@@ -241,7 +241,7 @@ class InviteTracker:
         """
         data = await self.get_user_data(member)
         if data:
-            invdata = data["guilds"].get(str(member.guild.id))
+            invdata = data["guilds"].get(str(member.guild.id)).get("invite")
             if invdata:
                 return await PartialInvite.from_data(self, data=invdata)
         return None
@@ -263,7 +263,7 @@ class InviteTracker:
             The data that has been saved.
         """
         user_data = {
-            f"guilds.{member.guild.id}": self.invite_to_dict(invite),
+            f"guilds.{member.guild.id}": {"invite": self.invite_to_dict(invite)},
         }
 
         return await self.cog.db.find_one_and_update(
