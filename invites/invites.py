@@ -161,9 +161,11 @@ class Invites(commands.Cog):
         return wh
 
     @staticmethod
-    def _string_fmt_dt(dt: Optional[datetime]) -> str:
+    def _string_fmt_dt(dt: Optional[Union[datetime, int, float]]) -> str:
         if dt is None:
             return str(dt)
+        if isinstance(dt, (int, float)):
+            dt = datetime.fromtimestamp(dt)
         return discord.utils.format_dt(dt, "F")
 
     @commands.group(aliases=["invite"], invoke_without_command=True)
@@ -344,11 +346,15 @@ class Invites(commands.Cog):
         invdata = data["guilds"][str(ctx.guild.id)]
         embed = discord.Embed(
             title="User information",
-            description=f"{member.name} joined with invite [{invdata['code']}](https://discord.gg/{invdata['code']}).",
+            description=(
+                f"{member.name} joined this server with invite "
+                f"[{invdata['code']}](https://discord.gg/{invdata['code']})."
+            ),
             color=self.bot.main_color,
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"User ID: {member.id}")
+        embed.add_field(name="Joined at:", value=discord.utils.format_dt(member.joined_at, "F"))
         embed.add_field(name="Invite code:", value=invdata["code"])
 
         channel_id = invdata["channel"].get("id")
@@ -357,7 +363,7 @@ class Invites(commands.Cog):
 
         inviter_id = invdata["inviter"].get("id")
         if inviter_id:
-            inviter = await self.tracker.get_or_fetch_inviter(int(inviter_id))
+            inviter = await self.tracker.get_or_fetch_user(int(inviter_id))
             if inviter:
                 inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
             else:
@@ -365,6 +371,7 @@ class Invites(commands.Cog):
         else:
             inviter = "`None`"
         embed.add_field(name="Invite created by:", value=inviter)
+        embed.add_field(name="Invite created at:", value=self._string_fmt_dt(invdata["created_at"]))
         await ctx.send(embed=embed)
 
     @invites_store.command(name="delete")
@@ -480,12 +487,11 @@ class Invites(commands.Cog):
         embed = discord.Embed(color=self.bot.main_color, title="__Invite Info__")
         embed.description = f"**Server:**\n{invite.guild}\n\n" f"**Invite link:**\n{invite.url}\n\n"
 
-        fetched_invites = await ctx.guild.invites()
-        embed.add_field(
-            name="Created by:",
-            value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)",
-        )
+        inviter = f"Name: {invite.inviter.name}\nID: `{invite.inviter.id}`" if invite.inviter else "`None`"
+        embed.add_field(name="Created by:", value=inviter)
         embed.add_field(name="Channel:", value=invite.channel.mention)
+
+        fetched_invites = await ctx.guild.invites()
         if invite in fetched_invites:
             local = False
             for inv in fetched_invites:
@@ -522,7 +528,8 @@ class Invites(commands.Cog):
             color=discord.Color.blurple(),
             description=f"Deleted invite code: `{invite.code}`",
         )
-        embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
+        inviter = f"Name: {invite.inviter.name}\nID: `{invite.inviter.id}`" if invite.inviter else "`None`"
+        embed.add_field(name="Created by:", value=inviter)
         embed.add_field(name="Channel:", value=invite.channel.mention)
         embed.add_field(name="Uses:", value=invite.uses)
         embed.add_field(name="Created at:", value=self._string_fmt_dt(invite.created_at))
@@ -557,7 +564,7 @@ class Invites(commands.Cog):
             color=discord.Color.blue(),
             description=invite.url,
         )
-        embed.add_field(name="Created by:", value=f"{invite.inviter.name}\n(`{invite.inviter.id}`)")
+        embed.add_field(name="Created by:", value=f"Name: {invite.inviter.name}\nID: `{invite.inviter.id}`")
         embed.add_field(name="Channel:", value=str(getattr(invite.channel, "mention", None)))
         embed.add_field(name="Created at:", value=self._string_fmt_dt(invite.created_at))
         embed.add_field(name="Expires at:", value=self._string_fmt_dt(invite.expires_at))
@@ -714,7 +721,7 @@ class Invites(commands.Cog):
 
             inviter_id = invdata["inviter"].get("id")
             if inviter_id:
-                inviter = await self.tracker.get_or_fetch_inviter(int(inviter_id))
+                inviter = await self.tracker.get_or_fetch_user(int(inviter_id))
                 if inviter:
                     inviter = f"Name: {inviter.name}\nID: `{inviter.id}`"
                 else:

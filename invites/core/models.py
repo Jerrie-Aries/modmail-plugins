@@ -118,8 +118,8 @@ class InviteTracker:
     @staticmethod
     def invite_to_dict(invite: discord.Invite) -> Dict[str, Any]:
         """Scheme of invite data."""
-        created = invite.created_at.timestamp() if invite.created_at else invite.created_at
-        expires = invite.expires_at.timestamp() if invite.expires_at else invite.expires_at
+        created = invite.created_at.timestamp() if invite.created_at else None
+        expires = invite.expires_at.timestamp() if invite.expires_at else None
         inviter = {}
         if invite.inviter:
             inviter["id"] = str(invite.inviter.id)
@@ -225,9 +225,11 @@ class InviteTracker:
         """
         await self.cog.db.delete_many({"_id": {"$ne": "config"}})
 
-    async def get_or_fetch_inviter(self, user_id: int) -> Optional[discord.User]:
+    async def get_or_fetch_user(self, user_id: int) -> Optional[discord.User]:
         """
         A helper to aid with resolving user who created the invite.
+        This is to solve issue when the inviter already left the server and not in
+        bot's internal cache.
 
         The lookup strategy, in order:
         - Cache (._fetched_users). This is to prevent repeated API requests
@@ -241,17 +243,17 @@ class InviteTracker:
             The ID of user to look up.
         """
         user = self._fetched_users.get(user_id)
-        if isinstance(user, (discord.User, discord.Member)):
+        if isinstance(user, discord.User):
             return user
         if user is MISSING:
             return None
+
         user = self.bot.get_user(user_id)
         if not user:
             try:
                 user = await self.bot.fetch_user(user_id)
             except discord.HTTPException:
                 # prabably deleted account, so we store as MISSING
-                self._fetched_users[user_id] = MISSING
-                return None
+                user = MISSING
         self._fetched_users[user_id] = user
-        return user
+        return user if user else None
