@@ -77,6 +77,22 @@ class ContactManager:
         self.message = MISSING
         self.view = MISSING
 
+    def find_thread(self, recipient: Union[discord.Member, discord.User]) -> Optional[Thread]:
+        """
+        Find existing thread for recipient.
+        The lookup will be in cache and other recipients.
+        """
+        # find in cache
+        thread = self.bot.threads.cache.get(recipient.id)
+        if thread:
+            return thread
+
+        # check if they were other recipients in someone else's thread
+        for thread in self.bot.threads:
+            if recipient in thread.recipients:
+                return thread
+        return None
+
     async def create_thread(
         self,
         recipient: Union[discord.Member, discord.User],
@@ -87,14 +103,14 @@ class ContactManager:
         """
         Thread creation that was initiated by successful interaction on Contact Menu.
         """
-        # checks for existing thread in cache
-        thread = self.bot.threads.cache.get(recipient.id)
+        # checks for existing thread
+        thread = self.find_thread(recipient)
         if thread:
             # unlike in core/thread.py, we will not do the .wait_until_ready and .CancelledError stuff here
             # just send error message and return
             embed = discord.Embed(
                 color=self.bot.error_color,
-                description="Something went wrong. A thread for you already exists.",
+                description="A thread for you already exists.",
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
@@ -141,7 +157,7 @@ class Feedback:
         self.cog: SupportUtility = manager.cog
         self.manager: FeedbackManager = manager
         self.user: discord.Member = user
-        self.message: Union[discord.Message, discord.PartialMessage] = message
+        self._message: Union[discord.Message, discord.PartialMessage] = message
         self.thread_channel_id: Optional[int] = thread_channel_id
         self.started: float = started
         self.ends: float = ends
@@ -163,13 +179,23 @@ class Feedback:
             return False
         return self.user.id == other.user.id
 
-    def resolve_runtime(self) -> None:
+    @property
+    def message(self) -> Union[discord.Message, discord.PartialMessage]:
+        """Returns the feedback prompt message object that was sent to user DMs."""
+        return self._message
+
+    @message.setter
+    def message(self, item: Union[discord.Message, discord.PartialMessage]) -> None:
         """
-        A helper to resolve and assign `.started` and `.ends` attributes.
+        Set the `.message` attribute. Values for `.started` and `.ends` attributes will also be automatically
+        set from here.
         """
-        if not self.message:
-            raise TypeError("message attribute is not set.")
-        self.started = self.message.created_at.timestamp()
+        if not isinstance(item, (discord.Message, discord.PartialMessage)):
+            raise TypeError(
+                f"Invalid type of item received. Expected Message or PartialMessage, got {type(item).__name__} instead."
+            )
+        self._message = item
+        self.started = item.created_at.timestamp()
         self.ends = self.started + ends_seconds
 
     @classmethod
@@ -430,7 +456,6 @@ class FeedbackManager:
         )
         view = FeedbackView(user, self.cog, feedback=feedback, thread=thread)
         view.message = feedback.message = await user.send(embed=embed, view=view)
-        feedback.resolve_runtime()
         self.add(feedback)
         await self.cog.config.update()
         self.bot.loop.create_task(feedback.run())
