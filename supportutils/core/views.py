@@ -164,7 +164,7 @@ class ContactView(BaseView):
         user = interaction.user
         if user.id in self._temp_cached_users or self.bot.guild.get_member(user.id) is None:
             return False
-        thread = self.bot.threads.cache.get(user.id)
+        thread = self.manager.find_thread(user)
         embed = discord.Embed(color=self.bot.error_color)
         if thread:
             content = "A thread for you already exists"

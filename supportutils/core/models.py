@@ -77,6 +77,22 @@ class ContactManager:
         self.message = MISSING
         self.view = MISSING
 
+    def find_thread(self, recipient: Union[discord.Member, discord.User]) -> Optional[Thread]:
+        """
+        Find existing thread for recipient.
+        The lookup will be in cache and other recipients.
+        """
+        # find in cache
+        thread = self.bot.threads.cache.get(recipient.id)
+        if thread:
+            return thread
+
+        # check if they were other recipients in someone else's thread
+        for thread in self.bot.threads:
+            if recipient in thread.recipients:
+                return thread
+        return None
+
     async def create_thread(
         self,
         recipient: Union[discord.Member, discord.User],
@@ -87,14 +103,14 @@ class ContactManager:
         """
         Thread creation that was initiated by successful interaction on Contact Menu.
         """
-        # checks for existing thread in cache
-        thread = self.bot.threads.cache.get(recipient.id)
+        # checks for existing thread
+        thread = self.find_thread(recipient)
         if thread:
             # unlike in core/thread.py, we will not do the .wait_until_ready and .CancelledError stuff here
             # just send error message and return
             embed = discord.Embed(
                 color=self.bot.error_color,
-                description="Something went wrong. A thread for you already exists.",
+                description="A thread for you already exists.",
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
