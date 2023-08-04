@@ -24,8 +24,11 @@ except ImportError:
 from core import checks
 from core.models import getLogger, PermissionLevel
 
+from .core.config import UtilsConfig
+
 
 if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
 
 
@@ -55,10 +58,17 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
+        self.config: UtilsConfig = UtilsConfig(self, self.db)
+
         self.package_path: Path = current_dir
         self.package_name: str = "modmail-utils"
 
     async def cog_load(self) -> None:
+        await self._resolve_package()
+        self.bot.loop.create_task(self.initialize())
+
+    async def _resolve_package(self) -> None:
         global modmail_utils
 
         mode = os.environ.get("UTILS_PACKAGE_MODE", "production")
@@ -80,6 +90,10 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                 importlib.reload(modmail_utils)
 
             _additional_tasks()
+
+    async def initialize(self) -> None:
+        await self.bot.wait_for_connected()
+        await self.config.fetch()
 
     def _is_latest(self) -> bool:
         current = version_tuple(modmail_utils.__version__)

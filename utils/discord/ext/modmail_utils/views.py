@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import List, Union, TYPE_CHECKING
+from typing import Optional, List, Tuple, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction
 from discord.utils import MISSING
 
+from .converters import convert_emoji as _convert_emoji
 from .ui import View
 
 
@@ -14,6 +15,12 @@ __all__ = ("ConfirmView",)
 
 if TYPE_CHECKING:
     from bot import ModmailBot
+
+
+def _validate_button_output(emoji: Optional[str], label: Optional[str]) -> bool:
+    if emoji is None and label is None:
+        return False
+    return True
 
 
 class ConfirmView(View):
@@ -69,6 +76,46 @@ class ConfirmView(View):
         self._delete_when_complete: bool = delete
         super().__init__(timeout=timeout)
         self._selected_button: discord.ui.Button = MISSING
+        self.resolve_label_and_emoji()
+
+    def resolve_label_and_emoji(self) -> None:
+        accept_label, accept_emoji, accept_style = self._retrieve_label_and_emoji(boolean=True)
+        if _validate_button_output(accept_emoji, accept_label):
+            self.accept_button.label = accept_label
+        self.accept_button.emoji = accept_emoji
+        self.accept_button.style = accept_style
+
+        deny_label, deny_emoji, deny_style = self._retrieve_label_and_emoji(boolean=False)
+        if _validate_button_output(deny_emoji, deny_label):
+            self.deny_button.label = deny_label
+        self.deny_button.emoji = deny_emoji
+        self.deny_button.style = deny_style
+
+    def _retrieve_label_and_emoji(
+        self, *, boolean: Optional[bool] = None
+    ) -> Tuple[Optional[str], Optional[Union[discord.PartialEmoji, discord.Emoji, str]], ButtonStyle]:
+        if boolean is None:
+            raise ValueError("boolean must be set to True or False.")
+
+        cog = self.bot.get_cog("Extended Utils")
+        if cog is None:
+            return
+        attrs = ["label", "emoji", "style"]
+        label, emoji, style = (
+            cog.config.get(f"confirm_button_{'accept' if boolean else 'deny'}_{attr}") for attr in attrs
+        )
+
+        if emoji is not None:
+            try:
+                # TODO: Use custom one in utils
+                emoji = _convert_emoji(emoji)
+            except ValueError:
+                emoji = None
+            except EmojiNotFound:
+                # custom emoji not found
+                raise ValueError(f'Emoji "{emoji}" not found.')
+
+        return label, emoji, style
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.message is MISSING:
