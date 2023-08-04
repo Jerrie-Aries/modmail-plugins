@@ -254,6 +254,99 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed.description = description
         await ctx.send(embed=embed)
 
+    @ext_utils.group(name="config", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def utils_config(self, ctx: commands.Context):
+        """
+        Modify changeable configuration.
+
+        To set a configuration:
+        - `{prefix}eutils config set config-name value`
+
+        To remove a configuration:
+        - `{prefix}eutils config remove config-name`
+        """
+        await ctx.send_help(ctx.command)
+
+    @utils_config.command(name="set", aliases=["add"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_set(self, ctx: commands.Context, key: str.lower, *, value: str):
+        """
+        Set a configuration variable and its value.
+        """
+        if key in self.config.defaults.keys():
+            try:
+                self.config.set(key, value)
+                await self.config.update()
+                embed = discord.Embed(
+                    title="Success",
+                    color=self.bot.main_color,
+                    description=f"Set `{key}` to `{self.config[key]}`.",
+                )
+            except InvalidConfigError as exc:
+                embed = exc.embed
+        else:
+            embed = discord.Embed(
+                title="Error",
+                color=self.bot.error_color,
+                description=f"`{key}` is an invalid key.",
+            )
+        return await ctx.send(embed=embed)
+
+    @utils_config.command(name="remove", aliases=["del", "delete"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_remove(self, ctx: commands.Context, *, key: str.lower):
+        """
+        Delete a set configuration variable.
+        """
+        if key in self.config.defaults.keys():
+            self.config.remove(key)
+            await self.config.update()
+            embed = discord.Embed(
+                title="Success",
+                color=self.bot.main_color,
+                description=f"`{key}` is now reset to default.",
+            )
+        else:
+            embed = discord.Embed(
+                title="Error",
+                color=self.bot.error_color,
+                description=f"`{key}` is an invalid key.",
+            )
+        return await ctx.send(embed=embed)
+
+    @utils_config.command(name="get")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_get(self, ctx: commands.Context, *, key: str.lower = None):
+        """
+        Show the configuration variables that are currently set.
+
+        Leave `key` empty to show all currently set configuration variables.
+        """
+        if key:
+            if key in self.config.defaults.keys():
+                desc = f"`{key}` is set to `{self.bot.config[key]}`"
+                embed = discord.Embed(color=self.bot.main_color, description=desc)
+                embed.set_author(name="Config variable", icon_url=self.bot.user.display_avatar.url)
+
+            else:
+                embed = discord.Embed(
+                    title="Error",
+                    color=self.bot.error_color,
+                    description=f"`{key}` is an invalid key.",
+                )
+        else:
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description="Here is a list of currently set configurations.",
+            )
+            embed.set_author(name="Current config:", icon_url=self.bot.user.display_avatar.url)
+
+            for name, value in self.config.items():
+                embed.add_field(name=name, value=f"`{value}`", inline=False)
+
+        return await ctx.send(embed=embed)
+
 
 async def setup(bot: ModmailBot) -> None:
     await bot.add_cog(ExtendedUtils(bot))

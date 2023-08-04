@@ -4,6 +4,9 @@ from typing import Any, Dict, TYPE_CHECKING
 
 import discord
 
+from core.models import getLogger
+from core.utils import tryint
+
 from ..discord.ext.modmail_utils import Config
 
 
@@ -11,6 +14,9 @@ if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
 
     from ..utils import ExtendedUtils
+
+
+logger = getLogger(__name__)
 
 
 _default_config: Dict[str, Any] = {
@@ -48,6 +54,8 @@ class UtilsConfig(Config):
             if isinstance(item, (_enums[key])):
                 # value is an enum type
                 item = item.value
+            else:
+                item = tryint(item)
         if key in _optional:
             if isinstance(item, str) and item.lower() == "none":
                 item = None
@@ -68,5 +76,9 @@ class UtilsConfig(Config):
         if key in _enums:
             if value is None:
                 return None
-            value = _enums[key](value)
+            try:
+                value = _enums[key](tryint(value))
+            except ValueError:
+                logger.warning(f"{value} is invalid for key {key}.")
+                value = self.remove(key)
         return value
