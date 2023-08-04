@@ -23,6 +23,7 @@ except ImportError:
 
 from core import checks
 from core.models import getLogger, PermissionLevel
+from core.paginator import EmbedPaginatorSession
 
 from .core.config import UtilsConfig
 
@@ -69,12 +70,17 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         self.bot.loop.create_task(self.initialize())
 
     async def _resolve_package(self) -> None:
+        """
+        Update `modmail_utils` package from this plugin's directory.
+        """
         global modmail_utils
 
-        mode = os.environ.get("UTILS_PACKAGE_MODE", "production")
-        if mode.lower() == "development":
+        valids = ("production", "development")
+        mode = os.environ.get("UTILS_PACKAGE_MODE", valids[0]).lower()
+        if mode == valids[1]:
             # for developers usage
             # make sure the package was installed before running the script
+            # install command: pip install -e path
             return
 
         if modmail_utils is None or not self._is_latest():
@@ -254,6 +260,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed.description = description
         await ctx.send(embed=embed)
 
+    # these were adapted from cogs/utility.py
     @ext_utils.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_config(self, ctx: commands.Context):
@@ -265,6 +272,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
         To remove a configuration:
         - `{prefix}eutils config remove config-name`
+
+        To show all configurations and their informations:
+        - `{prefix}eutils config help`
         """
         await ctx.send_help(ctx.command)
 
@@ -274,7 +284,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         """
         Set a configuration variable and its value.
         """
-        if key in self.config.defaults.keys():
+        if key in self.config.defaults:
             try:
                 self.config.set(key, value)
                 await self.config.update()
@@ -293,28 +303,6 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             )
         return await ctx.send(embed=embed)
 
-    @utils_config.command(name="remove", aliases=["del", "delete"])
-    @checks.has_permissions(PermissionLevel.OWNER)
-    async def config_remove(self, ctx: commands.Context, *, key: str.lower):
-        """
-        Delete a set configuration variable.
-        """
-        if key in self.config.defaults.keys():
-            self.config.remove(key)
-            await self.config.update()
-            embed = discord.Embed(
-                title="Success",
-                color=self.bot.main_color,
-                description=f"`{key}` is now reset to default.",
-            )
-        else:
-            embed = discord.Embed(
-                title="Error",
-                color=self.bot.error_color,
-                description=f"`{key}` is an invalid key.",
-            )
-        return await ctx.send(embed=embed)
-
     @utils_config.command(name="get")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def config_get(self, ctx: commands.Context, *, key: str.lower = None):
@@ -324,7 +312,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         Leave `key` empty to show all currently set configuration variables.
         """
         if key:
-            if key in self.config.defaults.keys():
+            if key in self.config.defaults:
                 desc = f"`{key}` is set to `{self.bot.config[key]}`"
                 embed = discord.Embed(color=self.bot.main_color, description=desc)
                 embed.set_author(name="Config variable", icon_url=self.bot.user.display_avatar.url)
@@ -346,6 +334,58 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                 embed.add_field(name=name, value=f"`{value}`", inline=False)
 
         return await ctx.send(embed=embed)
+
+    @utils_config.command(name="remove", aliases=["del", "delete"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_remove(self, ctx: commands.Context, *, key: str.lower):
+        """
+        Delete a set configuration variable.
+        """
+        if key in self.config.defaults:
+            self.config.remove(key)
+            await self.config.update()
+            embed = discord.Embed(
+                title="Success",
+                color=self.bot.main_color,
+                description=f"`{key}` is now reset to default.",
+            )
+        else:
+            embed = discord.Embed(
+                title="Error",
+                color=self.bot.error_color,
+                description=f"`{key}` is an invalid key.",
+            )
+        return await ctx.send(embed=embed)
+
+    @utils_config.command(name="help", aliases=["info"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_help(self, ctx: commands.Context, key: str.lower = None):
+        """
+        Show information on a specified configuration.
+
+        Leave `key` unspecified to show all available config options and informations.
+        """
+        if key is not None and not (key in self.config.defaults):
+            raise commands.BadArgument(f"`{key}` is an invalid key.")
+
+        config_desc = self.config.config_descriptions
+        if key is not None and key not in config_desc:
+            raise commands.BadArgument(f"No help details found for `{key}`.")
+
+        index = 0
+        embeds = []
+        for i, (current_key, info) in enumerate(config_desc.items()):
+            if current_key == key:
+                index = i
+            embed = discord.Embed(title=f"{current_key}", color=self.bot.main_color)
+            embed.add_field(name="Information:", value=info, inline=False)
+            # use .__get__ to retrieve raw value
+            embed.add_field(name="Current value", value=f"{self.config[current_key]}")
+            embeds += [embed]
+
+        paginator = EmbedPaginatorSession(ctx, *embeds)
+        paginator.current = index
+        await paginator.run()
 
 
 async def setup(bot: ModmailBot) -> None:

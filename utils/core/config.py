@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from ..utils import ExtendedUtils
 
 
+__all__ = ("UtilsConfig",)
+
+
 logger = getLogger(__name__)
 
 
@@ -41,10 +44,20 @@ _optional = {
     "confirm_button_deny_emoji",
 }
 
+_config_descriptions = {
+    "confirm_button_accept_label": "Label for accept confirmation button.",
+    "confirm_button_accept_emoji": "Emoji for accept confirmation button.",
+    "confirm_button_accept_style": "Button color style. The only available options are as follows:\n\t-`1` - Blurple\n\t-`2` - Grey\n\t-`3` - Green\n\t-`4` - Red",
+    "confirm_button_deny_label": "Label for deny confirmation button.",
+    "confirm_button_deny_emoji": "Emoji for accept confirmation button.",
+    "confirm_button_deny_style": "Button color style. The only available options are as follows:\n\t-`1` - Blurple\n\t-`2` - Grey\n\t-`3` - Green\n\t-`4` - Red",
+}
+
 
 class UtilsConfig(Config):
     def __init__(self, cog: ExtendedUtils, db: AsyncIOMotorCollection):
         super().__init__(cog, db, defaults=_default_config)
+        self.config_descriptions: Dict[str, str] = _config_descriptions
 
     def set(self, key: str, item: Any) -> None:
         """
