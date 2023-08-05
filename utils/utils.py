@@ -342,7 +342,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         Delete a set configuration variable.
         """
         if key in self.config.defaults:
-            self.config.remove(key)
+            self.config.remove(key, restore_default=True)
             await self.config.update()
             embed = discord.Embed(
                 title="Success",
