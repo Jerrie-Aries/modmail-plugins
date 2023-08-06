@@ -1,0 +1,85 @@
+name: Bug Report
+description: File a bug report
+assignees: "Jerrie-Aries"
+title: "[BUG]: your bug report title"
+labels: "Maybe bug"
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for taking the time to fill out a bug.
+
+        Please note that this form is for bugs only!
+  - type: input
+    id: bot-info-version
+    attributes:
+      label: Bot Version
+      description: Check with `?about` command.
+      placeholder: eg. v4.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: hosting-method
+    attributes:
+      label: Hosting method
+      description: Check with `?about` command.
+      multiple: true
+      options:
+        - Heroku
+        - Railway
+        - Systemd
+        - PM2
+        - Patreon
+        - Local
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: plugin-involved
+    attributes:
+      label: Plugins
+      description: Plugins that involved with the bug.
+      multiple: true
+      options:
+        - Announcement
+        - Embed Manager
+        - Extended Utils
+        - Giveaway
+        - Invites
+        - Keepalive
+        - Logviewer
+        - Moderation
+        - Role Manager
+        - Support Utility
+        - Trivia
+        - Other
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Summary
+      description: A simple summary of your bug report.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Also tell us, what did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Please copy and paste any relevant log output. This will be automatically formatted into code, so no need for backticks.
+      render: haskell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: You may add screenshots to further explain your problem, if any.
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: Additional Information
+      description: If there is anything else to say, please do so here.
