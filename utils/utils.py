@@ -22,7 +22,7 @@ except ImportError:
     modmail_utils = None
 
 from core import checks
-from core.models import getLogger, PermissionLevel
+from core.models import getLogger, PermissionLevel, UnseenFormatter
 from core.paginator import EmbedPaginatorSession
 
 from .core.config import UtilsConfig
@@ -150,7 +150,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             text = f.read()
         return re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', text, re.MULTILINE).group(1)
 
-    @commands.group(name="ext-utils", aliases=["eutils"], invoke_without_command=True)
+    @commands.group(name="extutils", aliases=["eutils"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def ext_utils(self, ctx: commands.Context):
         """
@@ -368,17 +368,28 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         if key is not None and not (key in self.config.defaults):
             raise commands.BadArgument(f"`{key}` is an invalid key.")
 
-        config_desc = self.config.config_descriptions
-        if key is not None and key not in config_desc:
+        config_info = self.config.config_info
+        if key is not None and key not in config_info:
             raise commands.BadArgument(f"No help details found for `{key}`.")
 
         index = 0
         embeds = []
-        for i, (current_key, info) in enumerate(config_desc.items()):
+
+        def fmt(val: str) -> str:
+            return UnseenFormatter().format(
+                val, prefix=self.bot.prefix, command="eutils config set", key=current_key
+            )
+
+        for i, (current_key, info) in enumerate(config_info.items()):
             if current_key == key:
                 index = i
             embed = discord.Embed(title=f"{current_key}", color=self.bot.main_color)
-            embed.add_field(name="Information:", value=info, inline=False)
+            embed.add_field(name="Information:", value=info["description"], inline=False)
+            if info.get("examples", []):
+                example_text = ""
+                for example in info["examples"]:
+                    example_text += f"- {fmt(example)}\n"
+                embed.add_field(name="Examples:", value=example_text, inline=False)
             # use .__get__ to retrieve raw value
             embed.add_field(name="Current value", value=f"{self.config[current_key]}")
             embeds += [embed]

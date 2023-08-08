@@ -44,20 +44,38 @@ _optional = {
     "confirm_button_deny_emoji",
 }
 
-_config_descriptions = {
-    "confirm_button_accept_label": "Label for accept confirmation button.",
-    "confirm_button_accept_emoji": "Emoji for accept confirmation button.",
-    "confirm_button_accept_style": "Button color style. The only available options are as follows:\n\t-`1` - Blurple\n\t-`2` - Grey\n\t-`3` - Green\n\t-`4` - Red",
-    "confirm_button_deny_label": "Label for deny confirmation button.",
-    "confirm_button_deny_emoji": "Emoji for accept confirmation button.",
-    "confirm_button_deny_style": "Button color style. The only available options are as follows:\n\t-`1` - Blurple\n\t-`2` - Grey\n\t-`3` - Green\n\t-`4` - Red",
+_config_info = {
+    "confirm_button_accept_label": {
+        "description": "Label for accept confirmation button.",
+        "examples": ["`{prefix}{command} {key} Confirm`"],
+    },
+    "confirm_button_accept_emoji": {
+        "description": "Emoji for accept confirmation button.",
+        "examples": ["`{prefix}{command} {key} ✅`"],
+    },
+    "confirm_button_accept_style": {
+        "description": "Button color style. The only available options are as follows:\n- `1` - Blurple\n- `2` - Grey\n- `3` - Green\n- `4` - Red",
+        "examples": ["`{prefix}{command} {key} 1`"],
+    },
+    "confirm_button_deny_label": {
+        "description": "Label for deny confirmation button.",
+        "examples": ["`{prefix}{command} {key} Cancel`"],
+    },
+    "confirm_button_deny_emoji": {
+        "description": "Emoji for accept confirmation button.",
+        "examples": ["`{prefix}{command} {key} ❌`"],
+    },
+    "confirm_button_deny_style": {
+        "description": "Button color style. The only available options are as follows:\n- `1` - Blurple\n- `2` - Grey\n- `3` - Green\n- `4` - Red",
+        "examples": ["`{prefix}{command} {key} 1`"],
+    },
 }
 
 
 class UtilsConfig(Config):
     def __init__(self, cog: ExtendedUtils, db: AsyncIOMotorCollection):
         super().__init__(cog, db, defaults=_default_config)
-        self.config_descriptions: Dict[str, str] = _config_descriptions
+        self.config_info: Dict[str, str] = _config_info
 
     def set(self, key: str, item: Any) -> None:
         """
