@@ -4,6 +4,8 @@ from typing import Any, Dict, TYPE_CHECKING
 
 import discord
 
+from discord.ext import commands
+
 from core.models import getLogger
 from core.utils import tryint
 
@@ -29,11 +31,16 @@ _default_config: Dict[str, Any] = {
     "confirm_button_deny_label": None,
     "confirm_button_deny_emoji": None,
     "confirm_button_deny_style": discord.ButtonStyle.red.value,
+    "developer_channel": None,
 }
 
 _enums = {
     "confirm_button_accept_style": discord.ButtonStyle,
     "confirm_button_deny_style": discord.ButtonStyle,
+}
+
+_converters = {
+    "developer_channel": commands.TextChannelConverter,
 }
 
 # keys that accept `None` as value
@@ -69,6 +76,23 @@ _config_info = {
         "description": "Button color style. The only available options are as follows:\n- `1` - Blurple\n- `2` - Grey\n- `3` - Green\n- `4` - Red",
         "examples": ["`{prefix}{config_set} {key} 1`"],
     },
+    "developer_channel": {
+        "description": (
+            "Represents developer channel.\n\n"
+            "What is developer channel?\n"
+            "- For ease of developing, in the developer channel "
+            "bot owners no longer need to use prefixes to execute commands.\n\n"
+            "**Notes:**\n"
+            "- The channel type for developer channel must only be discord [TextChannel](https://discordpy.readthedocs.io/en/latest/api.html#discord.TextChannel). "
+            "Other type of channels are not supported.\n"
+            "- It is encouraged to not chat in the developer channel."
+        ),
+        "examples": [
+            "`{prefix}{config_set} {key} {ctx.channel.id}`",
+            "`{prefix}{config_set} {key} {ctx.channel.mention}`",
+            "`{prefix}{config_set} {key} {ctx.channel.name}`",
+        ],
+    },
 }
 
 
@@ -76,6 +100,16 @@ class UtilsConfig(Config):
     def __init__(self, cog: ExtendedUtils, db: AsyncIOMotorCollection):
         super().__init__(cog, db, defaults=_default_config)
         self.config_info: Dict[str, str] = _config_info
+
+    async def resolve_conversion(self, ctx: commands.Context, key: str, value: str) -> str:
+        """
+        A helper to resolve async conversion.
+        """
+        if key in _converters:
+            converter = _converters[key]
+            entity = await converter().convert(ctx, value)
+            value = str(entity.id)
+        return value
 
     def set(self, key: str, item: Any) -> None:
         """

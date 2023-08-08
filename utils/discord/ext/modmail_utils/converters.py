@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Union, TYPE_CHECKING
+from typing import Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -12,9 +12,27 @@ if TYPE_CHECKING:
     from bot import ModmailBot
 
 
-__all__ = ("EmojiConverter", "convert_emoji")
+__all__ = (
+    "EmojiConverter",
+    "convert_emoji",
+    "convert_text_channel",
+    "get_id_match",
+)
 
 EmojiT = Union[discord.Emoji, discord.PartialEmoji]
+_ID_REGEX = re.compile(r"([0-9]{15,20})$")
+
+
+def get_id_match(argument: str) -> Optional[re.Match]:
+    """
+    Checks whether the argument is a valid ID string.
+
+    Returns
+    -------
+    Optional[re.Match]
+        `re.Match` object if the argument is a valid ID string. Otherwise returns `None`.
+    """
+    return _ID_REGEX.match(argument)
 
 
 def convert_emoji(bot: ModmailBot, name: str) -> EmojiT:
@@ -59,3 +77,56 @@ class EmojiConverter(commands.Converter):
             return convert_emoji(ctx.bot, argument)
         except commands.BadArgument:
             raise commands.EmojiNotFound(argument)
+
+
+# modified from discord.py's ext.commands.GuidChannelConverter._resolve_channel
+def _resolve_channel(
+    ctx: commands.Context, argument: str, attribute: str, channel_type: Any
+) -> discord.abc.GuildChannel:
+    bot = ctx.bot
+    match = get_id_match(argument) or re.match(r"<#([0-9]{15,20})>$", argument)
+    result = None
+    guild = ctx.guild
+
+    if match is None:
+        # not a mention
+        if guild:
+            iterable = getattr(guild, attribute)
+            result = discord.utils.get(iterable, name=argument)
+        else:
+
+            def check(c):
+                return isinstance(c, channel_type) and c.name == argument
+
+            result = discord.utils.find(check, bot.get_all_channels())  # type: ignore
+    else:
+        channel_id = int(match.group(1))
+        if guild:
+            result = guild.get_channel(channel_id)
+        else:
+            result = None
+            for guild in bot.guilds:
+                result = guild.get_channel(argument)
+                if result:
+                    break
+
+    if not isinstance(result, channel_type):
+        raise commands.ChannelNotFound(argument)
+
+    return result
+
+
+def convert_text_channel(ctx: commands.Context, argument: str) -> discord.TextChannel:
+    """
+    Converts a passed argument to a `discord.TextChannel`.
+
+    All lookups are via the local guild. If in a DM context, then the lookup
+    is done by the global cache.
+
+    The lookup strategy is as follows (in order):
+
+    1. Lookup by ID.
+    2. Lookup by mention.
+    3. Lookup by name.
+    """
+    return _resolve_channel(ctx, argument, "text_channels", discord.TextChannel)

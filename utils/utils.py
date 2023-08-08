@@ -289,6 +289,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         """
         if key in self.config.defaults:
             try:
+                value = await self.config.resolve_conversion(ctx, key, value)
                 self.config.set(key, value)
                 await self.config.update()
                 embed = discord.Embed(
@@ -296,8 +297,8 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                     color=self.bot.main_color,
                     description=f"Set `{key}` to `{self.config[key]}`.",
                 )
-            except InvalidConfigError as exc:
-                embed = exc.embed
+            except commands.BadArgument as exc:
+                raise commands.BadArgument(str(exc))
         else:
             embed = discord.Embed(
                 title="Error",
@@ -383,6 +384,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                 val,
                 prefix=self.bot.prefix,
                 config_set=f"{ctx.command.parent.qualified_name} set",
+                ctx=ctx,
                 key=current_key,
             )
 
@@ -403,6 +405,30 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         paginator = EmbedPaginatorSession(ctx, *embeds)
         paginator.current = index
         await paginator.run()
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot:
+            return
+        channel_id = self.config.get("developer_channel")
+        if not channel_id:
+            return
+
+        checks = [
+            message.type == discord.MessageType.default,
+            message.author.id in self.bot.bot_owner_ids,
+            str(message.channel.id) == channel_id,
+        ]
+        if not all(checks):
+            return
+        if message.content.startswith(tuple(await self.bot.get_prefix())):
+            return
+        message.content = self.bot.prefix + message.content
+        ctxs = await self.bot.get_contexts(message)
+        for ctx in ctxs:
+            if ctx.command:
+                await self.bot.invoke(ctx)
+                continue
 
 
 async def setup(bot: ModmailBot) -> None:
