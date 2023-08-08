@@ -133,6 +133,9 @@ class UtilsConfig(Config):
         """
         key = key.lower()
         if key not in _default_config:
+            if default is not None:
+                # do nothing
+                pass
             raise KeyError(f"{key} is invalid key.")
         if key not in self._cache:
             self._cache[key] = self.deepcopy(_default_config[key])

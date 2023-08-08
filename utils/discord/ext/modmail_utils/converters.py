@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Any, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands

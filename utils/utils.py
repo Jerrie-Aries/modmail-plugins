@@ -369,7 +369,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
         Leave `key` unspecified to show all available config options and informations.
         """
-        if key is not None and not (key in self.config.defaults):
+        if key is not None and key not in self.config.defaults:
             raise commands.BadArgument(f"`{key}` is an invalid key.")
 
         config_info = self.config.config_info
