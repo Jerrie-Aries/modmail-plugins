@@ -313,7 +313,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         """
         if key:
             if key in self.config.defaults:
-                desc = f"`{key}` is set to `{self.bot.config[key]}`"
+                desc = f"`{key}` is set to `{self.config[key]}`"
                 embed = discord.Embed(color=self.bot.main_color, description=desc)
                 embed.set_author(name="Config variable", icon_url=self.bot.user.display_avatar.url)
 
