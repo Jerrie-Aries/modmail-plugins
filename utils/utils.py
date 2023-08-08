@@ -150,15 +150,15 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             text = f.read()
         return re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', text, re.MULTILINE).group(1)
 
-    @commands.group(name="extutils", aliases=["eutils"], invoke_without_command=True)
+    @commands.group(aliases=["extutils"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def ext_utils(self, ctx: commands.Context):
+    async def eutils(self, ctx: commands.Context):
         """
         Extended Utils base command.
         """
         await ctx.send_help(ctx.command)
 
-    @ext_utils.command(name="info")
+    @eutils.command(name="info")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_info(self, ctx: commands.Context):
         """
@@ -179,7 +179,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed.set_footer(text=f"{__plugin_name__}: v{__version__}")
         await ctx.send(embed=embed)
 
-    @ext_utils.command(name="update")
+    @eutils.command(name="update")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_update(self, ctx: commands.Context):
         """
@@ -210,7 +210,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed.description = description
         await msg.edit(embed=embed)
 
-    @ext_utils.command(name="reorder", hidden=True)
+    @eutils.command(name="reorder", hidden=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_reorder(self, ctx: commands.Context):
         """
@@ -261,7 +261,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         await ctx.send(embed=embed)
 
     # these were adapted from cogs/utility.py
-    @ext_utils.group(name="config", invoke_without_command=True)
+    @eutils.group(name="config", usage="[subcommand]", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_config(self, ctx: commands.Context):
         """
@@ -269,6 +269,9 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
         To set a configuration:
         - `{prefix}eutils config set config-name value`
+
+        To get a configuration value:
+        - `{prefix}eutils config get config-name`
 
         To remove a configuration:
         - `{prefix}eutils config remove config-name`
@@ -377,7 +380,10 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
         def fmt(val: str) -> str:
             return UnseenFormatter().format(
-                val, prefix=self.bot.prefix, command="eutils config set", key=current_key
+                val,
+                prefix=self.bot.prefix,
+                config_set=f"{ctx.command.parent.qualified_name} set",
+                key=current_key,
             )
 
         for i, (current_key, info) in enumerate(config_info.items()):

@@ -47,27 +47,27 @@ _optional = {
 _config_info = {
     "confirm_button_accept_label": {
         "description": "Label for accept confirmation button.",
-        "examples": ["`{prefix}{command} {key} Confirm`"],
+        "examples": ["`{prefix}{config_set} {key} Confirm`"],
     },
     "confirm_button_accept_emoji": {
         "description": "Emoji for accept confirmation button.",
-        "examples": ["`{prefix}{command} {key} ✅`"],
+        "examples": ["`{prefix}{config_set} {key} ✅`"],
     },
     "confirm_button_accept_style": {
         "description": "Button color style. The only available options are as follows:\n- `1` - Blurple\n- `2` - Grey\n- `3` - Green\n- `4` - Red",
-        "examples": ["`{prefix}{command} {key} 1`"],
+        "examples": ["`{prefix}{config_set} {key} 1`"],
     },
     "confirm_button_deny_label": {
         "description": "Label for deny confirmation button.",
-        "examples": ["`{prefix}{command} {key} Cancel`"],
+        "examples": ["`{prefix}{config_set} {key} Cancel`"],
     },
     "confirm_button_deny_emoji": {
         "description": "Emoji for accept confirmation button.",
-        "examples": ["`{prefix}{command} {key} ❌`"],
+        "examples": ["`{prefix}{config_set} {key} ❌`"],
     },
     "confirm_button_deny_style": {
         "description": "Button color style. The only available options are as follows:\n- `1` - Blurple\n- `2` - Grey\n- `3` - Green\n- `4` - Red",
-        "examples": ["`{prefix}{command} {key} 1`"],
+        "examples": ["`{prefix}{config_set} {key} 1`"],
     },
 }
 
