@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, ui
@@ -137,7 +137,7 @@ class ContactView(BaseView):
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
         self.select_options = self.manager.config["select"]["options"]
-        self._temp_cached_users = set()
+        self._temp_cached_users: Dict[str, float] = {}
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -162,7 +162,15 @@ class ContactView(BaseView):
         Entry point when a user made interaction on this view's components.
         """
         user = interaction.user
-        if user.id in self._temp_cached_users or self.bot.guild.get_member(user.id) is None:
+        if str(user.id) in self._temp_cached_users:
+            # this is to handle in case something went wrong that causes the removal
+            # isn't beeing done after the user id was added in cache.
+            started_time = self._temp_cached_users[str(user.id)]
+            if discord.utils.utcnow().timestamp() - started_time > 40:
+                self._temp_cached_users.pop(str(user.id), None)
+            else:
+                return False
+        if self.bot.guild.get_member(user.id) is None:
             return False
         thread = self.manager.find_thread(user)
         embed = discord.Embed(color=self.bot.error_color)
@@ -203,7 +211,7 @@ class ContactView(BaseView):
         Thread creation and sending response will be done from here.
         """
         user = interaction.user
-        self._temp_cached_users.add(user.id)
+        self._temp_cached_users[str(user.id)] = discord.utils.utcnow().timestamp()
         category = None
         if self.select_options:
             view = BaseView(self.cog, timeout=20)
@@ -229,6 +237,7 @@ class ContactView(BaseView):
             await message.delete()
 
             if not view.inputs:
+                self._temp_cached_users.pop(str(user.id), None)
                 return
 
             option = view.inputs["contact_option"]
@@ -259,11 +268,11 @@ class ContactView(BaseView):
         await view.wait()
 
         if not view.value:
-            self._temp_cached_users.remove(user.id)
+            self._temp_cached_users.pop(str(user.id), None)
             return
 
         await self.manager.create_thread(user, category=category, interaction=interaction)
-        self._temp_cached_users.remove(user.id)
+        self._temp_cached_users.pop(str(user.id), None)
 
     async def force_stop(self) -> None:
         """
