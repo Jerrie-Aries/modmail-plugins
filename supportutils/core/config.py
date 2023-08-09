@@ -25,6 +25,7 @@ _default_config: Dict[str, Any] = {
             "options": [],
             "placeholder": "Choose a category",
         },
+        "override_dmdisabled": False,
     },
     "feedback": {
         "enable": False,

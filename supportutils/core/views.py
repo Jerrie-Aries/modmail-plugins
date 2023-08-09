@@ -182,7 +182,10 @@ class ContactView(BaseView):
             embed.description = content
         elif await self.bot.is_blocked(user):
             embed.description = f"You are currently blocked from contacting {self.bot.user.name}."
-        elif self.bot.config["dm_disabled"] in (DMDisabled.NEW_THREADS, DMDisabled.ALL_THREADS):
+        elif (
+            self.bot.config["dm_disabled"] == DMDisabled.NEW_THREADS
+            and not self.manager.config.get("override_dmdisabled")
+        ) or self.bot.config["dm_disabled"] == DMDisabled.ALL_THREADS:
             embed.description = self.bot.config["disabled_new_thread_response"]
             logger.info(
                 "A new thread using contact menu was blocked from %s due to disabled Modmail.",

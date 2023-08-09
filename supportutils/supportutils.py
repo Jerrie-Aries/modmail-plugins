@@ -705,6 +705,39 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
+    @cm_config.command(name="override_dmdisabled", aliases=["ignore_dmdisabled"])
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def cm_config_override_dmdisabled(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable the override of DM disabled.
+
+        `mode` may be `True` or `False` (case insensitive).
+        Leave `mode` empty to retrieve the current set value.
+
+        __**Note:**__
+        - This can only override the disable new thread setting.
+        """
+        config = self.config.contact
+        enabled = config.get("override_dmdisabled", False)
+        if mode is None:
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description="DM disabled override is currently " + ("enabled." if enabled else "disabled."),
+            )
+            return await ctx.send(embed=embed)
+        if mode == enabled:
+            raise commands.BadArgument(
+                "DM disabled override is already " + ("enabled." if enabled else "disabled.")
+            )
+
+        config["override_dmdisabled"] = mode
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="DM disabled override is now " + ("enabled." if mode else "disabled."),
+        )
+        await ctx.send(embed=embed)
+
     @cm_config.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_clear(self, ctx: commands.Context):
