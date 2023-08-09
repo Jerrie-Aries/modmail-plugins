@@ -56,7 +56,7 @@ class Logviewer(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def logviewer(self, ctx: commands.Context):
         """
-        Log viewer manager.
+        Logviewer manager.
         """
         await ctx.send_help(ctx.command)
 
@@ -64,17 +64,17 @@ class Logviewer(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def lv_start(self, ctx: commands.Context):
         """
-        Starts the log viewer server.
+        Starts the logviewer server.
         """
         if self.server:
-            raise commands.BadArgument("Log viewer server is already running.")
+            raise commands.BadArgument("Logviewer server is already running.")
 
         self.server = LogviewerServer(self.bot)
         await self.server.start()
         embed = discord.Embed(
             title="Start",
             color=self.bot.main_color,
-            description="Log viewer server is now running.",
+            description="Logviewer server is now running.",
         )
         await ctx.send(embed=embed)
 
@@ -82,13 +82,13 @@ class Logviewer(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def lv_stop(self, ctx: commands.Context):
         """
-        Stops the log viewer.
+        Stops the logviewer.
         """
         if not self.server:
-            raise commands.BadArgument("Log viewer server is not running.")
+            raise commands.BadArgument("Logviewer server is not running.")
         await self._stop_server()
         embed = discord.Embed(
-            title="Stop", color=self.bot.main_color, description="Log viewer server is now stopped."
+            title="Stop", color=self.bot.main_color, description="Logviewer server is now stopped."
         )
         await ctx.send(embed=embed)
 
@@ -96,10 +96,10 @@ class Logviewer(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.OWNER)
     async def lv_info(self, ctx: commands.Context):
         """
-        Shows information of the log viewer.
+        Shows information of the logviewer.
         """
         if not self.server:
-            raise commands.BadArgument("Log viewer server is not running.")
+            raise commands.BadArgument("Logviewer server is not running.")
 
         embed = discord.Embed(
             title="__Homepage__",
@@ -107,7 +107,7 @@ class Logviewer(commands.Cog, name=__plugin_name__):
             url=self.bot.config["log_url"].strip("/"),
         )
         embed.set_author(
-            name="Log Viewer",
+            name="Logviewer",
             icon_url=self.bot.user.display_avatar.url,
         )
         embed.set_thumbnail(url=self.bot.user.display_avatar.url)

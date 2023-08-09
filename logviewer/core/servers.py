@@ -55,7 +55,7 @@ class Config:
 
 class LogviewerServer:
     """
-    Main class to handle the log viewer server.
+    Main class to handle the logviewer server.
     """
 
     def __init__(self, bot: ModmailBot):
@@ -91,13 +91,13 @@ class LogviewerServer:
 
     async def start(self) -> None:
         """
-        Starts the log viewer server.
+        Starts the logviewer server.
         """
         if self._running:
-            raise RuntimeError("Log viewer server is already running.")
+            raise RuntimeError("Logviewer server is already running.")
         if not self._hooked:
             self.init_hook()
-        logger.info("Starting log viewer server.")
+        logger.info("Starting logviewer server.")
         self.runner = web.AppRunner(self.app, handle_signals=True)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.config.host, self.config.port)
@@ -114,7 +114,7 @@ class LogviewerServer:
 
     async def stop(self) -> None:
         """
-        Stops the log viewer server.
+        Stops the logviewer server.
         """
         logger.warning(" - Shutting down web server. - ")
         if self.site:
