@@ -59,6 +59,7 @@ class DropdownMenu(ui.Select):
         option = self.get_option(self.values[0])
         for opt in self.options:
             opt.default = opt.value in self.values
+        self.view.interaction = interaction
         await self.followup_callback(interaction, self, option=option)
 
     def get_option(self, value: str) -> discord.SelectOption:
@@ -253,10 +254,8 @@ class ContactView(BaseView):
         if not view.value:
             self._temp_cached_users.pop(str(user.id), None)
             return
-
         if view.inputs:
             option = view.inputs["contact_option"]
-            interaction = view.inputs["interaction"]
             category_id = None
             for data in self.select_options:
                 if data.get("label") == option.label:
@@ -269,7 +268,7 @@ class ContactView(BaseView):
                 # just log, the thread will be created in main category
                 logger.error(f"Category with ID {category_id} not found.")
 
-        await self.manager.create_thread(user, category=category, interaction=interaction)
+        await self.manager.create_thread(user, category=category, interaction=view.interaction)
         self._temp_cached_users.pop(str(user.id), None)
 
     async def force_stop(self) -> None:
