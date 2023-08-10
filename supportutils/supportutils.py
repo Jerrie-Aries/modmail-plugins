@@ -116,6 +116,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "default": view.inputs.get(subkey) or getattr(self.config, prefix, {})[key].get(subkey),
                 }
             else:
+                # select options
                 elements = [
                     ("emoji", 256),
                     ("label", Limit.button_label),
@@ -1242,7 +1243,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.feedback["rating"]["placeholder"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
-        view = self.get_config_view(ctx, title=embed.title, keys=["rating", "placeholder"])
+        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "rating", "placeholder"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
