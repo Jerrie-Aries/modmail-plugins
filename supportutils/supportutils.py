@@ -92,10 +92,11 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         else:
             prefix, session, suffix = args
 
+        # confusing part
         valid_sessions = ("button", "dropdown", "embed", "rating", "response")
         suffixes = ("placeholder",)
         options = {}
-        if session == valid_sessions[0]:
+        if session == "button":
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
             button_config = getattr(self.config, prefix, {}).get(session)
             for elem in elements:
@@ -105,9 +106,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": False,
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
-        elif session in (valid_sessions[1], valid_sessions[3]):
-            if suffix == suffixes[0]:
-                key = session if session == valid_sessions[3] else "select"
+        elif session in ("dropdown", "rating"):
+            if suffix == "placeholder":
+                key = session if session == "rating" else "select"
                 options[suffix] = {
                     "label": suffix.title(),
                     "max_length": Limit.select_placeholder,
@@ -128,13 +129,18 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                         "required": elem[0] in ("label", "category"),
                         "default": view.inputs.get(elem[0]),
                     }
-        elif session == valid_sessions[2]:
+        elif session == "embed":
             elements = [
                 ("title", Limit.embed_title),
                 ("description", Limit.text_input_max),
                 ("footer", Limit.embed_footer),
             ]
-            embed_config = getattr(self.config, prefix, {}).get(session)
+            attr = prefix
+            key = session
+            if prefix == "confirmation":
+                attr = "contact"
+                key = "confirmation_" + key
+            embed_config = getattr(self.config, attr, {}).get(key)
             for elem in elements:
                 options[elem[0]] = {
                     "label": elem[0].title(),
@@ -143,7 +149,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": elem[0] == "description",
                     "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
-        elif session == valid_sessions[4]:
+        elif session == "response":
             options[session] = {
                 "label": session.title(),
                 "max_length": Limit.text_input_max,
@@ -702,6 +708,73 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         await self.config.update()
         embed = discord.Embed(
             color=self.bot.main_color, description="All dropdown configurations are now cleared."
+        )
+        await ctx.send(embed=embed)
+
+    @cm_config.group(
+        name="confirmembed",
+        help=(
+            "Customize the embed title, description and footer text for thread creation confirmation embed.\n"
+            "This embed will be sent as ephemeral after a user presses the Contact button.\n\n"
+            "__**Available fields:**__\n"
+            f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
+            f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
+            f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n"
+        ),
+        invoke_without_command=True,
+    )
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def cm_config_confirmembed(self, ctx: commands.Context):
+        """
+        Customize the embed title, description and footer text for thread creation confirmation embed.
+        """
+        embed = discord.Embed(
+            title="Confirmation embed",
+            color=self.bot.main_color,
+            description=ctx.command.help.format(prefix=self.bot.prefix),
+        )
+        embed.set_footer(text="Press Set to set/edit the values")
+        embed_config = self.config.contact.get("confirmation_embed")
+        embed.add_field(
+            name="Current values",
+            value="\n".join(
+                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=256)}`"
+                for key in ("title", "description", "footer")
+            ),
+        )
+        view = self.get_config_view(ctx, embed.title.lower())
+        view.message = message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+        await message.edit(view=view)
+
+        if view.value:
+            payload = view.extras
+            updated = []
+            for key in list(payload):
+                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
+                self.config.contact["confirmation_embed"][key] = payload.pop(key)
+            await self.config.update()
+            embed = discord.Embed(
+                description="Successfully set the new configurations for thread creation confirmation embed.\n\n"
+                + "\n".join(updated),
+                color=self.bot.main_color,
+            )
+            await view.interaction.followup.send(embed=embed)
+
+    @cm_config_confirmembed.command(name="clear")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def cm_config_embed_clear(self, ctx: commands.Context):
+        """
+        Clear the thread creation confirmation embed configurations and reset to default values.
+        """
+        default = self.config.defaults["contact"].get("confirmation_embed", {})
+
+        self.config.contact["confirmation_embed"] = self.config.deepcopy(default)
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Thread creation confirmation embed configurations are now reset to defaults.",
         )
         await ctx.send(embed=embed)
 

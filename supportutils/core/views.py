@@ -59,7 +59,6 @@ class DropdownMenu(ui.Select):
         option = self.get_option(self.values[0])
         for opt in self.options:
             opt.default = opt.value in self.values
-        self.view.interaction = interaction
         await self.followup_callback(interaction, self, option=option)
 
     def get_option(self, value: str) -> discord.SelectOption:
@@ -74,8 +73,6 @@ class BaseView(View):
     Base view class.
     """
 
-    children: List[Button]
-
     def __init__(self, cog: SupportUtility, *, message: discord.Message = MISSING, timeout: float = 300.0):
         super().__init__(message=message, timeout=timeout)
         self.cog: SupportUtility = cog
@@ -83,6 +80,9 @@ class BaseView(View):
 
     async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
         logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        raise NotImplementedError
 
 
 class SupportUtilityView(BaseView):
@@ -166,7 +166,7 @@ class ContactView(BaseView):
             # this is to handle in case something went wrong that causes the removal
             # isn't beeing done after the user id was added in cache.
             started_time = self._temp_cached_users[str(user.id)]
-            if discord.utils.utcnow().timestamp() - started_time > 40:
+            if discord.utils.utcnow().timestamp() - started_time > 30:
                 self._temp_cached_users.pop(str(user.id), None)
             else:
                 return False
@@ -197,7 +197,7 @@ class ContactView(BaseView):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return False
 
-    async def _dropdown_callback(
+    async def _category_select_callback(
         self,
         interaction: discord.Interaction,
         select: DropdownMenu,
@@ -205,8 +205,7 @@ class ContactView(BaseView):
     ) -> None:
         view = select.view
         view.inputs["contact_option"] = option
-        view.inputs["interaction"] = interaction
-        view.stop()
+        await interaction.response.defer()
 
     async def handle_interaction(self, interaction: Interaction, button: Button) -> None:
         """
@@ -216,8 +215,9 @@ class ContactView(BaseView):
         user = interaction.user
         self._temp_cached_users[str(user.id)] = discord.utils.utcnow().timestamp()
         category = None
+        view = ConfirmView(bot=self.bot, user=user, timeout=30.0)
         if self.select_options:
-            view = BaseView(self.cog, timeout=20)
+            view.clear_items()
             options = []
             for data in self.select_options:
                 option = discord.SelectOption(
@@ -227,22 +227,34 @@ class ContactView(BaseView):
             dropdown = DropdownMenu(
                 options=options,
                 placeholder=self.manager.config["select"].get("placeholder"),
-                callback=self._dropdown_callback,
+                callback=self._category_select_callback,
             )
             view.add_item(dropdown)
-            await interaction.response.send_message(view=view, ephemeral=True)
-            # InteractionResponse.send_message() returns None
-            # starting discord.py v2.1, it will have the delete_after kwarg
-            # as of now we will have to fetch the response message we just sent to be able to delete it later
-            message = await interaction.original_response()
+            view.add_item(view.accept_button)
+            view.add_item(view.deny_button)
 
-            await view.wait()
-            await message.delete()
+        confirm_config = self.manager.config["confirmation_embed"]
+        embed = discord.Embed(
+            title=confirm_config["title"],
+            description=confirm_config["description"],
+            color=self.bot.main_color,
+        )
+        footer = confirm_config["footer"]
+        if footer:
+            embed.set_footer(text=footer)
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True,
+        )
+        view.message = await interaction.original_response()
+        await view.wait()
 
-            if not view.inputs:
-                self._temp_cached_users.pop(str(user.id), None)
-                return
+        if not view.value:
+            self._temp_cached_users.pop(str(user.id), None)
+            return
 
+        if view.inputs:
             option = view.inputs["contact_option"]
             interaction = view.inputs["interaction"]
             category_id = None
@@ -256,23 +268,6 @@ class ContactView(BaseView):
             if category is None:
                 # just log, the thread will be created in main category
                 logger.error(f"Category with ID {category_id} not found.")
-
-        view = ConfirmView(bot=self.bot, user=user, timeout=20.0)
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title=self.bot.config["confirm_thread_creation_title"],
-                description=self.bot.config["confirm_thread_response"],
-                color=self.bot.main_color,
-            ),
-            view=view,
-            ephemeral=True,
-        )
-        view.message = await interaction.original_response()
-        await view.wait()
-
-        if not view.value:
-            self._temp_cached_users.pop(str(user.id), None)
-            return
 
         await self.manager.create_thread(user, category=category, interaction=interaction)
         self._temp_cached_users.pop(str(user.id), None)
@@ -334,7 +329,7 @@ class FeedbackView(BaseView):
                 DropdownMenu(
                     options=options,
                     placeholder=rating_config.get("placeholder"),
-                    callback=self._dropdown_callback,
+                    callback=self._rating_select_callback,
                     custom_id=f"feedback_dropdown",
                     row=0,
                 )
@@ -368,7 +363,7 @@ class FeedbackView(BaseView):
         await interaction.response.defer()
         return False
 
-    async def _dropdown_callback(
+    async def _rating_select_callback(
         self,
         interaction: discord.Interaction,
         select: DropdownMenu,
