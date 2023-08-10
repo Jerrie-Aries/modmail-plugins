@@ -26,10 +26,13 @@ _default_config: Dict[str, Any] = {
             "placeholder": "Choose a category",
         },
         "override_dmdisabled": False,
-        "confirmation_embed": {
-            "title": "Confirm thread creation",
-            "description": "Use the button below to confirm thread creation which will directly contact the moderators.",
-            "footer": None,
+        "confirmation": {
+            "enable": True,  # not used for now
+            "embed": {
+                "title": "Confirm thread creation",
+                "description": "Use the button below to confirm thread creation which will directly contact the moderators.",
+                "footer": None,
+            },
         },
     },
     "feedback": {
@@ -56,7 +59,8 @@ class SupportUtilityConfig(Config):
         await super().fetch()
         self.recursively_resolve_keys(self.defaults, self._cache)
 
-    # if this works, implement this in utils
+    # TODO: if this works, implement this in utils
+    # then this can be removed
     def recursively_resolve_keys(self, base: Dict[str, Any], data: Dict[str, Any]) -> None:
         for key, value in base.items():
             if key not in data:

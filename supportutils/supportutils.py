@@ -84,21 +84,22 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         the `Modal` view.
         """
         view = item.view
-        args = view.input_session.split(" ")
-        if not 1 < len(args) < 4:
-            raise ValueError("Unable to unpack. args length must only be 2 or 3.")
-        if len(args) == 2:
-            prefix, session, suffix = *args, None
+        keys = view.extras.get("keys", [])
+        if not 1 < len(keys) < 4:
+            raise ValueError("Unable to unpack. keys length must only be 2 or 3.")
+        if len(keys) == 2:
+            prefix, key, subkey = *keys, None
         else:
-            prefix, session, suffix = args
+            prefix, key, subkey = keys
 
         # confusing part
-        valid_sessions = ("button", "dropdown", "embed", "rating", "response")
-        suffixes = ("placeholder",)
+        # valid_prefixes = ("contact", "feedback")  # these two were root config
+        # valid_keys = ("button", "confirmation", "select", "embed", "rating", "response")
+        # valid_subkeys = ("embed", "placeholder", "options")
         options = {}
-        if session == "button":
+        if key == "button":
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
-            button_config = getattr(self.config, prefix, {}).get(session)
+            button_config = getattr(self.config, prefix, {}).get(key)
             for elem in elements:
                 options[elem[0]] = {
                     "label": elem[0].title(),
@@ -106,14 +107,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": False,
                     "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
                 }
-        elif session in ("dropdown", "rating"):
-            if suffix == "placeholder":
-                key = session if session == "rating" else "select"
-                options[suffix] = {
-                    "label": suffix.title(),
+        elif key in ("select", "rating"):
+            if subkey == "placeholder":
+                options[subkey] = {
+                    "label": subkey.title(),
                     "max_length": Limit.select_placeholder,
                     "required": True,
-                    "default": view.inputs.get(suffix) or getattr(self.config, prefix, {})[key].get(suffix),
+                    "default": view.inputs.get(subkey) or getattr(self.config, prefix, {})[key].get(subkey),
                 }
             else:
                 elements = [
@@ -129,18 +129,16 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                         "required": elem[0] in ("label", "category"),
                         "default": view.inputs.get(elem[0]),
                     }
-        elif session == "embed":
+        elif "embed" in (key, subkey):
             elements = [
                 ("title", Limit.embed_title),
                 ("description", Limit.text_input_max),
                 ("footer", Limit.embed_footer),
             ]
-            attr = prefix
-            key = session
-            if prefix == "confirmation":
-                attr = "contact"
-                key = "confirmation_" + key
-            embed_config = getattr(self.config, attr, {}).get(key)
+            if key == "confirmation":
+                embed_config = self.config[prefix][key].get(subkey)
+            else:
+                embed_config = self.config[prefix].get(key)
             for elem in elements:
                 options[elem[0]] = {
                     "label": elem[0].title(),
@@ -149,19 +147,16 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "required": elem[0] == "description",
                     "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
                 }
-        elif session == "response":
-            options[session] = {
-                "label": session.title(),
+        elif key == "response":
+            options[key] = {
+                "label": key.title(),
                 "max_length": Limit.text_input_max,
                 "style": discord.TextStyle.long,
                 "required": True,
-                "default": view.inputs.get(session) or getattr(self.config, prefix, {})[session],
+                "default": view.inputs.get(key) or getattr(self.config, prefix, {})[key],
             }
         else:
-            raise ValueError(
-                f"Invalid view input session. Expected {human_join(valid_sessions)}, "
-                f"got `{session}` instead."
-            )
+            raise ValueError(f"Invalid view input session. Got `{prefix}.{key}.{subkey}` keys.")
         return options
 
     async def _button_callback(self, interaction: discord.Interaction, item: Button) -> None:
@@ -170,9 +165,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"Invalid type of item received. Expected Button, got {type(item).__name__} instead."
             )
 
-        view = item.view
         options = self._resolve_modal_payload(item)
-        title = view.input_session.title() + " config"
+        view = item.view
+        title = view.extras["title"] + " config"
         modal = Modal(view, options, self._modal_callback, title=title)
         await interaction.response.send_modal(modal)
         await modal.wait()
@@ -198,14 +193,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             "category": commands.CategoryChannelConverter,
         }
         errors = []
-        if view.input_session in ("button", "dropdown") and all(
+        if view.extras["keys"][1] in ("button", "select") and all(
             (view.inputs.get(elem) is None for elem in ("emoji", "label"))
         ):
             errors.append("ValueError: Emoji and Label cannot both be None.")
 
         for key, value in view.inputs.items():
             if value is None:
-                view.extras[key] = value
+                view.outputs[key] = value
                 continue
 
             if key == "style":
@@ -218,13 +213,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 except (KeyError, TypeError, ValueError):
                     errors.append(f"ValueError: `{value}` is invalid for color style.")
                     continue
-                view.extras[key] = value
+                view.outputs[key] = value
                 continue
 
             conv = converters.get(key)
             if conv is None:
                 # mostly plain string
-                view.extras[key] = value
+                view.outputs[key] = value
                 continue
             try:
                 entity = await conv().convert(view.ctx, value)
@@ -246,7 +241,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             else:
                 errors.append(f"TypeError: Invalid type of converted value, `{type(entity).__name__}`.")
                 continue
-            view.extras[key] = value
+            view.outputs[key] = value
 
         if errors:
             embed = discord.Embed(
@@ -261,9 +256,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         view.value = True
         modal.stop()
 
-    def get_config_view(self, ctx: commands.Context, input_session: str) -> SupportUtilityView:
-        view = SupportUtilityView(ctx, input_session=input_session)
-        set_label = "add" if input_session == "contact dropdown" else "set"
+    def get_config_view(self, ctx: commands.Context, **extras: Dict[str, Any]) -> SupportUtilityView:
+        view = SupportUtilityView(ctx, extras=extras)
+        set_label = "add" if extras["keys"][-1] == "options" else "set"
         buttons = [
             (set_label, discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
@@ -456,14 +451,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 for key in ("title", "description", "footer")
             ),
         )
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "embed"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
         await message.edit(view=view)
 
         if view.value:
-            payload = view.extras
+            payload = view.outputs
             updated = []
             for key in list(payload):
                 updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
@@ -527,14 +522,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{button_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "button"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
         await message.edit(view=view)
 
         if view.value:
-            payload = view.extras
+            payload = view.outputs
             updated = []
             for key in list(payload):
                 updated.append(f"- **{key.title()}** : `{payload[key]}`")
@@ -588,7 +583,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.contact["select"]["placeholder"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "select", "placeholder"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -597,7 +592,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        placeholder = view.extras["placeholder"]
+        placeholder = view.outputs["placeholder"]
         self.config.contact["select"]["placeholder"] = placeholder
         await self.config.update()
         embed = discord.Embed(
@@ -632,7 +627,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             description=ctx.command.help,
         )
         embed.set_footer(text="Press Add to add new dropdown option")
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "select", "options"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -643,9 +638,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         payload = {}
         updated = []
-        for key in list(view.extras):
-            updated.append(f"- **{key.title()}** : `{view.extras[key]}`")
-            payload[key] = view.extras.pop(key)
+        for key in list(view.outputs):
+            updated.append(f"- **{key.title()}** : `{view.outputs[key]}`")
+            payload[key] = view.outputs.pop(key)
         self.config.contact["select"]["options"].append(payload)
         await self.config.update()
         embed = discord.Embed(
@@ -734,7 +729,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             description=ctx.command.help.format(prefix=self.bot.prefix),
         )
         embed.set_footer(text="Press Set to set/edit the values")
-        embed_config = self.config.contact.get("confirmation_embed")
+        embed_config = self.config.contact["confirmation"]["embed"]
         embed.add_field(
             name="Current values",
             value="\n".join(
@@ -742,18 +737,18 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 for key in ("title", "description", "footer")
             ),
         )
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "confirmation", "embed"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
         await message.edit(view=view)
 
         if view.value:
-            payload = view.extras
+            payload = view.outputs
             updated = []
             for key in list(payload):
                 updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
-                self.config.contact["confirmation_embed"][key] = payload.pop(key)
+                embed_config[key] = payload.pop(key)
             await self.config.update()
             embed = discord.Embed(
                 description="Successfully set the new configurations for thread creation confirmation embed.\n\n"
@@ -768,9 +763,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         Clear the thread creation confirmation embed configurations and reset to default values.
         """
-        default = self.config.defaults["contact"].get("confirmation_embed", {})
+        default = self.config.defaults["contact"].get("confirmation", {})
 
-        self.config.contact["confirmation_embed"] = self.config.deepcopy(default)
+        self.config.contact["confirmation"] = self.config.deepcopy(default)
         await self.config.update()
         embed = discord.Embed(
             color=self.bot.main_color,
@@ -1050,14 +1045,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 for key in ("title", "description", "footer")
             ),
         )
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "embed"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
         await message.edit(view=view)
 
         if view.value:
-            payload = view.extras
+            payload = view.outputs
             updated = []
             for key in list(payload):
                 updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
@@ -1121,14 +1116,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 f"- **{key.title()}** : `{feedback_config.get(key)}`" for key in ("emoji", "label", "style")
             ),
         )
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "button"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
         await message.edit(view=view)
 
         if view.value:
-            payload = view.extras
+            payload = view.outputs
             updated = []
             for key in list(payload):
                 updated.append(f"- **{key.title()}** : `{payload[key]}`")
@@ -1168,7 +1163,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.feedback["response"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the feedback response")
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "response"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -1177,7 +1172,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        response = view.extras["response"]
+        response = view.outputs["response"]
         self.config.feedback["response"] = response
         await self.config.update()
         embed = discord.Embed(
@@ -1247,7 +1242,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.feedback["rating"]["placeholder"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
-        view = self.get_config_view(ctx, embed.title.lower())
+        view = self.get_config_view(ctx, title=embed.title, keys=["rating", "placeholder"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -1256,7 +1251,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if not view.value:
             return
 
-        placeholder = view.extras["placeholder"]
+        placeholder = view.outputs["placeholder"]
         self.config.feedback["rating"]["placeholder"] = placeholder
         await self.config.update()
         embed = discord.Embed(

@@ -74,8 +74,15 @@ class BaseView(View):
     Base view class.
     """
 
-    def __init__(self, cog: SupportUtility, *, message: discord.Message = MISSING, timeout: float = 300.0):
-        super().__init__(message=message, timeout=timeout)
+    def __init__(
+        self,
+        cog: SupportUtility,
+        *,
+        message: discord.Message = MISSING,
+        timeout: float = 300.0,
+        **kwargs: Any,
+    ):
+        super().__init__(message=message, timeout=timeout, **kwargs)
         self.cog: SupportUtility = cog
         self.bot: ModmailBot = cog.bot
 
@@ -87,11 +94,11 @@ class BaseView(View):
 
 
 class SupportUtilityView(BaseView):
-    def __init__(self, ctx: commands.Context, *, input_session: str = MISSING):
+    def __init__(self, ctx: commands.Context, *, extras: Dict[str, Any] = MISSING):
         self.ctx: commands.Context = ctx
         self.user: discord.Member = ctx.author
-        super().__init__(ctx.cog)
-        self.input_session: str = input_session
+        super().__init__(ctx.cog, extras=extras)
+        self.outputs: Dict[str, Any] = {}
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user != self.user:
@@ -234,13 +241,13 @@ class ContactView(BaseView):
             view.add_item(view.accept_button)
             view.add_item(view.deny_button)
 
-        confirm_config = self.manager.config["confirmation_embed"]
+        embed_config = self.manager.config["confirmation"]["embed"]
         embed = discord.Embed(
-            title=confirm_config["title"],
-            description=confirm_config["description"],
+            title=embed_config["title"],
+            description=embed_config["description"],
             color=self.bot.main_color,
         )
-        footer = confirm_config["footer"]
+        footer = embed_config["footer"]
         if footer:
             embed.set_footer(text=footer)
         await interaction.response.send_message(
