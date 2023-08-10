@@ -441,17 +441,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Contact embed",
             color=self.bot.main_color,
-            description=ctx.command.help.format(prefix=self.bot.prefix),
+            description=ctx.command.help.format(prefix=self.bot.prefix) + "\n\n",
         )
         embed.set_footer(text="Press Set to set/edit the values")
         embed_config = self.config.contact.get("embed")
-        embed.add_field(
-            name="Current values",
-            value="\n".join(
-                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=256)}`"
-                for key in ("title", "description", "footer")
-            ),
-        )
+        embed.description += "### Current values"
+        for key in ("title", "description", "footer"):
+            embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
         view = self.get_config_view(ctx, title=embed.title, keys=["contact", "embed"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
@@ -460,16 +456,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         if view.value:
             payload = view.outputs
-            updated = []
-            for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
-                self.config.contact["embed"][key] = payload.pop(key)
-            await self.config.update()
             embed = discord.Embed(
-                description="Successfully set the new configurations for contact menu embed.\n\n"
-                + "\n".join(updated),
+                description="Successfully set the new configurations for contact menu embed.\n\n",
                 color=self.bot.main_color,
             )
+            embed.description += "### New values"
+            for key in list(payload):
+                embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
+                self.config.contact["embed"][key] = payload.pop(key)
+            await self.config.update()
             await view.interaction.followup.send(embed=embed)
 
     @cm_config_embed.command(name="clear")
@@ -513,16 +508,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Contact button",
             color=self.bot.main_color,
-            description=description,
+            description=description + "\n\n",
         )
         embed.set_footer(text="Press Set to set/edit the values")
         button_config = self.config.contact.get("button")
-        embed.add_field(
-            name="Current values",
-            value="\n".join(
-                f"- **{key.title()}** : `{button_config.get(key)}`" for key in ("emoji", "label", "style")
-            ),
-        )
+        embed.description += "### Current values"
+        for key in ("emoji", "label", "style"):
+            embed.add_field(name=key.title(), value=f"`{button_config.get(key)}`")
         view = self.get_config_view(ctx, title=embed.title, keys=["contact", "button"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
@@ -531,16 +523,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         if view.value:
             payload = view.outputs
-            updated = []
-            for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{payload[key]}`")
-                self.config.contact["button"][key] = payload.pop(key)
-            await self.config.update()
             embed = discord.Embed(
-                description="Successfully set the new configurations for contact button.\n\n"
-                + "\n".join(updated),
+                description="Successfully set the new configurations for contact button.\n\n",
                 color=self.bot.main_color,
             )
+            embed.description += "### New values"
+            for key in list(payload):
+                embed.add_field(name=key.title(), value=f"`{payload[key]}`")
+                self.config.contact["button"][key] = payload.pop(key)
+            await self.config.update()
             await view.interaction.followup.send(embed=embed)
 
     @cm_config_button.command(name="clear")
@@ -638,16 +629,16 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             return
 
         payload = {}
-        updated = []
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="Successfully added a dropdown option.\n\n",
+        )
+        embed.description += "### New option"
         for key in list(view.outputs):
-            updated.append(f"- **{key.title()}** : `{view.outputs[key]}`")
+            embed.add_field(name=key.title(), value=f"`{view.outputs[key]}`")
             payload[key] = view.outputs.pop(key)
         self.config.contact["select"]["options"].append(payload)
         await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description="Successfully added a dropdown option:\n\n" + "\n".join(updated),
-        )
         await view.interaction.followup.send(embed=embed)
 
     @cm_config_dropdown.command(name="list")
@@ -727,17 +718,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Confirmation embed",
             color=self.bot.main_color,
-            description=ctx.command.help.format(prefix=self.bot.prefix),
+            description=ctx.command.help.format(prefix=self.bot.prefix) + "\n\n",
         )
         embed.set_footer(text="Press Set to set/edit the values")
         embed_config = self.config.contact["confirmation"]["embed"]
-        embed.add_field(
-            name="Current values",
-            value="\n".join(
-                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=256)}`"
-                for key in ("title", "description", "footer")
-            ),
-        )
+        embed.description += "### Current values"
+        for key in ("title", "description", "footer"):
+            embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
         view = self.get_config_view(ctx, title=embed.title, keys=["contact", "confirmation", "embed"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
@@ -746,21 +733,20 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         if view.value:
             payload = view.outputs
-            updated = []
-            for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
-                embed_config[key] = payload.pop(key)
-            await self.config.update()
             embed = discord.Embed(
-                description="Successfully set the new configurations for thread creation confirmation embed.\n\n"
-                + "\n".join(updated),
+                description="Successfully set the new configurations for thread creation confirmation embed.\n\n",
                 color=self.bot.main_color,
             )
+            embed.description += "### New values"
+            for key in list(payload):
+                embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
+                self.config.contact["confirmation"]["embed"][key] = payload.pop(key)
+            await self.config.update()
             await view.interaction.followup.send(embed=embed)
 
     @cm_config_confirmembed.command(name="clear")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_embed_clear(self, ctx: commands.Context):
+    async def cm_config_confirmembed_clear(self, ctx: commands.Context):
         """
         Clear the thread creation confirmation embed configurations and reset to default values.
         """
@@ -1035,17 +1021,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Feedback embed",
             color=self.bot.main_color,
-            description=ctx.command.help,
+            description=ctx.command.help + "\n\n",
         )
         embed.set_footer(text="Press Set to set/edit the values")
         embed_config = self.config.feedback.get("embed")
-        embed.add_field(
-            name="Current values",
-            value="\n".join(
-                f"- **{key.title()}** : `{truncate(str(embed_config.get(key)), max=256)}`"
-                for key in ("title", "description", "footer")
-            ),
-        )
+        embed.description += "### Current values"
+        for key in ("title", "description", "footer"):
+            embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
         view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "embed"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
@@ -1054,16 +1036,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         if view.value:
             payload = view.outputs
-            updated = []
-            for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{truncate(str(payload[key]), max=1024)}`")
-                self.config.feedback["embed"][key] = payload.pop(key)
-            await self.config.update()
             embed = discord.Embed(
-                description="Successfully set the new configurations for feedback embed.\n\n"
-                + "\n".join(updated),
+                description="Successfully set the new configurations for feedback embed.\n\n",
                 color=self.bot.main_color,
             )
+            embed.description += "### New values"
+            for key in list(payload):
+                embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
+                self.config.feedback["embed"][key] = payload.pop(key)
+            await self.config.update()
             await view.interaction.followup.send(embed=embed)
 
     @fb_config_embed.command(name="clear")
@@ -1107,16 +1088,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(
             title="Feedback button",
             color=self.bot.main_color,
-            description=description,
+            description=description + "\n\n",
         )
         embed.set_footer(text="Press Set to set/edit the values")
         feedback_config = self.config.feedback.get("button")
-        embed.add_field(
-            name="Current values",
-            value="\n".join(
-                f"- **{key.title()}** : `{feedback_config.get(key)}`" for key in ("emoji", "label", "style")
-            ),
-        )
+        embed.description += "### Current values"
+        for key in ("emoji", "label", "style"):
+            embed.add_field(name=key.title(), value=f"`{feedback_config.get(key)}`")
         view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "button"])
         view.message = message = await ctx.send(embed=embed, view=view)
 
@@ -1125,16 +1103,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
         if view.value:
             payload = view.outputs
-            updated = []
-            for key in list(payload):
-                updated.append(f"- **{key.title()}** : `{payload[key]}`")
-                self.config.feedback["button"][key] = payload.pop(key)
-            await self.config.update()
             embed = discord.Embed(
-                description="Successfully set the new configurations for feedback button.\n\n"
-                + "\n".join(updated),
+                description="Successfully set the new configurations for feedback button.\n\n",
                 color=self.bot.main_color,
             )
+            embed.description += "### New values"
+            for key in list(payload):
+                embed.add_field(name=key.title(), value=f"`{payload[key]}`")
+                self.config.feedback["button"][key] = payload.pop(key)
+            await self.config.update()
             await view.interaction.followup.send(embed=embed)
 
     @fb_config_button.command(name="clear")
