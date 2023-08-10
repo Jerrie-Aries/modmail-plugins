@@ -204,16 +204,20 @@ class Feedback:
         Initiate the feedback session from data.
         """
         bot = manager.bot
-        ends = data["ends"]
-        now = discord.utils.utcnow().timestamp()
-        timeout = ends - now
-        if timeout < 0:
-            raise ValueError("Feedback session has ended.")
-
         user_id = int(data["user"])
         user = bot.guild.get_member(user_id)
         if user is None:
             raise ValueError(f"User with ID `{user_id}` not found.")
+        ends = data["ends"]
+        now = discord.utils.utcnow().timestamp()
+        timeout = ends - now
+        if timeout < 0:
+            # these could happen if the bot was down or this plugin was not loaded when the timer ended.
+            # so in case there are dozens (or more for large servers) data were not removed like this one
+            # we have to hard return here without disabling the feedback components to prevent possible rate limits
+            # because doing to much API calls on startup could cause issues.
+            raise ValueError(f"Feedback session for user with ID {user_id} has ended.")
+
         if not user.dm_channel:
             await user.create_dm()
         channel_id = int(data["channel"])
