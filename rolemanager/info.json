@@ -9,8 +9,8 @@
         "\n**Note:**\nIn order for any of the features in this plugin to work, the bot must have `Manage Roles` permission on your server.",
         "\n**Version:**\n`{0}`"
     ],
-    "author": "Jerrie-Aries",
-    "version": "2.3.3",
+    "authors": ["Jerrie-Aries"],
+    "version": "2.3.4",
     "bot_version": "4.0.0",
     "dpy_version": "2.0.0",
     "cogs_required": ["Extended Utils"]
