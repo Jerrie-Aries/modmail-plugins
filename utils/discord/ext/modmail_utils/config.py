@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy as copylib
-from typing import Any, Dict, ItemsView, List, TypeVar, Union, TYPE_CHECKING
+from typing import Any, Dict, ItemsView, List, Optional, TypeVar, Union, TYPE_CHECKING
 
 from discord.ext import commands
 
@@ -134,6 +134,40 @@ class BaseConfig:
         """
         return copylib.deepcopy(obj)
 
+    def _recursive_resolve_keys(
+        self,
+        base: Dict[str, Any],
+        data: Dict[str, Any],
+        *,
+        depth: Optional[int] = None,
+        max_depth: int = 10,
+    ) -> None:
+        """
+        This checks whether any key in base data does not exist in the compared data.
+        If any key does not exist, the key and its value will be copied from the base data
+        and inserted into the compared one.
+
+        Nested dictionary is also supported.
+
+        Raises
+        -----
+        ValueError
+            Maximum depth of recursion has reached. This is mainly to prevent infinity loop
+            in case something went wrong.
+        """
+        if depth is None:
+            depth = 0
+        if depth > max_depth:
+            # a check to break the recursion
+            raise ValueError("Maximum depth of recursion reached.")
+        for key, value in base.items():
+            if key not in data:
+                data[key] = self.deepcopy(value)
+                continue
+            if isinstance(value, dict):
+                # go deeper
+                self._recursive_resolve_keys(value, data[key], depth=depth + 1)
+
 
 class Config(BaseConfig):
     """
@@ -159,9 +193,9 @@ class Config(BaseConfig):
         Parameters
         -----------
         resolve_default_keys : bool
-            Check if all default keys exist in the fetched data. If any key does not exist,
-            the default and its value will be set. For this to work, a dictionary for `.defaults` attribute
-            must be set. Defaults to `True`.
+            Check whether all default keys exist in the fetched data. If any key does not exist, the default and its
+            value will be set. For this to work, a dictionary for `.defaults` attribute must be set.
+            Defaults to `True`.
 
         Returns
         -------
@@ -177,9 +211,7 @@ class Config(BaseConfig):
                 data = {}
 
         if self.defaults is not None and resolve_default_keys:
-            for key, value in self.defaults.items():
-                if key not in data:
-                    data[key] = self.deepcopy(value)
+            self._recursive_resolve_keys(self.defaults, data)
 
         if self.cache_enabled():
             self.refresh(data=data)
