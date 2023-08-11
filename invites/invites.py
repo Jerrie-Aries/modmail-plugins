@@ -73,7 +73,7 @@ class Invites(commands.Cog):
         """
         self.bot = bot
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
-        self.config: Config = MISSING
+        self.config: Config = Config(self, self.db)
         self.tracker: InviteTracker = InviteTracker(self)
 
     async def cog_load(self) -> None:
@@ -95,31 +95,16 @@ class Invites(commands.Cog):
         """
         Populates the config cache with data from database.
         """
-        config = Config(self, self.db)
-        config.defaults = {str(guild.id): config.copy(self.default_config) for guild in self.bot.guilds}
-        await config.fetch()
-
-        self.config = config
-        await self._resolve_new_default_key()
-
-    # temp for migration
-    async def _resolve_new_default_key(self) -> None:
-        update = False
-        for data in self.config.values():
-            if not isinstance(data, dict):
-                continue
-            for key, value in self.default_config.items():
-                if key not in data:
-                    data[key] = self.config.copy(value)
-                    update = True
-        if update:
-            await self.config.update()
+        self.config.defaults = {
+            str(guild.id): self.config.deepcopy(self.default_config) for guild in self.bot.guilds
+        }
+        await self.config.fetch()
 
     def guild_config(self, guild_id: Union[int, str]) -> GuildConfigData:
         guild_id = str(guild_id)
         config = self.config.get(guild_id)
         if config is None:
-            config = self.config.copy(self.default_config)
+            config = self.config.deepcopy(self.default_config)
             self.config[guild_id] = config
 
         return config
