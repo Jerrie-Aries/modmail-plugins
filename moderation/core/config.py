@@ -34,8 +34,7 @@ class GuildConfig(BaseConfig):
         super().__init__(cog, defaults=_default_config)
         self.guild: discord.Guild = guild
         self.webhook: discord.Webhook = MISSING
-        self._cache = data
-        self._recursive_resolve_keys(self.defaults, self._cache)
+        self._cache: Dict[str, Any] = data
 
     def __hash__(self):
         return hash((self.guild.id,))
@@ -106,6 +105,6 @@ class ModConfig(Config):
         """Returns config for the guild specified."""
         config = next((c for c in self.__guild_configs if c.guild.id == guild.id), None)
         if config is None:
-            config = GuildConfig(self.cog, guild, data={})
+            config = GuildConfig(self.cog, guild, data=self.deepcopy(_default_config))
             self.__guild_configs.add(config)
         return config
