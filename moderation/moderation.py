@@ -52,7 +52,7 @@ except ImportError as exc:
         f"Install {required} plugin to resolve this issue."
     ) from exc
 
-from .core.config import ModConfig
+from .core.config import GuildConfig, ModConfig
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.logging import ModerationLogging
@@ -78,8 +78,8 @@ class Moderation(commands.Cog):
         """
         self.bot: ModmailBot = bot
         self.blurple: discord.Color = discord.Color.blurple()
-        self.db: AsyncIOMotorCollection = MISSING  # implemented in `initialize()`
-        self.config_cache: Dict[str, Any] = {}
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
+        self.config: ModConfig = ModConfig(self, self.db)
         self.logging: ModerationLogging = ModerationLogging(self)
         self.massban_enabled: bool = strtobool(os.environ.get("MODERATION_MASSBAN_ENABLE", False))
 
@@ -143,38 +143,7 @@ class Moderation(commands.Cog):
         Initial tasks when loading the cog.
         """
         await self.bot.wait_for_connected()
-
-        if self.db is MISSING:
-            self.db = self.bot.api.get_plugin_partition(self)
-
-        await self.populate_cache()
-
-    async def populate_cache(self) -> None:
-        """
-        Sets up database and populates the config cache with the data from the database.
-        """
-        from_db = await self.db.find_one({"_id": "config"})
-        if from_db is None:
-            from_db = {}  # empty dict so we can use `.get` without error
-
-        for guild in self.bot.guilds:
-            db_config = from_db.get(str(guild.id))
-            if db_config:
-                config = ModConfig(self, self.db, guild, data=db_config)
-            else:
-                config = ModConfig(self, self.db, guild, data={})
-
-            self.config_cache[str(guild.id)] = config
-
-    def guild_config(self, guild_id: Union[int, str]) -> ModConfig:
-        guild_id = str(guild_id)
-        config = self.config_cache.get(guild_id)
-        if config is None:
-            guild = self.bot.get_guild(int(guild_id))
-            default = ModConfig(self, self.db, guild, data={})
-            self.config_cache[guild_id] = default
-            config = default
-        return config
+        await self.config.fetch()
 
     # Logging
     @commands.group(name="logging", invoke_without_command=True)
@@ -207,7 +176,7 @@ class Moderation(commands.Cog):
 
         Run this command without argument to see the current set configurations.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         embed = discord.Embed(
             title="Logging Config",
             color=self.bot.main_color,
@@ -226,7 +195,7 @@ class Moderation(commands.Cog):
 
         Leave `channel` empty to see the current set channel.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         if channel is None:
             channel = self.bot.get_channel(int(config.get("log_channel")))
             if channel:
@@ -253,7 +222,7 @@ class Moderation(commands.Cog):
 
         Leave `mode` empty to see the current set value.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         if mode is None:
             mode = config.get("logging")
             description = "Logging feature is currently " + ("`enabled`" if mode else "`disabled`") + "."
@@ -285,7 +254,7 @@ class Moderation(commands.Cog):
 
         `channel` could be a text channel or a category, may be ID, mention, or name.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         whitelist_ids = config.get("channel_whitelist", [])
         channel_id = str(channel.id)
         if channel_id in whitelist_ids:
@@ -309,7 +278,7 @@ class Moderation(commands.Cog):
 
         `channel` could be a text channel or a category, may be ID, mention, or name.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         whitelist_ids = config.get("channel_whitelist", [])
         channel_id = str(channel.id)
         if channel_id not in whitelist_ids:
@@ -329,7 +298,7 @@ class Moderation(commands.Cog):
         """
         Show a list of whitelisted channels if any.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         whitelist_ids = config.get("channel_whitelist", [])
         if not whitelist_ids:
             raise commands.BadArgument("There is no whitelist channel set.")
@@ -346,7 +315,7 @@ class Moderation(commands.Cog):
         """
         Clear all whitelisted channels.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         whitelist_ids = config.get("channel_whitelist", [])
         if not whitelist_ids:
             raise commands.BadArgument("There is no whitelist channel set.")
@@ -362,7 +331,7 @@ class Moderation(commands.Cog):
         """
         Reset the moderation logging configurations to default.
         """
-        config = self.guild_config(ctx.guild.id)
+        config = self.config.get_config(guild)
         for key in config.keys():
             config.remove(key)
         config.webhook = MISSING

@@ -55,21 +55,6 @@ class SupportUtilityConfig(Config):
     def __init__(self, cog: SupportUtility, db: AsyncIOMotorCollection):
         super().__init__(cog, db, defaults=_default_config)
 
-    async def fetch(self) -> Dict[str, Any]:
-        await super().fetch()
-        self.recursively_resolve_keys(self.defaults, self._cache)
-
-    # TODO: if this works, implement this in utils
-    # then this can be removed
-    def recursively_resolve_keys(self, base: Dict[str, Any], data: Dict[str, Any]) -> None:
-        for key, value in base.items():
-            if key not in data:
-                data[key] = self.deepcopy(value)
-                continue
-            if isinstance(value, dict):
-                # go deeper
-                self.recursively_resolve_keys(value, data[key])
-
     @property
     def contact(self) -> Dict[str, Any]:
         return self["contact"]

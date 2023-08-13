@@ -31,26 +31,13 @@ class RoleManagerConfig(Config):
     """
 
     def __init__(self, cog: RoleManager, db: AsyncIOMotorCollection):
-        super().__init__(cog, db, use_cache=False)
+        super().__init__(cog, db, defaults=_default_config, use_cache=False)
 
-    async def fetch(self) -> ConfigPayload:
-        data = await super().fetch()
-        if not data:
-            # empty dict returned from .fetch()
-            data = self.deepcopy(_default_config)
-        else:
-            data = self._resolve_keys(data)
-        return data
-
-    def _resolve_keys(self, data: Dict[str, Any]) -> ConfigPayload:
-        """
-        This is to prevent unnecessarily updating the database with default config on startup
-        mainly when first time loading this plugin.
-        """
-        keys = _default_config.keys()
-        for key in keys:
-            if key not in data:
-                data[key] = self.deepcopy(_default_config[key])
+    async def fetch(self, *args, **kwargs) -> ConfigPayload:
+        if not self.defaults:
+            self.defaults = self.deepcopy(_default_config)
+        data = await super().fetch(*args, **kwargs)
+        self.defaults.clear()
         return data
 
     async def update(self, *, data: Dict[str, Any] = None) -> None:
