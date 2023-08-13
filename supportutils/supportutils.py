@@ -63,7 +63,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         self.feedback_manager: FeedbackManager = FeedbackManager(self)
 
     async def cog_load(self) -> None:
-        await self.config.fetch()
         self.bot.loop.create_task(self.initialize())
 
     async def cog_unload(self) -> None:
@@ -75,6 +74,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
 
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
+        await self.config.fetch()
         await self.contact_manager.initialize()
         await self.feedback_manager.populate()
 
