@@ -4,11 +4,9 @@
 [![Code-Style](https://img.shields.io/badge/Code%20Style-Black-000000.svg)](https://github.com/python/black)
 [![GitHub-License](https://badgen.net/github/license/Jerrie-Aries/modmail-plugins?label=License)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/LICENSE)
 
-
 ## Modmail Plugins
 
 Custom plugins for [Modmail bot](https://github.com/kyb3r/modmail).
-
 Checkout the [wiki](https://github.com/Jerrie-Aries/modmail-plugins/wiki) for latest news and additional info.
 
 __**Important:**__
@@ -19,18 +17,19 @@ To install `Extended Utils` plugin, use command:
 ?plugin add Jerrie-Aries/modmail-plugins/utils
 ```
 
-## How to install
-
-Use the format of `?plugin add Jerrie-Aries/modmail-plugins/<plugin_name><@branch>` where `<plugin_name>` (use without `<` and `>`) is the name of the plugin file. `<@branch>` is optional, defaults to `master`.
-
-Example:
-```
-?plugin add Jerrie-Aries/modmail-plugins/moderation
-```
-to add the Moderation plugin.
-
-
 ## List of plugins
+[![Announcement](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Fannouncement%2Finfo.json&query=%24.version&style=popout&label=Announcement&labelColor=darkgreen&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/announcement)
+[![Embed Manager](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Fembedmanager%2Finfo.json&query=%24.version&style=popout&label=Embed%20Manager&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/embedmanager)
+[![Extended Utils](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Futils%2Finfo.json&query=%24.version&style=popout&label=Extended%20Utils&labelColor=gold&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/utils)
+[![Giveaway](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Fgiveaway%2Finfo.json&query=%24.version&style=popout&label=Giveaway&labelColor=darkgreen&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/giveaway)
+[![Invites](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Finvites%2Finfo.json&query=%24.version&style=popout&label=Invites&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/invites)
+[![Keepalive](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Fkeepalive%2Finfo.json&query=%24.version&style=popout&label=Keepalive&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/keepalive)
+[![Logviewer](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Flogviewer%2Finfo.json&query=%24.version&style=popout&label=Logviewer&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/logviewer)
+[![Moderation](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Fmoderation%2Finfo.json&query=%24.version&style=popout&label=Moderation&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/moderation)
+[![Role Manager](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Frolemanager%2Finfo.json&query=%24.version&style=popout&label=Role%20Manager&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/rolemanager)
+[![Support Utility](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Fsupportutils%2Finfo.json&query=%24.version&style=popout&label=Support%20Utility&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/supportutils)
+[![Trivia](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FJerrie-Aries%2Fmodmail-plugins%2Fraw%2Fmaster%2Ftrivia%2Finfo.json&query=%24.version&style=popout&label=Trivia&color=blue&prefix=v)](https://github.com/Jerrie-Aries/modmail-plugins/blob/master/trivia)
+
 | Name | Name for command | Description |
 | --- | --- | --- |
 | Announcement | `announcement` | Post announcements on your server with this plugin. Publishing announcements to subscribed channels is also supported. |
@@ -47,6 +46,16 @@ to add the Moderation plugin.
 | Trivia`*` | `trivia` | Play trivia with friends on your server. This is a modified version of `cogs trivia` of [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot). I just made it compatible with Modmail bot. Any credits must go to original developer. You can find the source [here](https://github.com/Cog-Creators/Red-DiscordBot/tree/V3/develop/redbot/cogs/trivia). |
 
 `*` : Requires *Extended Utils* plugin to work.
+
+## How to install
+
+Use the format of `?plugin add Jerrie-Aries/modmail-plugins/<plugin_name><@branch>` where `<plugin_name>` (use without `<` and `>`) is the name of the plugin file. `<@branch>` is optional, defaults to `master`.
+
+Example:
+```
+?plugin add Jerrie-Aries/modmail-plugins/moderation
+```
+to add the Moderation plugin.
 
 
 ## Reporting bugs and errors
