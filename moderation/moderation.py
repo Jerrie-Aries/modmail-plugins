@@ -509,7 +509,7 @@ class Moderation(commands.Cog):
         )
 
     # Purge commands
-    @commands.group(aliases=["clear"], invoke_without_command=True)
+    @commands.group(invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def purge(self, ctx: commands.Context, amount: int):
         """
