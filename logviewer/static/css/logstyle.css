@@ -6,28 +6,28 @@
     font-weight: 300;
     src: url(https://discordapp.com/assets/6c6374bad0b0b6d204d8d6dc4a18d820.woff) format('woff');
   }
-  
+
 @font-face {
     font-family: Whitney;
     font-style: normal;
     font-weight: 500;
     src: url(https://discordapp.com/assets/e8acd7d9bf6207f99350ca9f9e23b168.woff) format('woff');
   }
-  
+
 @font-face {
     font-family: Whitney;
     font-style: medium;
     font-weight: 600;
     src: url(https://discordapp.com/assets/3bdef1251a424500c1b3a78dea9b7e57.woff) format('woff');
   }
-  
+
 @font-face {
     font-family: WhitneyMedium;
     font-style: medium;
     font-weight: 600;
     src: url(https://discordapp.com/assets/be0060dafb7a0e31d2a1ca17c0708636.woff) format('woff');
   }
-  
+
 @font-face {
     font-family: Whitney;
     font-style: bold;
@@ -60,7 +60,7 @@ img {
     vertical-align: bottom;
     line-height: 16px;
     -ms-flex-negative: 0;
-    flex-shrink: 0
+    flex-shrink: 0;
 }
 
 .system-tag {
@@ -75,7 +75,7 @@ img {
     vertical-align: bottom;
     line-height: 16px;
     -ms-flex-negative: 0;
-    flex-shrink: 0
+    flex-shrink: 0;
 }
 
 .internal-tag {
@@ -90,15 +90,15 @@ img {
     vertical-align: bottom;
     line-height: 16px;
     -ms-flex-negative: 0;
-    flex-shrink: 0
+    flex-shrink: 0;
 }
 
 .button {
-    align-co: right;
-    background-color:#7289da; 
+    align-content: right;
+    background-color: #7289da;
     color: rgba(255, 255, 255, 0.7);
-    border:transparent; 
-    border-radius: 2px; 
+    border: transparent;
+    border-radius: 2px;
     outline: transparent;
 }
 
@@ -108,7 +108,7 @@ img {
     margin-top: 4px;
     padding: 8px;
     border: 2px solid;
-    border-radius: 5px;    
+    border-radius: 5px;
 }
 
 .pre--inline {
@@ -145,7 +145,7 @@ img {
 .info {
     display: flex;
     max-width: 100%;
-    margin: 0 5px 10px 5px;    
+    margin: 0 5px 10px 5px;
 }
 
 .info__guild-icon-container {
@@ -155,7 +155,7 @@ img {
 .info__guild-icon {
     max-width: 88px;
     max-height: 88px;
-    border-radius: 50%
+    border-radius: 50%;
 }
 
 .info__metadata {
@@ -198,18 +198,18 @@ body {
 @media (min-width: 800px) {
     .entry {
         padding-left: 15%;
-        padding-right: 15%
+        padding-right: 15%;
     }
 }
 
 
 @media (max-width: 800px) {
     .entry {
-        font-size: 85%
+        font-size: 85%;
     }
 
     .pre--inline {
-        font-size: 85%
+        font-size: 85%;
     }
 }
 
@@ -226,7 +226,7 @@ body {
     border-bottom: 1px solid;
     padding-left: 20px;
     padding-right: 20px;
-    border-radius: 3px
+    border-radius: 3px;
 }
 
 .chatlog__message-group.internal {
@@ -234,7 +234,7 @@ body {
 }
 
 .chatlog__message-group.close {
-    border-bottom: none
+    border-bottom: none;
 }
 
 .chatlog__author-avatar-container {
@@ -453,7 +453,7 @@ a {
 .tooltip {
     position: relative;
     display: inline-block;
-  }
+}
 
 /* Tooltip text */
 .tooltip .tooltiptext {
@@ -477,15 +477,15 @@ a {
     display: inline-block;
     width: 36px;
     height: 20px;
-  }
-  
+}
+
   /* Hide default HTML checkbox */
   .switch input {
     opacity: 0;
     width: 0;
     height: 0;
   }
-  
+
   /* The lever */
   .lever {
     position: absolute;
@@ -498,7 +498,7 @@ a {
     -webkit-transition: .4s;
     transition: .4s;
   }
-  
+
   .lever:before {
     position: absolute;
     content: "";
@@ -513,26 +513,26 @@ a {
 
 
   * { -webkit-tap-highlight-color: rgba(0, 0, 0, 0); }
-  
+
   input:checked + .lever {
     background-color: #7289da;
   }
-  
+
   input:focus + .lever {
     box-shadow: 0 0 1px #7289da;
   }
-  
+
   input:checked + .lever:before {
     -webkit-transform: translateX(16px);
     -ms-transform: translateX(16px);
     transform: translateX(16px);
   }
-  
+
   /* Rounded levers */
   .lever.round {
     border-radius: 34px;
   }
-  
+
   .lever.round:before {
     border-radius: 50%;
   }
