@@ -80,7 +80,7 @@ class Moderation(commands.Cog):
         self.blurple: discord.Color = discord.Color.blurple()
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
         self.config: ModConfig = ModConfig(self, self.db)
-        self.logging: ModerationLogging = ModerationLogging(self)
+        self.loggers: Dict[str, ModerationLogging] = {}
         self.massban_enabled: bool = strtobool(os.environ.get("MODERATION_MASSBAN_ENABLE", False))
 
     async def cog_load(self) -> None:
@@ -144,6 +144,21 @@ class Moderation(commands.Cog):
         """
         await self.bot.wait_for_connected()
         await self.config.fetch()
+        self.set_loggers()
+
+    def set_loggers(self) -> None:
+        for guild in self.bot.guilds:
+            self.loggers[str(guild.id)] = ModerationLogging(guild, self)
+
+    def get_guild_logger(self, guild: discord.Guild) -> ModerationLogging:
+        """
+        Return ModerationLogging instance for guild.
+        """
+        glogger = self.loggers.get(str(guild.id))
+        if glogger is None:
+            glogger = ModerationLogging(guild, self)
+            self.loggers[str(guild.id)] = glogger
+        return glogger
 
     # Logging
     @commands.group(name="logging", invoke_without_command=True)
@@ -396,8 +411,8 @@ class Moderation(commands.Cog):
             ).add_field(name="Reason", value=reason)
         )
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             duration=human_delta,
             target=member,
@@ -440,8 +455,9 @@ class Moderation(commands.Cog):
                 color=self.bot.main_color,
             )
         )
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -499,8 +515,8 @@ class Moderation(commands.Cog):
         embed.set_footer(text=f"User ID: {member.id}")
         await ctx.send(embed=embed)
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -829,8 +845,9 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -904,8 +921,9 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=user,
             moderator=ctx.author,
@@ -993,8 +1011,8 @@ class Moderation(commands.Cog):
         if not success:
             return
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action="multiban",
             target=success,
             moderator=ctx.author,
@@ -1323,8 +1341,8 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -1367,8 +1385,9 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_guild_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=ban_entry.user,
             moderator=ctx.author,
@@ -1560,40 +1579,64 @@ class Moderation(commands.Cog):
         )
 
     @commands.Cog.listener()
-    async def on_member_update(self, *args, **kwargs) -> None:
-        await self.logging.on_member_update(*args, **kwargs)
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        glogger = self.get_guild_logger(before.guild)
+        await glogger.on_member_update(before, after)
 
     @commands.Cog.listener()
-    async def on_member_remove(self, *args, **kwargs) -> None:
-        await self.logging.on_member_remove(*args, **kwargs)
+    async def on_member_remove(self, member: discord.Member) -> None:
+        glogger = self.get_guild_logger(member.guild)
+        await glogger.on_member_remove(member)
 
     @commands.Cog.listener()
-    async def on_member_ban(self, *args, **kwargs) -> None:
-        await self.logging.on_member_ban(*args, **kwargs)
+    async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        glogger = self.get_guild_logger(guild)
+        await glogger.on_member_ban(guild, member)
 
     @commands.Cog.listener()
-    async def on_member_unban(self, *args, **kwargs) -> None:
-        await self.logging.on_member_unban(*args, **kwargs)
+    async def on_member_unban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        glogger = self.get_guild_logger(guild)
+        await glogger.on_member_unban(guild, member)
 
     @commands.Cog.listener()
-    async def on_guild_channel_create(self, *args, **kwargs) -> None:
-        await self.logging.on_guild_channel_create(*args, **kwargs)
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        glogger = self.get_guild_logger(channel.guild)
+        await glogger.on_guild_channel_create(channel)
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, *args, **kwargs) -> None:
-        await self.logging.on_guild_channel_delete(*args, **kwargs)
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        glogger = self.get_guild_logger(channel.guild)
+        await glogger.on_guild_channel_delete(channel)
+
+    async def _resolve_message_update_event(self, payload: Any) -> None:
+        if not payload.guild_id:
+            return
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+        glogger = self.get_guild_logger(guild)
+        if not glogger.is_enabled():
+            return
+        if isinstance(payload, discord.RawMessageDeleteEvent):
+            await glogger._on_raw_message_delete(payload)
+        elif isinstance(payload, discord.RawBulkMessageDeleteEvent):
+            await glogger._on_raw_bulk_message_delete(payload)
+        elif isinstance(payload, discord.RawMessageUpdateEvent):
+            await glogger._on_raw_message_edit(payload)
+        else:
+            raise TypeError(f"{type(payload).__name__} is invalid for message event.")
 
     @commands.Cog.listener()
-    async def on_raw_message_delete(self, *args, **kwargs) -> None:
-        await self.logging.on_raw_message_delete(*args, **kwargs)
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        await self._resolve_message_update_event(payload)
 
     @commands.Cog.listener()
-    async def on_raw_bulk_message_delete(self, *args, **kwargs) -> None:
-        await self.logging.on_raw_bulk_message_delete(*args, **kwargs)
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        await self._resolve_message_update_event(payload)
 
     @commands.Cog.listener()
-    async def on_raw_message_edit(self, *args, **kwargs) -> None:
-        await self.logging.on_raw_message_edit(*args, **kwargs)
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
+        await self._resolve_message_update_event(payload)
 
 
 async def setup(bot: ModmailBot) -> None:

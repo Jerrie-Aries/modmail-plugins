@@ -5,6 +5,7 @@ import io
 from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
+from discord.utils import MISSING
 from discord.ext.modmail_utils import Limit, plural
 
 from core.models import getLogger
@@ -14,6 +15,7 @@ from core.utils import truncate
 if TYPE_CHECKING:
     from bot import ModmailBot
     from ..moderation import Moderation
+    from .config import GuildConfig
 
 
 logger = getLogger(__name__)
@@ -31,26 +33,36 @@ action_colors = {
 
 class ModerationLogging:
     """
-    ModerationLogging instance to handle and manage the logging feature.
+    Instance to handle and manage the logging for guild.
     """
 
-    def __init__(self, cog: Moderation):
+    def __init__(self, guild: discord.Guild, cog: Moderation):
+        self.guild: discord.Guild = guild
         self.cog: Moderation = cog
         self.bot: ModmailBot = cog.bot
+        self._config: GuildConfig = MISSING
 
-    def is_enabled(self, guild: discord.Guild) -> bool:
+    @property
+    def config(self) -> GuildConfig:
+        if self._config is MISSING:
+            self._config = self.cog.config.get_config(self.guild)
+        return self._config
+
+    @property
+    def log_channel(self) -> Optional[discord.TextChannel]:
+        return self.config.log_channel
+
+    def is_enabled(self) -> bool:
         """
         Returns `True` if logging is enabled for the specified guild.
         """
-        config = self.cog.config.get_config(guild)
-        return config.get("logging", False)
+        return self.config.get("logging", False)
 
-    def is_whitelisted(self, guild: discord.Guild, channel: discord.TextChannel) -> bool:
+    def is_whitelisted(self, channel: discord.TextChannel) -> bool:
         """
         Returns `True` if channel or its category is whitelisted.
         """
-        config = self.cog.config.get_config(guild)
-        whitelist_ids = config.get("channel_whitelist", [])
+        whitelist_ids = self.config.get("channel_whitelist", [])
         if str(channel.id) in whitelist_ids:
             return True
         category = channel.category
@@ -60,7 +72,6 @@ class ModerationLogging:
 
     async def send_log(
         self,
-        guild: discord.Guild,
         *,
         action: str,
         target: Optional[
@@ -81,8 +92,6 @@ class ModerationLogging:
 
         Parameters
         ----------
-        guild: discord.Guild
-            Guild object. This is to fetch the guild config.
         action: str
             The moderation action.
         target: discord.Member or discord.User or List
@@ -97,17 +106,16 @@ class ModerationLogging:
         send_params: Optional[Dict[str, Any]]
             Additional parameter to use when sending the log message.
         """
-        config = self.cog.config.get_config(guild)
-        channel = config.log_channel
+        channel = self.config.log_channel
         if channel is None:
             return
 
-        webhook = config.webhook or await self._get_or_create_webhook(channel)
+        webhook = self.config.webhook or await self._get_or_create_webhook(channel)
         if send_params is None:
             send_params = {}
         if webhook:
-            if not config.webhook:
-                config.webhook = webhook
+            if not self.config.webhook:
+                self.config.webhook = webhook
             send_params["username"] = self.bot.user.name
             send_params["avatar_url"] = str(self.bot.user.display_avatar)
             send_params["wait"] = True
@@ -170,8 +178,7 @@ class ModerationLogging:
         channel : discord.TextChannel
             The channel to get or create the webhook from.
         """
-        config = self.cog.config.get_config(channel.guild)
-        wh_url = config.get("webhook")
+        wh_url = self.config.get("webhook")
         if wh_url:
             wh = discord.Webhook.from_url(
                 wh_url,
@@ -205,8 +212,8 @@ class ModerationLogging:
                 wh = None
 
         if wh:
-            config.set("webhook", wh.url)
-            await config.update()
+            self.config.set("webhook", wh.url)
+            await self.config.update()
 
         return wh
 
@@ -219,7 +226,7 @@ class ModerationLogging:
         - Timed out changes
         - Role updates
         """
-        if not self.is_enabled(after.guild):
+        if not self.is_enabled():
             return
 
         if before.guild_avatar != after.guild_avatar:
@@ -247,7 +254,6 @@ class ModerationLogging:
         action = "updated" if after.guild_avatar is not None else "removed"
         description = f"`{after}` {action} their guild avatar."
         await self.send_log(
-            after.guild,
             action="avatar update",
             target=after,
             description=description,
@@ -265,7 +271,6 @@ class ModerationLogging:
         description = f"`{after}`'s nickname was {action}"
         description += "." if after.nick is None else f" to `{after.nick}`."
         await self.send_log(
-            after.guild,
             action="nickname",
             target=after,
             moderator=moderator if moderator != after else None,
@@ -300,7 +305,6 @@ class ModerationLogging:
             kwargs["removed"] = "\n".join(r.mention for r in removed)
 
         await self.send_log(
-            after.guild,
             action="role update",
             target=after,
             moderator=moderator if moderator != after else None,
@@ -337,7 +341,6 @@ class ModerationLogging:
             kwargs["after"] = discord.utils.format_dt(after.timed_out_until, "F")
 
         await self.send_log(
-            after.guild,
             action=action,
             target=after,
             description=description,
@@ -352,7 +355,7 @@ class ModerationLogging:
         For some reason Discord and discord.py do not dispatch or have a specific event when a guild member
         was kicked, so we have to do it manually here.
         """
-        if not self.is_enabled(member.guild):
+        if not self.is_enabled():
             return
 
         audit_logs = member.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick)
@@ -370,7 +373,6 @@ class ModerationLogging:
             return
 
         await self.send_log(
-            member.guild,
             action="kick",
             target=member,
             moderator=mod,
@@ -379,7 +381,7 @@ class ModerationLogging:
         )
 
     async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
-        if not self.is_enabled(guild):
+        if not self.is_enabled():
             return
 
         audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.ban)
@@ -399,7 +401,6 @@ class ModerationLogging:
                 return
 
         await self.send_log(
-            guild,
             action="ban",
             target=user,
             moderator=mod,
@@ -408,7 +409,7 @@ class ModerationLogging:
         )
 
     async def on_member_unban(self, guild: discord.Guild, user: discord.User) -> None:
-        if not self.is_enabled(guild):
+        if not self.is_enabled():
             return
 
         audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.unban)
@@ -424,7 +425,6 @@ class ModerationLogging:
             return
 
         await self.send_log(
-            guild,
             action="unban",
             target=user,
             moderator=mod,
@@ -433,7 +433,7 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
-        if not self.is_enabled(channel.guild):
+        if not self.is_enabled():
             return
 
         audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
@@ -453,7 +453,6 @@ class ModerationLogging:
             kwargs["category"] = channel.category.name
 
         await self.send_log(
-            channel.guild,
             action="channel created",
             target=channel,
             moderator=mod,
@@ -463,7 +462,7 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        if not self.is_enabled(channel.guild):
+        if not self.is_enabled():
             return
 
         audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
@@ -483,7 +482,6 @@ class ModerationLogging:
             kwargs["category"] = channel.category.name
 
         await self.send_log(
-            channel.guild,
             action="channel deleted",
             target=channel,
             moderator=mod,
@@ -492,15 +490,9 @@ class ModerationLogging:
             **kwargs,
         )
 
-    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
-        if not payload.guild_id:
-            return
-        guild = self.bot.get_guild(payload.guild_id)
-        if not guild or not self.is_enabled(guild):
-            return
-
-        channel = guild.get_channel(payload.channel_id)
-        if channel is None or self.is_whitelisted(guild, channel):
+    async def _on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        channel = self.guild.get_channel(payload.channel_id)
+        if channel is None or self.is_whitelisted(channel):
             return
 
         message = payload.cached_message
@@ -532,20 +524,13 @@ class ModerationLogging:
         embed.set_footer(text=footer_text)
 
         await self.send_log(
-            guild,
             action=action,
             embed=embed,
         )
 
-    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
-        if not payload.guild_id:
-            return
-        guild = self.bot.get_guild(payload.guild_id)
-        if not guild or not self.is_enabled(guild):
-            return
-
-        channel = guild.get_channel(payload.channel_id)
-        if channel is None or self.is_whitelisted(guild, channel):
+    async def _on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        channel = self.guild.get_channel(payload.channel_id)
+        if channel is None or self.is_whitelisted(channel):
             return
 
         messages = sorted(payload.cached_messages, key=lambda msg: msg.created_at)
@@ -582,21 +567,14 @@ class ModerationLogging:
         send_params = {"file": discord.File(fp, "Messages.txt")}
 
         await self.send_log(
-            guild,
             action=action,
             embed=embed,
             send_params=send_params,
         )
 
-    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
-        if not payload.guild_id:
-            return
-        guild = self.bot.get_guild(payload.guild_id)
-        if not guild or not self.is_enabled(guild):
-            return
-
-        channel = guild.get_channel(payload.channel_id)
-        if channel is None or self.is_whitelisted(guild, channel):
+    async def _on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
+        channel = self.guild.get_channel(payload.channel_id)
+        if channel is None or self.is_whitelisted(channel):
             return
 
         message_id = payload.message_id
@@ -647,7 +625,6 @@ class ModerationLogging:
         embed.set_footer(text=footer_text)
 
         await self.send_log(
-            guild,
             action=action,
             embed=embed,
         )
