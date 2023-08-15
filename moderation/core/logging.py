@@ -226,9 +226,6 @@ class ModerationLogging:
         - Timed out changes
         - Role updates
         """
-        if not self.is_enabled():
-            return
-
         if before.guild_avatar != after.guild_avatar:
             return await self._on_member_guild_avatar_update(before, after)
 
@@ -355,10 +352,7 @@ class ModerationLogging:
         For some reason Discord and discord.py do not dispatch or have a specific event when a guild member
         was kicked, so we have to do it manually here.
         """
-        if not self.is_enabled():
-            return
-
-        audit_logs = member.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick)
+        audit_logs = self.guild.audit_logs(limit=10, action=discord.AuditLogAction.kick)
         async for entry in audit_logs:
             if int(entry.target.id) == member.id:
                 break
@@ -380,11 +374,8 @@ class ModerationLogging:
             description=f"`{member}` has been kicked.",
         )
 
-    async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
-        if not self.is_enabled():
-            return
-
-        audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.ban)
+    async def on_member_ban(self, user: Union[discord.User, discord.Member]) -> None:
+        audit_logs = self.guild.audit_logs(limit=10, action=discord.AuditLogAction.ban)
         async for entry in audit_logs:
             if int(entry.target.id) == user.id:
                 break
@@ -408,11 +399,8 @@ class ModerationLogging:
             description=f"`{user}` has been banned.",
         )
 
-    async def on_member_unban(self, guild: discord.Guild, user: discord.User) -> None:
-        if not self.is_enabled():
-            return
-
-        audit_logs = guild.audit_logs(limit=10, action=discord.AuditLogAction.unban)
+    async def on_member_unban(self, user: discord.User) -> None:
+        audit_logs = self.guild.audit_logs(limit=10, action=discord.AuditLogAction.unban)
         async for entry in audit_logs:
             if int(entry.target.id) == user.id:
                 break
@@ -433,10 +421,7 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
-        if not self.is_enabled():
-            return
-
-        audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
+        audit_logs = self.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_create)
         async for entry in audit_logs:
             if int(entry.target.id) == channel.id:
                 break
@@ -462,10 +447,7 @@ class ModerationLogging:
         )
 
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        if not self.is_enabled():
-            return
-
-        audit_logs = channel.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
+        audit_logs = self.guild.audit_logs(limit=10, action=discord.AuditLogAction.channel_delete)
         async for entry in audit_logs:
             if int(entry.target.id) == channel.id:
                 break
@@ -490,7 +472,7 @@ class ModerationLogging:
             **kwargs,
         )
 
-    async def _on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
         channel = self.guild.get_channel(payload.channel_id)
         if channel is None or self.is_whitelisted(channel):
             return
@@ -528,7 +510,7 @@ class ModerationLogging:
             embed=embed,
         )
 
-    async def _on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
         channel = self.guild.get_channel(payload.channel_id)
         if channel is None or self.is_whitelisted(channel):
             return
@@ -572,7 +554,7 @@ class ModerationLogging:
             send_params=send_params,
         )
 
-    async def _on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
         channel = self.guild.get_channel(payload.channel_id)
         if channel is None or self.is_whitelisted(channel):
             return

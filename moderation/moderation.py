@@ -1578,37 +1578,23 @@ class Moderation(commands.Cog):
             )
         )
 
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
-        glogger = self.get_guild_logger(before.guild)
-        await glogger.on_member_update(before, after)
-
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member) -> None:
-        glogger = self.get_guild_logger(member.guild)
-        await glogger.on_member_remove(member)
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+    async def _resolve_member_event(
+        self, guild: discord.Guild, event: str, *args: Any, **kwargs: Any
+    ) -> None:
         glogger = self.get_guild_logger(guild)
-        await glogger.on_member_ban(guild, member)
+        if not glogger.is_enabled():
+            return
+        callback = getattr(glogger, "on_member_" + event)
+        await callback(*args, **kwargs)
 
-    @commands.Cog.listener()
-    async def on_member_unban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
-        glogger = self.get_guild_logger(guild)
-        await glogger.on_member_unban(guild, member)
-
-    @commands.Cog.listener()
-    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+    async def _resolve_guild_channel_event(self, channel: discord.abc.GuildChannel, event: str) -> None:
         glogger = self.get_guild_logger(channel.guild)
-        await glogger.on_guild_channel_create(channel)
+        if not glogger.is_enabled():
+            return
+        callback = getattr(glogger, "on_guild_channel_" + event)
+        await callback(channel)
 
-    @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        glogger = self.get_guild_logger(channel.guild)
-        await glogger.on_guild_channel_delete(channel)
-
-    async def _resolve_message_update_event(self, payload: Any) -> None:
+    async def _resolve_message_update_event(self, payload: Any, event: str) -> None:
         if not payload.guild_id:
             return
         guild = self.bot.get_guild(payload.guild_id)
@@ -1617,26 +1603,44 @@ class Moderation(commands.Cog):
         glogger = self.get_guild_logger(guild)
         if not glogger.is_enabled():
             return
-        if isinstance(payload, discord.RawMessageDeleteEvent):
-            await glogger._on_raw_message_delete(payload)
-        elif isinstance(payload, discord.RawBulkMessageDeleteEvent):
-            await glogger._on_raw_bulk_message_delete(payload)
-        elif isinstance(payload, discord.RawMessageUpdateEvent):
-            await glogger._on_raw_message_edit(payload)
-        else:
-            raise TypeError(f"{type(payload).__name__} is invalid for message event.")
+        callback = getattr(glogger, "on_raw_" + event)
+        await callback(payload)
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        await self._resolve_member_event(before.guild, "update", before, after)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member) -> None:
+        await self._resolve_member_event(member.guild, "remove", member)
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        await self._resolve_member_event(guild, "ban", user)
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        await self._resolve_member_event(guild, "unban", user)
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        await self._resolve_guild_channel_event(channel, "create")
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        await self._resolve_guild_channel_event(channel, "delete")
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
-        await self._resolve_message_update_event(payload)
+        await self._resolve_message_update_event(payload, "message_delete")
 
     @commands.Cog.listener()
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
-        await self._resolve_message_update_event(payload)
+        await self._resolve_message_update_event(payload, "bulk_message_delete")
 
     @commands.Cog.listener()
     async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
-        await self._resolve_message_update_event(payload)
+        await self._resolve_message_update_event(payload, "message_edit")
 
 
 async def setup(bot: ModmailBot) -> None:
