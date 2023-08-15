@@ -52,11 +52,12 @@ except ImportError as exc:
         f"Install {required} plugin to resolve this issue."
     ) from exc
 
-from .core.config import GuildConfig, ModConfig
+from .core.config import ModConfig
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.logging import ModerationLogging
 from .core.utils import get_audit_reason, parse_delete_message_days
+from .core.views import LoggingView
 
 
 # <!-- ----- -->
@@ -82,6 +83,7 @@ class Moderation(commands.Cog):
         self.config: ModConfig = ModConfig(self, self.db)
         self.loggers: Dict[str, ModerationLogging] = {}
         self.massban_enabled: bool = strtobool(os.environ.get("MODERATION_MASSBAN_ENABLE", False))
+        self._ready: bool = False
 
     async def cog_load(self) -> None:
         self.bot.loop.create_task(self.initialize())
@@ -145,12 +147,13 @@ class Moderation(commands.Cog):
         await self.bot.wait_for_connected()
         await self.config.fetch()
         self.set_loggers()
+        self._ready = True
 
     def set_loggers(self) -> None:
         for guild in self.bot.guilds:
             self.loggers[str(guild.id)] = ModerationLogging(guild, self)
 
-    def get_guild_logger(self, guild: discord.Guild) -> ModerationLogging:
+    def get_logger(self, guild: discord.Guild) -> ModerationLogging:
         """
         Return ModerationLogging instance for guild.
         """
@@ -197,7 +200,8 @@ class Moderation(commands.Cog):
             color=self.bot.main_color,
         )
         for key, value in config.items():
-            embed.add_field(name=key.replace("_", " ").capitalize(), value=f"`{value}`")
+            if key in config.public_keys:
+                embed.add_field(name=key.replace("_", " ").capitalize(), value=f"`{value}`")
         await ctx.send(embed=embed)
 
     @logging_config.command(name="channel")
@@ -248,6 +252,21 @@ class Moderation(commands.Cog):
 
         embed = discord.Embed(description=description, color=self.bot.main_color)
         await ctx.send(embed=embed)
+
+    @logging_config.command(name="events", aliases=["event"])
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def logging_event(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable moderation logging feature for specific events.
+        """
+        glogger = self.get_logger(ctx.guild)
+        view = LoggingView(ctx.author, self, glogger)
+        view.fill_items()
+        view.message = await ctx.send(embed=view.embed, view=view)
+        await view.wait()
+        if not view.value:
+            return
+        await glogger.config.update()
 
     @logging_config.group(name="whitelist", aliases=["wl"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -411,7 +430,7 @@ class Moderation(commands.Cog):
             ).add_field(name="Reason", value=reason)
         )
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             duration=human_delta,
@@ -456,7 +475,7 @@ class Moderation(commands.Cog):
             )
         )
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             target=member,
@@ -515,7 +534,7 @@ class Moderation(commands.Cog):
         embed.set_footer(text=f"User ID: {member.id}")
         await ctx.send(embed=embed)
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             target=member,
@@ -846,7 +865,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             target=member,
@@ -922,7 +941,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             target=user,
@@ -1011,7 +1030,7 @@ class Moderation(commands.Cog):
         if not success:
             return
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action="multiban",
             target=success,
@@ -1341,7 +1360,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             target=member,
@@ -1386,7 +1405,7 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        glogger = self.get_guild_logger(ctx.guild)
+        glogger = self.get_logger(ctx.guild)
         await glogger.send_log(
             action=ctx.command.name,
             target=ban_entry.user,
@@ -1589,14 +1608,22 @@ class Moderation(commands.Cog):
         """
         A resolver before calling a callback for specific event.
         """
-        if not guild and not guild_id:
+        if not self._ready or (not guild and not guild_id):
             return
         if not guild:
             guild = self.bot.get_guild(guild_id)
             if not guild:
                 return
-        glogger = self.get_guild_logger(guild)
+        glogger = self.get_logger(guild)
         if not glogger.is_enabled():
+            return
+        if event in ("guild_channel_create", "guild_channel_delete"):
+            key = event.lstrip("guild_")
+        elif event in ("raw_message_delete", "raw_bulk_message_delete", "raw_message_edit"):
+            key = event.lstrip("raw_")
+        else:
+            key = event
+        if not glogger.config["log_events"].get(key):
             return
         callback = getattr(glogger, "on_" + event)
         await callback(*args, **kwargs)

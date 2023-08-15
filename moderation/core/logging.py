@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.utils import MISSING
@@ -74,13 +74,7 @@ class ModerationLogging:
         self,
         *,
         action: str,
-        target: Optional[
-            Union[
-                discord.Member,
-                discord.User,
-                List[discord.Member],
-            ]
-        ] = None,
+        target: Optional[Any] = None,
         description: Optional[str] = None,
         moderator: Optional[discord.Member] = None,
         reason: Optional[str] = None,
@@ -94,10 +88,10 @@ class ModerationLogging:
         ----------
         action: str
             The moderation action.
-        target: discord.Member or discord.User or List
+        target: Optional[Any]
             Target that was executed from this moderation action.
-            Could be a list of "Member" or "User" especially if the action is "multiban".
-        description: str
+            This also could be a list of "Member" or "User" especially if the action is "multiban".
+        description: Optional[str]
             A message to be put in the Embed description.
         moderator: Optional[discord.Member]
             Moderator that executed this moderation action.
@@ -141,7 +135,8 @@ class ModerationLogging:
                 embed.set_thumbnail(url=target.display_avatar.url)
                 embed.add_field(name="User", value=target.mention)
                 embed.set_footer(text=f"User ID: {target.id}")
-            elif isinstance(target, list):
+            elif isinstance(target, list) and isinstance(target[0], (discord.Member, discord.User)):
+                # multiban
                 embed.add_field(
                     name="User" if len(target) == 1 else "Users",
                     value="\n".join(str(m) for m in target),
@@ -380,7 +375,7 @@ class ModerationLogging:
             if int(entry.target.id) == user.id:
                 break
         else:
-            logger.error("Cannot find the audit log entry for user ban of %d, guild %s.", user, guild)
+            logger.error("Cannot find the audit log entry for user ban of %d, guild %s.", user, self.guild)
             return
 
         mod = entry.user
@@ -405,7 +400,7 @@ class ModerationLogging:
             if int(entry.target.id) == user.id:
                 break
         else:
-            logger.error("Cannot find the audit log entry for user unban of %d, guild %s.", user, guild)
+            logger.error("Cannot find the audit log entry for user unban of %d, guild %s.", user, self.guild)
             return
 
         mod = entry.user
@@ -427,7 +422,7 @@ class ModerationLogging:
                 break
         else:
             logger.error(
-                "Cannot find the audit log entry for channel creation of %d, guild %s.", channel, guild
+                "Cannot find the audit log entry for channel creation of %d, guild %s.", channel, self.guild
             )
             return
 
@@ -453,7 +448,7 @@ class ModerationLogging:
                 break
         else:
             logger.error(
-                "Cannot find the audit log entry for channel deletion of %d, guild %s.", channel, guild
+                "Cannot find the audit log entry for channel deletion of %d, guild %s.", channel, self.guild
             )
             return
 

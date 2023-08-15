@@ -17,18 +17,38 @@ if TYPE_CHECKING:
 __all__ = ("GuildConfig", "ModConfig")
 
 
-_default_config = {
+_public_config = {
     "log_channel": str(int()),
     "logging": False,
     "webhook": None,
     "channel_whitelist": [],
 }
 
+_protected_config = {
+    "log_events": {
+        "member_update": True,
+        "member_remove": True,  # kick
+        "member_ban": True,
+        "member_unban": True,
+        "channel_create": True,
+        "channel_delete": True,
+        "message_delete": True,
+        "bulk_message_delete": True,
+        "message_edit": True,
+    },
+}
+
+
+_default_config = {**_public_config, **_protected_config}
+
 
 class GuildConfig(BaseConfig):
     """
     Config instance for a guild.
     """
+
+    public_keys = _public_config.keys()
+    protected_keys = _protected_config.keys()
 
     def __init__(self, cog: Moderation, guild: discord.Guild, data: Dict[str, Any]):
         super().__init__(cog, defaults=_default_config)
