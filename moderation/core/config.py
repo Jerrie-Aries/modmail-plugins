@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Set, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 import discord
 from discord.utils import MISSING
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 __all__ = ("GuildConfig", "ModConfig")
 
+
+# Note: If new config is added, make sure to update `?logging config` command.
 
 _public_config = {
     "log_channel": str(int()),

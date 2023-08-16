@@ -57,7 +57,7 @@ from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.logging import ModerationLogging
 from .core.utils import get_audit_reason, parse_delete_message_days
-from .core.views import LoggingView
+from .core.views import LoggingPanelView
 
 
 # <!-- ----- -->
@@ -146,12 +146,9 @@ class Moderation(commands.Cog):
         """
         await self.bot.wait_for_connected()
         await self.config.fetch()
-        self.set_loggers()
-        self._ready = True
-
-    def set_loggers(self) -> None:
         for guild in self.bot.guilds:
             self.loggers[str(guild.id)] = ModerationLogging(guild, self)
+        self._ready = True
 
     def get_logger(self, guild: discord.Guild) -> ModerationLogging:
         """
@@ -190,178 +187,20 @@ class Moderation(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_config(self, ctx: commands.Context):
         """
-        Moderation logging configuration.
-
-        Run this command without argument to see the current set configurations.
+        Moderation logging configuration panel.
         """
         config = self.config.get_config(ctx.guild)
-        embed = discord.Embed(
-            title="Logging Config",
-            color=self.bot.main_color,
-        )
-        for key, value in config.items():
-            if key in config.public_keys:
-                embed.add_field(name=key.replace("_", " ").capitalize(), value=f"`{value}`")
-        await ctx.send(embed=embed)
-
-    @logging_config.command(name="channel")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_channel(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
-        """
-        Sets the logging channel.
-
-        `channel` may be a channel ID, mention, or name.
-
-        Leave `channel` empty to see the current set channel.
-        """
-        config = self.config.get_config(ctx.guild)
-        if channel is None:
-            channel = self.bot.get_channel(int(config.get("log_channel")))
-            if channel:
-                description = f"Current moderation logging channel is {channel.mention}."
-            else:
-                description = "Moderation logging channel is not set."
-        else:
-            config.set("log_channel", str(channel.id))
-            config.remove("webhook")
-            config.webhook = MISSING
-            description = f"Log channel is now set to {channel.mention}."
-            await config.update()
-
-        embed = discord.Embed(description=description, color=self.bot.main_color)
-        await ctx.send(embed=embed)
-
-    @logging_config.command(name="enable")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
-        """
-        Enable or disable moderation logging feature.
-
-        `mode` is a boolean value, may be `True` or `False` (case insensitive).
-
-        Leave `mode` empty to see the current set value.
-        """
-        config = self.config.get_config(ctx.guild)
-        if mode is None:
-            mode = config.get("logging")
-            description = "Logging feature is currently " + ("`enabled`" if mode else "`disabled`") + "."
-        else:
-            config.set("logging", mode)
-            description = ("Enabled " if mode else "Disabled ") + "the logging for moderation actions."
-            await config.update()
-
-        embed = discord.Embed(description=description, color=self.bot.main_color)
-        await ctx.send(embed=embed)
-
-    @logging_config.command(name="events", aliases=["event"])
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_event(self, ctx: commands.Context, *, mode: Optional[bool] = None):
-        """
-        Enable or disable moderation logging feature for specific events.
-        """
-        glogger = self.get_logger(ctx.guild)
-        view = LoggingView(ctx.author, self, glogger)
-        view.fill_items()
-        view.message = await ctx.send(embed=view.embed, view=view)
+        view = LoggingPanelView(ctx.author, self, self.get_logger(ctx.guild))
+        embed = view.embed
+        view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
         if not view.value:
             return
-        await glogger.config.update()
-
-    @logging_config.group(name="whitelist", aliases=["wl"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist(self, ctx: commands.Context):
-        """
-        Whitelist channels from logging.
-
-        This only affects the message update events which means any message update (edit or delete) in the specified channel will be ignored.
-        """
-        await ctx.send_help(ctx.command)
-
-    @logging_whitelist.command(name="add")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_add(
-        self, ctx: commands.Context, *, channel: Union[discord.TextChannel, discord.CategoryChannel]
-    ):
-        """
-        Whitelist a channel from logging.
-
-        `channel` could be a text channel or a category, may be ID, mention, or name.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        channel_id = str(channel.id)
-        if channel_id in whitelist_ids:
-            raise commands.BadArgument(f"Channel ID {channel_id} is already whitelisted.")
-        whitelist_ids.append(channel_id)
-        config["channel_whitelist"] = whitelist_ids
         await config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description=f"Channel {channel.mention} is now whitelisted.",
-        )
-        await ctx.send(embed=embed)
-
-    @logging_whitelist.command(name="remove", aliases=["delete", "del"])
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_remove(
-        self, ctx: commands.Context, *, channel: Union[discord.TextChannel, discord.CategoryChannel]
-    ):
-        """
-        Remove a channel from whitelist.
-
-        `channel` could be a text channel or a category, may be ID, mention, or name.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        channel_id = str(channel.id)
-        if channel_id not in whitelist_ids:
-            raise commands.BadArgument(f"Channel ID {channel_id} is not whitelisted.")
-        whitelist_ids.remove(channel_id)
-        config["channel_whitelist"] = whitelist_ids
-        await config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description=f"Channel {channel.mention} is now removed from whitelisted channels.",
-        )
-        await ctx.send(embed=embed)
-
-    @logging_whitelist.command(name="list")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_list(self, ctx: commands.Context):
-        """
-        Show a list of whitelisted channels if any.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        if not whitelist_ids:
-            raise commands.BadArgument("There is no whitelist channel set.")
-        embed = discord.Embed(
-            title="__Whitelisted channels__",
-            color=self.bot.main_color,
-        )
-        embed.description = "\n".join(f"- <#{i}>" for i in whitelist_ids)
-        await ctx.send(embed=embed)
-
-    @logging_whitelist.command(name="clear")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_clear(self, ctx: commands.Context):
-        """
-        Clear all whitelisted channels.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        if not whitelist_ids:
-            raise commands.BadArgument("There is no whitelist channel set.")
-        whitelist_ids.clear()
-        config["channel_whitelist"] = whitelist_ids
-        await config.update()
-        embed = discord.Embed(color=self.bot.main_color, description="Channel whitelist is now cleared.")
-        await ctx.send(embed=embed)
 
     @logging_config.command(name="clear", aliases=["reset"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_clear(self, ctx: commands.Context):
+    async def logging_config_clear(self, ctx: commands.Context):
         """
         Reset the moderation logging configurations to default.
         """
