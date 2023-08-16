@@ -165,29 +165,30 @@ class Moderation(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_group(self, ctx: commands.Context):
         """
-        Logging feature for Moderation actions.
+        Logging feature for Moderation actions/events.
 
-        __**Support actions:**__
+        You can also enable or disable which events to be logged.
+
+        __**Support actions/events:**__
         - `ban`/`unban`
         - `kick`
         - Timeout, `mute`/`unmute`
         - Member roles update, `add`/`remove`
         - Nickname changes, `set`/`update`/`remove`
-        - Channels, `created`/`deleted`
-        - Message updates, `deleted`/`edited`
+        - Channels, `create`/`delete`
+        - Message updates, `delete`/`edit`
 
         For initial setup, set the logging channel and enable the logging.
-        Use commands:
-        - `{prefix}logging config channel #channel`
-        - `{prefix}logging config enable true`
+        To initiate logging config panel, use command:
+        - `{prefix}logging config`
         """
         await ctx.send_help(ctx.command)
 
-    @logging_group.group(name="config", usage="<command> [argument]", invoke_without_command=True)
+    @logging_group.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_config(self, ctx: commands.Context):
         """
-        Moderation logging configuration panel.
+        Moderation logging config panel with interactive buttons.
         """
         config = self.config.get_config(ctx.guild)
         view = LoggingPanelView(ctx.author, self, self.get_logger(ctx.guild))
