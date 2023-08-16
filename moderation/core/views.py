@@ -31,10 +31,45 @@ class Select(ui.Select):
         await self._select_callback(interaction, self)
 
 
-class EphemeralView(muui.View):
-    def __init__(self, handler: LoggingPanelView, *args: Any, timeout: int = 120, **kwargs: Any):
+class FollowupView(muui.View):
+    def __init__(
+        self,
+        handler: LoggingPanelView,
+        interaction: Interaction,
+        *args: Any,
+        timeout: int = 120,
+        **kwargs: Any,
+    ):
         self.handler: LoggingPanelView = handler
+        self.original_interaction: Interaction = interaction
         super().__init__(*args, **kwargs)
+
+    async def __aenter__(self) -> FollowupView:
+        await self.lock(self.original_interaction)
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.message.delete()
+        await self.unlock(self.original_interaction, **self.inputs)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        if self.handler.user.id == interaction.user.id:
+            return True
+        return False
+
+    async def lock(self, interaction: Interaction) -> None:
+        for child in self.handler.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self.handler)
+
+    async def unlock(self, interaction: Interaction, **kwargs: Any) -> None:
+        for child in self.handler.children:
+            child.disabled = False
+        self.handler._resolve_components()
+        await interaction.edit_original_response(view=self.handler, **kwargs)
+
+    async def on_timeout(self) -> None:
+        pass
 
 
 class LoggingPanelView(muui.View):
@@ -57,17 +92,6 @@ class LoggingPanelView(muui.View):
     async def edit_message(self, *args: Any, **kwargs: Any) -> None:
         self._resolve_components()
         await super().edit_message(*args, **kwargs)
-
-    async def lock(self, interaction: Interaction) -> None:
-        for child in self.children:
-            child.disabled = True
-        await interaction.response.edit_message(view=self)
-
-    async def unlock(self, interaction: Interaction, **kwargs: Any) -> None:
-        for child in self.children:
-            child.disabled = False
-        self._resolve_components()
-        await interaction.edit_original_response(view=self, **kwargs)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
@@ -148,7 +172,6 @@ class LoggingPanelView(muui.View):
 
     @discord.ui.button(label="Log events", style=ButtonStyle.grey)
     async def log_events_button(self, interaction: Interaction, button: discord.ui.Button):
-        view = EphemeralView(self, timeout=self.timeout)
         options = []
         for key, val in self.logger.config["log_events"].items():
             option = discord.SelectOption(
@@ -164,15 +187,13 @@ class LoggingPanelView(muui.View):
             max_values=len(options),
             callback=self._select_callback,
         )
-        view.add_item(select)
-        await self.lock(interaction)
-        message = await interaction.followup.send(view=view)
-        await view.wait()
-        await message.delete()
-        kwargs = {}
-        if view.value:
-            kwargs["embed"] = self.update_embed_field("Events", self.log_events_fmt_string, False)
-        await self.unlock(interaction, **kwargs)
+        async with FollowupView(self, interaction, timeout=self.timeout) as view:
+            view.add_item(select)
+            view.message = await interaction.followup.send(view=view)
+            await view.wait()
+            if view.value:
+                self.value = True
+                view.inputs["embed"] = self.update_embed_field("Events", self.log_events_fmt_string, False)
 
     @discord.ui.button(label="Whitelist", style=ButtonStyle.grey)
     async def whitelist_button(self, interaction: Interaction, button: discord.ui.Button):
@@ -181,24 +202,20 @@ class LoggingPanelView(muui.View):
             ("Clear", self._clear_whitelist),
             ("Close", self._close_ephemeral),
         ]
-        view = EphemeralView(self, timeout=self.timeout)
-        for arg in button_args:
-            button = muui.Button(
-                label=arg[0],
-                callback=arg[1],
-                style=ButtonStyle.grey if arg[0] != "Close" else ButtonStyle.red,
-            )
-            view.add_item(button)
-        await self.lock(interaction)
-        message = await interaction.followup.send(view=view)
-        await view.wait()
-        await message.delete()
-        await self.unlock(interaction)
+        async with FollowupView(self, interaction, timeout=self.timeout) as view:
+            for arg in button_args:
+                button = muui.Button(
+                    label=arg[0],
+                    callback=arg[1],
+                    style=ButtonStyle.grey if arg[0] != "Close" else ButtonStyle.red,
+                )
+                view.add_item(button)
+            view.message = await interaction.followup.send(view=view)
+            await view.wait()
 
     @discord.ui.button(label="Close", style=ButtonStyle.red, row=1)
     async def close_button(self, interaction: Interaction, button: discord.ui.Button):
         self.interaction = interaction
-        self.value = False
         for child in self.children:
             child.disabled = True
         self.stop()
@@ -242,7 +259,6 @@ class LoggingPanelView(muui.View):
                 continue
             self.logger.config["log_events"][key] = key in select.values
             view.value = True
-            view.handler.value = True
         await interaction.response.defer()
         view.stop()
 
@@ -262,7 +278,6 @@ class LoggingPanelView(muui.View):
             return await interaction.response.send_message(embed=err_embed, ephemeral=True)
         if child.name == "log_channel":
             self.logger.config[child.name] = str(channel.id)
-            self.value = True
             embed = self.update_embed_field(modal.title, f"<#{channel.id}>")
         elif child.name == "channel_whitelist":
             # whitelist channel
@@ -271,9 +286,9 @@ class LoggingPanelView(muui.View):
                 err_embed.description = f"Channel {channel.mention} is already whitelisted."
                 return await interaction.response.send_message(embed=err_embed, ephemeral=True)
             wl_channels.append(str(channel.id))
-            self.value = True
             embed = self.update_embed_field(modal.title, self.wl_channels_fmt_string)
         else:
             raise TypeError(f"Invalid modal input session, `{child.name}`.")
+        self.value = True
         await interaction.response.defer()
         await self.edit_message(embed=embed)
