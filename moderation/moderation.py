@@ -52,11 +52,12 @@ except ImportError as exc:
         f"Install {required} plugin to resolve this issue."
     ) from exc
 
-from .core.config import GuildConfig, ModConfig
+from .core.config import ModConfig
 from .core.converters import Arguments, ActionReason, BannedMember
 from .core.errors import BanEntryNotFound
 from .core.logging import ModerationLogging
 from .core.utils import get_audit_reason, parse_delete_message_days
+from .core.views import LoggingPanelView
 
 
 # <!-- ----- -->
@@ -80,8 +81,9 @@ class Moderation(commands.Cog):
         self.blurple: discord.Color = discord.Color.blurple()
         self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
         self.config: ModConfig = ModConfig(self, self.db)
-        self.logging: ModerationLogging = ModerationLogging(self)
+        self.loggers: Dict[str, ModerationLogging] = {}
         self.massban_enabled: bool = strtobool(os.environ.get("MODERATION_MASSBAN_ENABLE", False))
+        self._ready: bool = False
 
     async def cog_load(self) -> None:
         self.bot.loop.create_task(self.initialize())
@@ -144,190 +146,62 @@ class Moderation(commands.Cog):
         """
         await self.bot.wait_for_connected()
         await self.config.fetch()
+        for guild in self.bot.guilds:
+            self.loggers[str(guild.id)] = ModerationLogging(guild, self)
+        self._ready = True
+
+    def get_logger(self, guild: discord.Guild) -> ModerationLogging:
+        """
+        Return ModerationLogging instance for guild.
+        """
+        glogger = self.loggers.get(str(guild.id))
+        if glogger is None:
+            glogger = ModerationLogging(guild, self)
+            self.loggers[str(guild.id)] = glogger
+        return glogger
 
     # Logging
     @commands.group(name="logging", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_group(self, ctx: commands.Context):
         """
-        Logging feature for Moderation actions.
+        Logging feature for Moderation actions/events.
 
-        __**Support actions:**__
+        You can also enable or disable which events to be logged.
+
+        __**Support actions/events:**__
         - `ban`/`unban`
         - `kick`
         - Timeout, `mute`/`unmute`
         - Member roles update, `add`/`remove`
         - Nickname changes, `set`/`update`/`remove`
-        - Channels, `created`/`deleted`
-        - Message updates, `deleted`/`edited`
+        - Channels, `create`/`delete`
+        - Message updates, `delete`/`edit`
 
         For initial setup, set the logging channel and enable the logging.
-        Use commands:
-        - `{prefix}logging config channel #channel`
-        - `{prefix}logging config enable true`
+        To initiate logging config panel, use command:
+        - `{prefix}logging config`
         """
         await ctx.send_help(ctx.command)
 
-    @logging_group.group(name="config", usage="<command> [argument]", invoke_without_command=True)
+    @logging_group.group(name="config", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def logging_config(self, ctx: commands.Context):
         """
-        Moderation logging configuration.
-
-        Run this command without argument to see the current set configurations.
+        Moderation logging config panel with interactive buttons.
         """
         config = self.config.get_config(ctx.guild)
-        embed = discord.Embed(
-            title="Logging Config",
-            color=self.bot.main_color,
-        )
-        for key, value in config.items():
-            embed.add_field(name=key.replace("_", " ").capitalize(), value=f"`{value}`")
-        await ctx.send(embed=embed)
-
-    @logging_config.command(name="channel")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_channel(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
-        """
-        Sets the logging channel.
-
-        `channel` may be a channel ID, mention, or name.
-
-        Leave `channel` empty to see the current set channel.
-        """
-        config = self.config.get_config(ctx.guild)
-        if channel is None:
-            channel = self.bot.get_channel(int(config.get("log_channel")))
-            if channel:
-                description = f"Current moderation logging channel is {channel.mention}."
-            else:
-                description = "Moderation logging channel is not set."
-        else:
-            config.set("log_channel", str(channel.id))
-            config.remove("webhook")
-            config.webhook = MISSING
-            description = f"Log channel is now set to {channel.mention}."
-            await config.update()
-
-        embed = discord.Embed(description=description, color=self.bot.main_color)
-        await ctx.send(embed=embed)
-
-    @logging_config.command(name="enable")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
-        """
-        Enable or disable moderation logging feature.
-
-        `mode` is a boolean value, may be `True` or `False` (case insensitive).
-
-        Leave `mode` empty to see the current set value.
-        """
-        config = self.config.get_config(ctx.guild)
-        if mode is None:
-            mode = config.get("logging")
-            description = "Logging feature is currently " + ("`enabled`" if mode else "`disabled`") + "."
-        else:
-            config.set("logging", mode)
-            description = ("Enabled " if mode else "Disabled ") + "the logging for moderation actions."
-            await config.update()
-
-        embed = discord.Embed(description=description, color=self.bot.main_color)
-        await ctx.send(embed=embed)
-
-    @logging_config.group(name="whitelist", aliases=["wl"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist(self, ctx: commands.Context):
-        """
-        Whitelist channels from logging.
-
-        This only affects the message update events which means any message update (edit or delete) in the specified channel will be ignored.
-        """
-        await ctx.send_help(ctx.command)
-
-    @logging_whitelist.command(name="add")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_add(
-        self, ctx: commands.Context, *, channel: Union[discord.TextChannel, discord.CategoryChannel]
-    ):
-        """
-        Whitelist a channel from logging.
-
-        `channel` could be a text channel or a category, may be ID, mention, or name.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        channel_id = str(channel.id)
-        if channel_id in whitelist_ids:
-            raise commands.BadArgument(f"Channel ID {channel_id} is already whitelisted.")
-        whitelist_ids.append(channel_id)
-        config["channel_whitelist"] = whitelist_ids
+        view = LoggingPanelView(ctx.author, self, self.get_logger(ctx.guild))
+        embed = view.embed
+        view.message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+        if not view.value:
+            return
         await config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description=f"Channel {channel.mention} is now whitelisted.",
-        )
-        await ctx.send(embed=embed)
-
-    @logging_whitelist.command(name="remove", aliases=["delete", "del"])
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_remove(
-        self, ctx: commands.Context, *, channel: Union[discord.TextChannel, discord.CategoryChannel]
-    ):
-        """
-        Remove a channel from whitelist.
-
-        `channel` could be a text channel or a category, may be ID, mention, or name.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        channel_id = str(channel.id)
-        if channel_id not in whitelist_ids:
-            raise commands.BadArgument(f"Channel ID {channel_id} is not whitelisted.")
-        whitelist_ids.remove(channel_id)
-        config["channel_whitelist"] = whitelist_ids
-        await config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description=f"Channel {channel.mention} is now removed from whitelisted channels.",
-        )
-        await ctx.send(embed=embed)
-
-    @logging_whitelist.command(name="list")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_list(self, ctx: commands.Context):
-        """
-        Show a list of whitelisted channels if any.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        if not whitelist_ids:
-            raise commands.BadArgument("There is no whitelist channel set.")
-        embed = discord.Embed(
-            title="__Whitelisted channels__",
-            color=self.bot.main_color,
-        )
-        embed.description = "\n".join(f"- <#{i}>" for i in whitelist_ids)
-        await ctx.send(embed=embed)
-
-    @logging_whitelist.command(name="clear")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_whitelist_clear(self, ctx: commands.Context):
-        """
-        Clear all whitelisted channels.
-        """
-        config = self.config.get_config(ctx.guild)
-        whitelist_ids = config.get("channel_whitelist", [])
-        if not whitelist_ids:
-            raise commands.BadArgument("There is no whitelist channel set.")
-        whitelist_ids.clear()
-        config["channel_whitelist"] = whitelist_ids
-        await config.update()
-        embed = discord.Embed(color=self.bot.main_color, description="Channel whitelist is now cleared.")
-        await ctx.send(embed=embed)
 
     @logging_config.command(name="clear", aliases=["reset"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def logging_clear(self, ctx: commands.Context):
+    async def logging_config_clear(self, ctx: commands.Context):
         """
         Reset the moderation logging configurations to default.
         """
@@ -396,8 +270,8 @@ class Moderation(commands.Cog):
             ).add_field(name="Reason", value=reason)
         )
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             duration=human_delta,
             target=member,
@@ -440,8 +314,9 @@ class Moderation(commands.Cog):
                 color=self.bot.main_color,
             )
         )
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -499,8 +374,8 @@ class Moderation(commands.Cog):
         embed.set_footer(text=f"User ID: {member.id}")
         await ctx.send(embed=embed)
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -509,7 +384,7 @@ class Moderation(commands.Cog):
         )
 
     # Purge commands
-    @commands.group(aliases=["clear"], invoke_without_command=True)
+    @commands.group(invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def purge(self, ctx: commands.Context, amount: int):
         """
@@ -829,8 +704,9 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -904,8 +780,9 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=user,
             moderator=ctx.author,
@@ -993,8 +870,8 @@ class Moderation(commands.Cog):
         if not success:
             return
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action="multiban",
             target=success,
             moderator=ctx.author,
@@ -1323,8 +1200,8 @@ class Moderation(commands.Cog):
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
 
-        await self.logging.send_log(
-            guild=ctx.guild,
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=member,
             moderator=ctx.author,
@@ -1367,8 +1244,9 @@ class Moderation(commands.Cog):
         )
         embed.add_field(name="Reason", value=reason)
         await ctx.send(embed=embed)
-        await self.logging.send_log(
-            guild=ctx.guild,
+
+        glogger = self.get_logger(ctx.guild)
+        await glogger.send_log(
             action=ctx.command.name,
             target=ban_entry.user,
             moderator=ctx.author,
@@ -1559,41 +1437,72 @@ class Moderation(commands.Cog):
             )
         )
 
-    @commands.Cog.listener()
-    async def on_member_update(self, *args, **kwargs) -> None:
-        await self.logging.on_member_update(*args, **kwargs)
+    async def _logger_callback(
+        self,
+        event: str,
+        *args: Any,
+        guild: Optional[discord.Guild] = None,
+        guild_id: Optional[int] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        A resolver before calling a callback for specific event.
+        """
+        if not self._ready or (not guild and not guild_id):
+            return
+        if not guild:
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                return
+        glogger = self.get_logger(guild)
+        if not glogger.is_enabled():
+            return
+        if event in ("guild_channel_create", "guild_channel_delete"):
+            key = event.lstrip("guild_")
+        elif event in ("raw_message_delete", "raw_bulk_message_delete", "raw_message_edit"):
+            key = event.lstrip("raw_")
+        else:
+            key = event
+        if not glogger.config["log_events"].get(key):
+            return
+        callback = getattr(glogger, "on_" + event)
+        await callback(*args, **kwargs)
 
     @commands.Cog.listener()
-    async def on_member_remove(self, *args, **kwargs) -> None:
-        await self.logging.on_member_remove(*args, **kwargs)
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        await self._logger_callback("member_update", before, after, guild=before.guild)
 
     @commands.Cog.listener()
-    async def on_member_ban(self, *args, **kwargs) -> None:
-        await self.logging.on_member_ban(*args, **kwargs)
+    async def on_member_remove(self, member: discord.Member) -> None:
+        await self._logger_callback("member_remove", member, guild=member.guild)
 
     @commands.Cog.listener()
-    async def on_member_unban(self, *args, **kwargs) -> None:
-        await self.logging.on_member_unban(*args, **kwargs)
+    async def on_member_ban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        await self._logger_callback("member_ban", user, guild=guild)
 
     @commands.Cog.listener()
-    async def on_guild_channel_create(self, *args, **kwargs) -> None:
-        await self.logging.on_guild_channel_create(*args, **kwargs)
+    async def on_member_unban(self, guild: discord.Guild, user: Union[discord.User, discord.Member]) -> None:
+        await self._logger_callback("member_unban", user, guild=guild)
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, *args, **kwargs) -> None:
-        await self.logging.on_guild_channel_delete(*args, **kwargs)
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
+        await self._logger_callback("guild_channel_create", channel, guild=channel.guild)
 
     @commands.Cog.listener()
-    async def on_raw_message_delete(self, *args, **kwargs) -> None:
-        await self.logging.on_raw_message_delete(*args, **kwargs)
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        await self._logger_callback("guild_channel_delete", channel, guild=channel.guild)
 
     @commands.Cog.listener()
-    async def on_raw_bulk_message_delete(self, *args, **kwargs) -> None:
-        await self.logging.on_raw_bulk_message_delete(*args, **kwargs)
+    async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
+        await self._logger_callback("raw_message_delete", payload, guild_id=payload.guild_id)
 
     @commands.Cog.listener()
-    async def on_raw_message_edit(self, *args, **kwargs) -> None:
-        await self.logging.on_raw_message_edit(*args, **kwargs)
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent) -> None:
+        await self._logger_callback("raw_bulk_message_delete", payload, guild_id=payload.guild_id)
+
+    @commands.Cog.listener()
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent) -> None:
+        await self._logger_callback("raw_message_edit", payload, guild_id=payload.guild_id)
 
 
 async def setup(bot: ModmailBot) -> None:
