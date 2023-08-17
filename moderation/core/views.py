@@ -32,6 +32,15 @@ class Select(ui.Select):
 
 
 class FollowupView(muui.View):
+    """
+    Represents followup view. Initiating this class with asynchronous context manager (`async with ...` syntax)
+    will automatically disable all components attached to the handler's view. Meanwhile exiting the context manager
+    will enable all those components back.
+
+    This is useful if you want to make sure the user do not interact on handler's components before they are done
+    interacting on this view's components.
+    """
+
     def __init__(
         self,
         handler: LoggingPanelView,
@@ -44,12 +53,14 @@ class FollowupView(muui.View):
         self.original_interaction: Interaction = interaction
         super().__init__(*args, **kwargs)
 
-    async def __aenter__(self) -> FollowupView:
+    async def __aenter__(self) -> "FollowupView":
         await self.lock(self.original_interaction)
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
         await self.message.delete()
+        # Note: by default we will be using `.inputs` as kwargs for `Interaction.edit_original_response`
+        # in `unlock`.
         await self.unlock(self.original_interaction, **self.inputs)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
@@ -104,12 +115,18 @@ class LoggingPanelView(muui.View):
             return self.message.embeds[0]
         embed = discord.Embed(
             title="Logging Config",
-            description=("Moderation logging configuration."),
+            description=(
+                "Moderation logging configuration. Use the buttons below to change the configurations.\n\n"
+                "__**Button info**__\n"
+                "- **Enable/Disable:** Enable or disable the logging. Disabling this will override the **Events** config.\n"
+                "- **Log channel:** Set the channel where the events will be logged.\n"
+                "- **Log events:** Enable or disable certain type of events.\n"
+                "- **Whitelist:** Set whitelist channel where the message updates will be ignored.\n"
+            ),
             color=self.bot.main_color,
         )
         embed.set_thumbnail(url=self.guild.icon)
         embed.set_author(name=self.bot.user.name, url=self.bot.user.display_avatar)
-        embed.set_footer(text="Use buttons below to change the value.")
 
         config = self.logger.config
         embed.add_field(name="Enabled", value=f"`{config['logging']}`")
