@@ -61,7 +61,7 @@ def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
 class Select(ui.Select):
     def __init__(self, *, options: List[discord.SelectOption], **kwargs):
         super().__init__(
-            placeholder=kwargs.pop("placeholder") or "Select a category",
+            placeholder=kwargs.pop("placeholder", None) or "Select a category",
             min_values=1,
             max_values=1,
             options=options,
@@ -103,17 +103,15 @@ class EmbedBuilderView(muui.View):
 
     def _add_menu(self) -> None:
         options = []
-        placeholder = None
         for key in self.extras:
-            if key == self.current:
-                placeholder = key.title()
             option = discord.SelectOption(
                 label=key.title(),
                 description=SHORT_DESCRIPTIONS[key],
                 value=key,
+                default=key == self.current,
             )
             options.append(option)
-        self.add_item(Select(options=options, row=0, placeholder=placeholder))
+        self.add_item(Select(options=options, row=0))
 
     def _generate_buttons(self) -> None:
         if self.current == "fields":
@@ -168,10 +166,7 @@ class EmbedBuilderView(muui.View):
         await func(embed=self.message.embeds[0], view=self)
 
     async def on_dropdown_select(self, interaction: Interaction, select: Select) -> None:
-        value = select.values[0]
-        option = select.get_option(value)
-        select.placeholder = option.label
-        self.current = value
+        self.current = value = select.values[0]
         embed = self.message.embeds[0]
         embed.description = "\n".join(DESCRIPTIONS[value]) + "\n\n" + "\n".join(DESCRIPTIONS["note"])
         self.clear_items()
