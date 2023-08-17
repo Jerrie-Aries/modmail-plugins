@@ -41,14 +41,7 @@ class FollowupView(muui.View):
     interacting on this view's components.
     """
 
-    def __init__(
-        self,
-        handler: LoggingPanelView,
-        interaction: Interaction,
-        *args: Any,
-        timeout: int = 120,
-        **kwargs: Any,
-    ):
+    def __init__(self, handler: LoggingPanelView, interaction: Interaction, *args: Any, **kwargs: Any):
         self.handler: LoggingPanelView = handler
         self.original_interaction: Interaction = interaction
         super().__init__(*args, **kwargs)
@@ -96,9 +89,8 @@ class LoggingPanelView(muui.View):
     def _resolve_components(self) -> None:
         enabled = self.logger.config["logging"]
         self.enable_button.label = "Disable" if enabled else "Enable"
-        if self.value:
-            self.close_button.label = "Done"
-            self.close_button.style = ButtonStyle.green
+        self.quit_button.label = "Done" if self.value else "Quit"
+        self.quit_button.style = ButtonStyle.green if self.value else ButtonStyle.red
 
     async def edit_message(self, *args: Any, **kwargs: Any) -> None:
         self._resolve_components()
@@ -230,8 +222,8 @@ class LoggingPanelView(muui.View):
             view.message = await interaction.followup.send(view=view)
             await view.wait()
 
-    @discord.ui.button(label="Close", style=ButtonStyle.red, row=1)
-    async def close_button(self, interaction: Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="...", row=1)
+    async def quit_button(self, interaction: Interaction, button: discord.ui.Button):
         self.interaction = interaction
         for child in self.children:
             child.disabled = True
