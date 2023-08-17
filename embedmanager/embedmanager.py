@@ -235,43 +235,6 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         fp = io.BytesIO(bytes(data, "utf-8"))
         await ctx.send(file=discord.File(fp, "embed.json"))
 
-    @embed_group.command(name="post", aliases=["view", "drop", "show"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_post(
-        self,
-        ctx: commands.Context,
-        name: StoredEmbedConverter,
-        channel: MessageableChannel = None,
-    ):
-        """
-        Post a stored embed.
-
-        `name` must be a name that was used when storing the embed.
-        `channel` may be a channel name, ID, or mention.
-
-        Use command `{prefix}embed store list` to get the list of stored embeds.
-        """
-        channel = channel or ctx.channel
-        await channel.send(embed=discord.Embed.from_dict(name["embed"]))
-
-    @embed_group.command(name="info")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_info(self, ctx: commands.Context, name: StoredEmbedConverter):
-        """
-        Get info about an embed that is stored.
-
-        `name` must be a name that was used when storing the embed.
-
-        Use command `{prefix}embed store list` to get the list of stored embeds.
-        """
-        embed = discord.Embed(
-            title=f"`{name['name']}` Info",
-            description=(
-                f"Author: <@!{name['author']}>\n" f"Length: {len(discord.Embed.from_dict(name['embed']))}"
-            ),
-        )
-        await ctx.send(embed=embed)
-
     @embed_group.group(name="edit", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_edit(self, ctx: commands.Context, message: BotMessage, index: int = 0):
@@ -355,6 +318,43 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         Store commands to store embeds for later use.
         """
         await ctx.send_help(ctx.command)
+
+    @embed_store.command(name="post", aliases=["view", "drop", "show"])
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def embed_store_post(
+        self,
+        ctx: commands.Context,
+        name: StoredEmbedConverter,
+        channel: MessageableChannel = None,
+    ):
+        """
+        Post a stored embed.
+
+        `name` must be a name that was used when storing the embed.
+        `channel` may be a channel name, ID, or mention.
+
+        Use command `{prefix}embed store list` to get the list of stored embeds.
+        """
+        channel = channel or ctx.channel
+        await channel.send(embed=discord.Embed.from_dict(name["embed"]))
+
+    @embed_store.command(name="info")
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def embed_store_info(self, ctx: commands.Context, name: StoredEmbedConverter):
+        """
+        Get info about an embed that is stored.
+
+        `name` must be a name that was used when storing the embed.
+
+        Use command `{prefix}embed store list` to get the list of stored embeds.
+        """
+        embed = discord.Embed(
+            title=f"`{name['name']}` Info",
+            description=(
+                f"Author: <@!{name['author']}>\n" f"Length: {len(discord.Embed.from_dict(name['embed']))}"
+            ),
+        )
+        await ctx.send(embed=embed)
 
     @embed_store.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
