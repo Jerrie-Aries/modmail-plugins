@@ -13,19 +13,6 @@ from core.models import PermissionLevel
 from core.paginator import EmbedPaginatorSession
 from core.utils import human_join
 
-from .core.builder import EmbedBuilderView
-from .core.converters import (
-    MessageableChannel,
-    BotMessage,
-    StoredEmbedConverter,
-    StringToEmbed,
-)
-from .core.data import JSON_EXAMPLE
-
-
-if TYPE_CHECKING:
-    from .motor.motor_asyncio import AsyncIOMotorCollection
-    from bot import ModmailBot
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -46,8 +33,22 @@ except ImportError as exc:
         f"Install {required} plugin to resolve this issue."
     ) from exc
 
+from .core.converters import (
+    MessageableChannel,
+    BotMessage,
+    StoredEmbedConverter,
+    StringToEmbed,
+)
+from .core.data import JSON_EXAMPLE
+from .core.views import EmbedBuilderView
+
 
 # <!-- ----- -->
+
+
+if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
+    from bot import ModmailBot
 
 
 JSON_CONVERTER = StringToEmbed()

@@ -6,9 +6,9 @@ from typing import Any, Awaitable, Callable, Dict, Optional, List, Union, TYPE_C
 
 import discord
 from discord import ButtonStyle, Interaction
-from discord.ext.modmail_utils.ui import Button, Modal, View
-from discord.ui import Select
+from discord import ui
 from discord.utils import MISSING
+from discord.ext.modmail_utils import ui as muui
 from yarl import URL
 
 from .data import DESCRIPTIONS, SHORT_DESCRIPTIONS, INPUT_DATA
@@ -58,7 +58,7 @@ def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
     return value
 
 
-class EmbedBuilderDropdown(Select):
+class Select(ui.Select):
     def __init__(self, *, options: List[discord.SelectOption], **kwargs):
         super().__init__(
             placeholder=kwargs.pop("placeholder") or "Select a category",
@@ -69,12 +69,8 @@ class EmbedBuilderDropdown(Select):
         )
 
     async def callback(self, interaction: Interaction):
-        await interaction.response.defer()
         assert self.view is not None
-        value = self.values[0]
-        option = self.get_option(value)
-        self.placeholder = option.label
-        await self.view.on_dropdown_select(value)
+        await self.view.on_dropdown_select(interaction, self)
 
     def get_option(self, value: str) -> discord.SelectOption:
         for option in self.options:
@@ -83,12 +79,12 @@ class EmbedBuilderDropdown(Select):
         raise ValueError(f"Cannot find select option with value of `{value}`.")
 
 
-class EmbedBuilderView(View):
+class EmbedBuilderView(muui.View):
     """
     Main class to handle the view components and responses from interactions.
     """
 
-    children: List[Button]
+    children: List[muui.Button]
 
     def __init__(
         self, cog: EmbedManager, user: discord.Member, *, timeout: float = 600.0, add_items: bool = True
@@ -117,7 +113,7 @@ class EmbedBuilderView(View):
                 value=key,
             )
             options.append(option)
-        self.add_item(EmbedBuilderDropdown(options=options, row=0, placeholder=placeholder))
+        self.add_item(Select(options=options, row=0, placeholder=placeholder))
 
     def _generate_buttons(self) -> None:
         if self.current == "fields":
@@ -131,7 +127,7 @@ class EmbedBuilderView(View):
         }
 
         for label, item in buttons.items():
-            self.add_item(Button(label=label.title(), style=item[0], row=4, callback=item[1]))
+            self.add_item(muui.Button(label=label.title(), style=item[0], row=4, callback=item[1]))
 
     def _add_field_buttons(self) -> None:
         buttons = {
@@ -139,11 +135,11 @@ class EmbedBuilderView(View):
             "clear fields": (ButtonStyle.grey, self._action_clear_fields),
         }
         for label, item in buttons.items():
-            self.add_item(Button(label=label.title(), style=item[0], row=3, callback=item[1]))
+            self.add_item(muui.Button(label=label.title(), style=item[0], row=3, callback=item[1]))
 
     def refresh(self) -> None:
         for child in self.children:
-            if not isinstance(child, Button):
+            if not isinstance(child, muui.Button):
                 continue
             key = child.label.lower()
             if key == "cancel":
@@ -163,20 +159,27 @@ class EmbedBuilderView(View):
             else:
                 child.disabled = False
 
-    async def update_view(self) -> None:
+    async def update_view(self, interaction: Optional[Interaction] = None) -> None:
         self.refresh()
-        await self.message.edit(embed=self.message.embeds[0], view=self)
+        if interaction and not interaction.response.is_done():
+            func = interaction.response.edit_message
+        else:
+            func = self.message.edit
+        await func(embed=self.message.embeds[0], view=self)
 
-    async def on_dropdown_select(self, value: str) -> None:
+    async def on_dropdown_select(self, interaction: Interaction, select: Select) -> None:
+        value = select.values[0]
+        option = select.get_option(value)
+        select.placeholder = option.label
         self.current = value
         embed = self.message.embeds[0]
         embed.description = "\n".join(DESCRIPTIONS[value]) + "\n\n" + "\n".join(DESCRIPTIONS["note"])
         self.clear_items()
         self._add_menu()
         self._generate_buttons()
-        await self.update_view()
+        await self.update_view(interaction)
 
-    async def on_modal_submit(self, interaction: Interaction, modal: Modal) -> None:
+    async def on_modal_submit(self, interaction: Interaction, modal: muui.Modal) -> None:
         modal.stop()
         for child in modal.children:
             value = child.value
@@ -208,9 +211,8 @@ class EmbedBuilderView(View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
-            await interaction.response.defer()
             self.embed = self.update_embed(data=resp_data)
-        await self.update_view()
+        await self.update_view(interaction)
 
     async def _action_add_field(self, *args: Any) -> None:
         await self._action_edit(*args)
@@ -219,8 +221,8 @@ class EmbedBuilderView(View):
         interaction, _ = args
         if self.embed.fields:
             self.embed = self.embed.clear_fields()
-        await self.update_view()
-        await interaction.response.send_message("Cleared all fields.", ephemeral=True)
+        await self.update_view(interaction)
+        await interaction.followup.send("Cleared all fields.", ephemeral=True)
 
     async def _action_done(self, *args: Any) -> None:
         interaction, _ = args
@@ -229,7 +231,7 @@ class EmbedBuilderView(View):
 
     async def _action_edit(self, *args: Any) -> None:
         interaction, _ = args
-        modal = Modal(
+        modal = muui.Modal(
             self,
             self.extras[self.current],
             callback=self.on_modal_submit,

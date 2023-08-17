@@ -6,8 +6,8 @@
         "\n**Note:**\nThe JSON must be in the format expected by this [Discord documentation](https://discord.com/developers/docs/resources/channel#embed-object).",
         "\n**Version:**\n`{0}`"
     ],
-    "author": "Jerrie-Aries",
-    "version": "1.3.1",
+    "authors": ["Jerrie-Aries"],
+    "version": "1.3.2",
     "bot_version": "4.0.0",
     "dpy_version": "2.0.0",
     "cogs_required": ["Extended Utils"]

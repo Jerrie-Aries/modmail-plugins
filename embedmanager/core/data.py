@@ -28,9 +28,8 @@ DESCRIPTIONS = {
     ],
     "color": [
         "**Color:**",
-        "- `Value`: Color code of the embed.",
-        "The following formats are accepted:",
-        "\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`",
+        "- `Value`: Color code of the embed. The following formats are accepted:",
+        "  - `0x<hex>`\n  - `#<hex>`\n  - `0x#<hex>`\n  - `rgb(<number>, <number>, <number>)`",
         "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n",
     ],
     "fields": [
