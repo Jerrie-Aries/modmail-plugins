@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import zlib
+from pathlib import Path
 from typing import Dict, Iterator, Optional, TYPE_CHECKING
 
 import discord
@@ -17,6 +19,15 @@ from .core.utils import finder
 
 if TYPE_CHECKING:
     from bot import ModmailBot
+
+info_json = Path(__file__).parent.resolve() / "info.json"
+with open(info_json, encoding="utf-8") as f:
+    __plugin_info__ = json.loads(f.read())
+
+__plugin_name__ = __plugin_info__["name"]
+__version__ = __plugin_info__["version"]
+__description__ = "\n".join(__plugin_info__["description"]).format(__version__)
+
 
 RTFM_PAGE_TYPES = {
     "stable": "https://discordpy.readthedocs.io/en/stable",
@@ -59,9 +70,7 @@ class SphinxObjectFileReader:
 
 
 class RTFM(commands.Cog):
-    """
-    Python and discord.py documentation exclusive things.
-    """
+    __doc__ = __description__
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
