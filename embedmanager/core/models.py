@@ -10,22 +10,14 @@ from .data import INPUT_DATA
 
 
 if TYPE_CHECKING:
-    from bot import ModmailBot
     from ..embedmanager import EmbedManager
 
 
 class EmbedEditor:
-    def __init__(
-        self,
-        cog: EmbedManager,
-        embeds: List[discord.Embed] = MISSING,
-        *,
-        index: int = MISSING,
-    ):
+    def __init__(self, cog: EmbedManager, embeds: List[discord.Embed] = MISSING):
         self.cog: EmbedManager = cog
-        self.bot: ModmailBot = cog.bot
         self.embeds: List[discord.Embed] = embeds if embeds is not MISSING else [discord.Embed()]
-        self.index: int = index if index is not MISSING else 0
+        self.index: int = 0
         self._inputs: Dict[str, Any] = {}
 
     def __getitem__(self, key: str) -> Any:

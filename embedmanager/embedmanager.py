@@ -239,7 +239,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_edit(self, ctx: commands.Context, message: BotMessage, index: int = 0):
         """
-        Edit a message's embed sent by the bot.
+        Edit message's embeds sent by the bot.
         This will initiate the Embed Editor panel with interactive buttons and text inputs session.
         The values for the input fields are pre-defined based on the source embed.
 
@@ -264,7 +264,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
         if view.value:
-            await ctx.send(embeds=view.editor.embeds)
+            await message.edit(embeds=view.editor.embeds)
             await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
