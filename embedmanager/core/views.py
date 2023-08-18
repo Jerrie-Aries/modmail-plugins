@@ -12,6 +12,7 @@ from discord.ext.modmail_utils import ui as muui
 from yarl import URL
 
 from .data import DESCRIPTIONS, FOOTER_TEXTS, SHORT_DESCRIPTIONS, INPUT_DATA
+from .models import EmbedEditor
 
 
 if TYPE_CHECKING:
@@ -98,42 +99,68 @@ class EmbedBuilderView(muui.View):
     children: List[muui.Button]
 
     def __init__(
-        self, cog: EmbedManager, user: discord.Member, *, timeout: float = 300.0, add_items: bool = True
+        self,
+        cog: EmbedManager,
+        user: discord.Member,
+        *,
+        editor: EmbedEditor = MISSING,
+        timeout: float = 300.0,
     ):
         super().__init__(extras=deepcopy(INPUT_DATA), timeout=timeout)
         self.bot: ModmailBot = cog.bot
         self.cog: EmbedManager = cog
+        self.editor: EmbedEditor = editor if editor is not MISSING else EmbedEditor(cog)
         self.user: discord.Member = user
-        self.embed: discord.Embed = discord.Embed()
-        self.current: Optional[str] = None
+        self.category: Optional[str] = None
+        self.__base_description: Optional[str] = None
 
-        if add_items:
-            self._populate_select_options()
-            self.refresh()
+        self._populate_select_options()
+        self.refresh()
 
     def _populate_select_options(self) -> None:
+        self._embed_select.options.clear()
+        for i, embed in enumerate(self.editor.embeds):
+            default = i == self.editor.index and len(self.editor.embeds) > 1
+            self._embed_select.append_option(
+                discord.SelectOption(
+                    label=f"Embed {i + 1}",
+                    value=str(i),
+                    default=default,
+                ),
+            )
         self._category_select.options.clear()
         for key in self.extras:
             option = discord.SelectOption(
                 label=key.title(),
                 description=SHORT_DESCRIPTIONS[key],
                 value=key,
-                default=key == self.current,
+                default=key == self.category,
             )
             self._category_select.append_option(option)
 
     def refresh(self) -> None:
         for child in self.children:
+            if child == self._embed_select:
+                child.disabled = len(self.editor.embeds) <= 1
+                continue
             if not isinstance(child, ui.Button):
                 continue
             key = child.label.lower()
             if key == "cancel":
                 continue
-            if not self.current:
+            curr_not_ready = len(self.editor.embed) == 0
+            if not self.category and curr_not_ready and len(self.editor.embeds) <= 1:
+                # first launch
                 child.disabled = True
                 continue
+            if key == "new":
+                child.disabled = curr_not_ready or len(self.editor.embeds) >= 10
+                continue
+            if key == "edit":
+                child.disabled = not self.category
+                continue
             if key in ("done", "preview"):
-                child.disabled = len(self.embed) == 0
+                child.disabled = curr_not_ready
             else:
                 child.disabled = False
 
@@ -145,12 +172,25 @@ class EmbedBuilderView(muui.View):
             func = self.message.edit
         await func(embed=self.message.embeds[0], view=self)
 
-    @ui.select(placeholder="Select a category", row=0)
+    @ui.select(placeholder="Select an embed", row=0)
+    async def _embed_select(self, interaction: Interaction, select: ui.Select) -> None:
+        value = select.values[0]
+        self.editor.index = int(value)
+        self.category = None
+        self._populate_select_options()
+        if self.__base_description:
+            embed = self.message.embeds[0]
+            embed.description = self.__base_description
+        await self.update_view(interaction)
+
+    @ui.select(placeholder="Select a category", row=1)
     async def _category_select(self, interaction: Interaction, select: ui.Select) -> None:
-        self.current = value = select.values[0]
+        self.category = value = select.values[0]
         for opt in select.options:
             opt.default = opt.value == value
         embed = self.message.embeds[0]
+        if self.__base_description is None:
+            self.__base_description = embed.description
         embed.description = "\n".join(DESCRIPTIONS[value])
         if not embed.footer:
             embed.set_footer(text="\n".join(FOOTER_TEXTS["note"]))
@@ -162,6 +202,15 @@ class EmbedBuilderView(muui.View):
         self.disable_and_stop()
         await interaction.response.edit_message(view=self)
 
+    @ui.button(label="New", style=ButtonStyle.blurple)
+    async def _action_new(self, *args: Any) -> None:
+        interaction, _ = args
+        self.editor.add()
+        self.editor.index = len(self.editor.embeds) - 1
+        self.category = None
+        self._populate_select_options()
+        await self.update_view(interaction)
+
     async def _field_session(self, interaction: Interaction) -> None:
         buttons = {
             "add field": (ButtonStyle.blurple, self._action_add_field),
@@ -170,7 +219,7 @@ class EmbedBuilderView(muui.View):
         }
         async with FollowupView(self, interaction, timeout=self.timeout) as view:
             for label, item in buttons.items():
-                disabled = label == "clear fields" and not self.embed.fields
+                disabled = label == "clear fields" and not self.editor.embed.fields
                 view.add_item(
                     muui.Button(label=label.capitalize(), style=item[0], callback=item[1], disabled=disabled)
                 )
@@ -180,14 +229,20 @@ class EmbedBuilderView(muui.View):
     @ui.button(label="Edit", style=ButtonStyle.grey)
     async def _action_edit(self, *args: Any) -> None:
         interaction, _ = args
-        if self.current == "fields":
+        if self.category == "fields":
             await self._field_session(interaction)
         else:
+            payload = deepcopy(self.extras[self.category])
+            for key in list(payload.keys()):
+                try:
+                    payload[key]["default"] = self.editor[self.category][key]["default"]
+                except KeyError:
+                    continue
             modal = muui.Modal(
                 self,
-                self.extras[self.current],
+                payload,
                 callback=self.on_modal_submit,
-                title=self.current.title(),
+                title=self.category.title(),
             )
             await interaction.response.send_modal(modal)
 
@@ -195,7 +250,7 @@ class EmbedBuilderView(muui.View):
     async def _action_preview(self, *args: Any) -> None:
         interaction, _ = args
         try:
-            await interaction.response.send_message(embed=self.embed, ephemeral=True)
+            await interaction.response.send_message(embeds=self.editor.embeds, ephemeral=True)
         except discord.HTTPException as exc:
             error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
             await interaction.response.send_message(error, ephemeral=True)
@@ -204,24 +259,23 @@ class EmbedBuilderView(muui.View):
     async def _action_cancel(self, *args: Any) -> None:
         interaction, _ = args
         self.disable_and_stop()
-        if self.embed:
-            self.embed = MISSING
+        self.editor.embeds.clear()
         await interaction.response.edit_message(view=self)
 
     async def _action_add_field(self, interaction: Interaction, button: ui.Button) -> None:
         modal = muui.Modal(
             button.view,
-            self.extras[self.current],
+            self.extras[self.category],
             callback=self.on_modal_submit,
-            title=self.current.title(),
+            title=self.category.title(),
         )
         await interaction.response.send_modal(modal)
         await modal.wait()
         button.view.stop()
 
     async def _action_clear_fields(self, interaction: Interaction, button: ui.Button) -> None:
-        if self.embed.fields:
-            self.embed = self.embed.clear_fields()
+        if self.editor.embed.fields:
+            self.editor.embed.clear_fields()
         await self.update_view()
         await interaction.response.send_message("Cleared all fields.", ephemeral=True)
         button.view.stop()
@@ -236,18 +290,18 @@ class EmbedBuilderView(muui.View):
             value = child.value
             if not value:
                 value = None
-            self.extras[self.current][child.name]["default"] = value
+            self.editor[self.category][child.name]["default"] = value
 
         errors = []
-        data = self.extras[self.current]
+        data = self.editor[self.category]
         resp_data = {}
         for key, group in data.items():
-            if self.current == "fields":
+            if self.category == "fields":
                 value = group.pop("default")
             else:
                 value = group.get("default")
             try:
-                value = _resolve_conversion(self.current, key, value)
+                value = _resolve_conversion(self.category, key, value)
             except Exception as exc:
                 errors.append(str(exc))
             else:
@@ -263,9 +317,9 @@ class EmbedBuilderView(muui.View):
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.defer()
-            self.embed = self.update_embed(data=resp_data)
+            self.editor.update(data=resp_data, category=self.category)
 
-        if self.current != "fields":
+        if self.category != "fields":
             await self.update_view()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
@@ -273,65 +327,42 @@ class EmbedBuilderView(muui.View):
             return True
         return False
 
-    def update_embed(self, *, data: Dict[str, Any]) -> discord.Embed:
-        """
-        Update embed from the response data.
-        """
-        if self.current == "title":
-            title = data["title"]
-            self.embed.title = title
-            if title:
-                url = data["url"]
-            else:
-                url = None
-            self.embed.url = url
-        if self.current == "author":
-            self.embed.set_author(**data)
-        if self.current == "body":
-            self.embed.description = data["description"]
-            thumbnail_url = data["thumbnail"]
-            if thumbnail_url:
-                self.embed.set_thumbnail(url=thumbnail_url)
-            image_url = data["image"]
-            if image_url:
-                self.embed.set_image(url=image_url)
-        if self.current == "color":
-            self.embed.colour = data["value"]
-        if self.current == "footer":
-            self.embed.set_footer(**data)
-        if self.current == "fields":
-            self.embed.add_field(**data)
-        self.embed.timestamp = discord.utils.utcnow()
-        return self.embed
-
     @classmethod
-    def from_embed(cls, cog: EmbedManager, user: discord.Member, *, embed: discord.Embed) -> EmbedBuilderView:
-        self = cls(cog, user, add_items=False)
-        self.embed = embed
-        data = embed.to_dict()
-        title = data.get("title")
-        self.extras["title"]["title"]["default"] = title
-        url = data.get("url")
-        if url:
-            self.extras["title"]["url"]["default"] = embed.url
-        self.extras["body"]["description"]["default"] = data.get("description")
-        self.extras["color"]["value"]["default"] = data.get("color")
-        images = ["thumbnail", "image"]
-        elems = ["author", "footer"]
-        for elem in images + elems:
-            elem_data = data.get(elem)
-            if elem_data:
-                for key, val in elem_data.items():
-                    if elem in images:
-                        if key != "url":
+    def from_embed(
+        cls,
+        cog: EmbedManager,
+        user: discord.Member,
+        *,
+        embeds: List[discord.Embed],
+        index: int = 0,
+    ) -> EmbedBuilderView:
+        editor = EmbedEditor(cog, embeds)
+        for i, embed in enumerate(editor.embeds):
+            editor.index = i
+            if embed.type != "rich":
+                continue
+            data = embed.to_dict()
+            title = data.get("title")
+            editor["title"]["title"]["default"] = title
+            url = data.get("url")
+            if url:
+                editor["title"]["url"]["default"] = embed.url
+            editor["body"]["description"]["default"] = data.get("description")
+            editor["color"]["value"]["default"] = data.get("color")
+            images = ["thumbnail", "image"]
+            elems = ["author", "footer"]
+            for elem in images + elems:
+                elem_data = data.get(elem)
+                if elem_data:
+                    for key, val in elem_data.items():
+                        if elem in images:
+                            if key != "url":
+                                continue
+                            key = elem
+                            elem = "body"
+                        try:
+                            editor[elem][key]["default"] = val
+                        except KeyError:
                             continue
-                        key = elem
-                        elem = "body"
-                    try:
-                        self.extras[elem][key]["default"] = val
-                    except KeyError:
-                        continue
-
-        self._populate_select_options()
-        self.refresh()
-        return self
+        editor.index = index
+        return cls(cog, user, editor=editor)

@@ -158,8 +158,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         view = EmbedBuilderView(self, ctx.author)
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
-        if view.embed:
-            await ctx.send(embed=view.embed)
+        if view.editor.embeds:
+            await ctx.send(embeds=view.editor.embeds)
 
     @embed_group.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -247,8 +247,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
         """
-        source_embed = await self.get_embed_from_message(message, index)
-        view = EmbedBuilderView.from_embed(self, ctx.author, embed=source_embed)
+        await self.get_embed_from_message(message, index)
+        view = EmbedBuilderView.from_embed(self, ctx.author, embeds=message.embeds, index=index)
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
             title="Embed Editor",
@@ -259,8 +259,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
 
-        if view.embed:
-            await message.edit(embed=view.embed)
+        if view.editor.embeds:
+            await message.edit(embeds=view.editor.embeds)
             await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
