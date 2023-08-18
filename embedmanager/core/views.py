@@ -112,6 +112,7 @@ class EmbedBuilderView(muui.View):
             self.refresh()
 
     def _populate_select_options(self) -> None:
+        self._category_select.options.clear()
         for key in self.extras:
             option = discord.SelectOption(
                 label=key.title(),
@@ -144,7 +145,7 @@ class EmbedBuilderView(muui.View):
             func = self.message.edit
         await func(embed=self.message.embeds[0], view=self)
 
-    @ui.select(placeholder="Select a category", options=[], row=0)
+    @ui.select(placeholder="Select a category", row=0)
     async def _category_select(self, interaction: Interaction, select: ui.Select) -> None:
         self.current = value = select.values[0]
         for opt in select.options:
