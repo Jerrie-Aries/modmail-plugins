@@ -146,7 +146,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_build(self, ctx: commands.Context):
         """
-        Build embeds in an interactive mode using buttons and modal view.
+        Build embeds in an interactive mode using buttons and text input view.
         """
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
@@ -155,7 +155,6 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
             color=self.bot.main_color,
             timestamp=discord.utils.utcnow(),
         )
-        embed.set_footer(text="This panel will time out after 10 minutes.")
         view = EmbedBuilderView(self, ctx.author)
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
@@ -257,7 +256,6 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
             color=self.bot.main_color,
             timestamp=discord.utils.utcnow(),
         )
-        embed.set_footer(text="This panel will time out after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
 

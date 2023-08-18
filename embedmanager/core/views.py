@@ -11,7 +11,7 @@ from discord.utils import MISSING
 from discord.ext.modmail_utils import ui as muui
 from yarl import URL
 
-from .data import DESCRIPTIONS, SHORT_DESCRIPTIONS, INPUT_DATA
+from .data import DESCRIPTIONS, FOOTER_TEXTS, SHORT_DESCRIPTIONS, INPUT_DATA
 
 
 if TYPE_CHECKING:
@@ -98,7 +98,7 @@ class EmbedBuilderView(muui.View):
     children: List[muui.Button]
 
     def __init__(
-        self, cog: EmbedManager, user: discord.Member, *, timeout: float = 600.0, add_items: bool = True
+        self, cog: EmbedManager, user: discord.Member, *, timeout: float = 300.0, add_items: bool = True
     ):
         super().__init__(extras=deepcopy(INPUT_DATA), timeout=timeout)
         self.bot: ModmailBot = cog.bot
@@ -151,7 +151,9 @@ class EmbedBuilderView(muui.View):
         for opt in select.options:
             opt.default = opt.value == value
         embed = self.message.embeds[0]
-        embed.description = "\n".join(DESCRIPTIONS[value]) + "\n\n" + "\n".join(DESCRIPTIONS["note"])
+        embed.description = "\n".join(DESCRIPTIONS[value])
+        if not embed.footer:
+            embed.set_footer(text="\n".join(FOOTER_TEXTS["note"]))
         await self.update_view(interaction)
 
     @ui.button(label="Done", style=ButtonStyle.green)

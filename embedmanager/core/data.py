@@ -40,10 +40,6 @@ DESCRIPTIONS = {
         "Click `Add Field` to add a new field, or `Clear Fields` to clear all fields, if any.",
         f"Embed fields can be added up to {Limit.embed_fields}.\n",
     ],
-    "note": [
-        "__**Notes:**__",
-        f"- The combine sum of characters in embeds in a single message must not exceed {Limit.embed} characters.\n",
-    ],
 }
 
 SHORT_DESCRIPTIONS = {
@@ -53,6 +49,12 @@ SHORT_DESCRIPTIONS = {
     "footer": "The footer text and/or icon of the embed.",
     "color": "Embed's color.",
     "fields": "Add or remove fields.",
+}
+
+FOOTER_TEXTS = {
+    "note": [
+        f"Note: The combine sum of characters in embeds in a single message must not exceed {Limit.embed} characters.\n",
+    ]
 }
 
 INPUT_DATA: Dict[str, Any] = {
