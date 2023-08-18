@@ -95,7 +95,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         embeds = message.embeds
         if not embeds:
             raise commands.BadArgument("That message has no embeds.")
-        index = max(min(index, len(embeds)), 0)
+        index = max(min(index, len(embeds) - 1), 0)
         embed = message.embeds[index]
         if embed.type == "rich":
             return embed
@@ -248,6 +248,10 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
         """
         await self.get_embed_from_message(message, index)
+        if not 0 <= index < len(message.embeds):
+            raise commands.BadArgument(
+                f"Index `{index}` is out of range. Expected `0` to `{len(message.embeds) - 1}`."
+            )
         view = EmbedBuilderView.from_embed(self, ctx.author, embeds=message.embeds, index=index)
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
