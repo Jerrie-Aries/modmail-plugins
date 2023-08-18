@@ -58,25 +58,36 @@ def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
     return value
 
 
-class Select(ui.Select):
-    def __init__(self, *, options: List[discord.SelectOption], **kwargs):
-        super().__init__(
-            placeholder=kwargs.pop("placeholder", None) or "Select a category",
-            min_values=1,
-            max_values=1,
-            options=options,
-            **kwargs,
-        )
+class FollowupView(muui.View):
+    def __init__(self, handler: EmbedBuilderView, interaction: Interaction, *args: Any, **kwargs: Any):
+        self.handler: EmbedBuilderView = handler
+        self.original_interaction: Interaction = interaction
+        super().__init__(*args, **kwargs)
 
-    async def callback(self, interaction: Interaction):
-        assert self.view is not None
-        await self.view.on_dropdown_select(interaction, self)
+    async def __aenter__(self) -> "FollowupView":
+        await self.lock(self.original_interaction)
+        return self
 
-    def get_option(self, value: str) -> discord.SelectOption:
-        for option in self.options:
-            if option.value == value:
-                return option
-        raise ValueError(f"Cannot find select option with value of `{value}`.")
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.message.delete()
+        await self.unlock(self.original_interaction)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        return await self.handler.interaction_check(interaction)
+
+    async def lock(self, interaction: Interaction) -> None:
+        for child in self.handler.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self.handler)
+
+    async def unlock(self, interaction: Interaction, **kwargs: Any) -> None:
+        for child in self.handler.children:
+            child.disabled = False
+        self.handler.refresh()
+        await interaction.edit_original_response(view=self.handler, **kwargs)
+
+    async def on_timeout(self) -> None:
+        pass
 
 
 class EmbedBuilderView(muui.View):
@@ -97,12 +108,10 @@ class EmbedBuilderView(muui.View):
         self.current: Optional[str] = None
 
         if add_items:
-            self._add_menu()
-            self._generate_buttons()
+            self._populate_select_options()
             self.refresh()
 
-    def _add_menu(self) -> None:
-        options = []
+    def _populate_select_options(self) -> None:
         for key in self.extras:
             option = discord.SelectOption(
                 label=key.title(),
@@ -110,34 +119,11 @@ class EmbedBuilderView(muui.View):
                 value=key,
                 default=key == self.current,
             )
-            options.append(option)
-        self.add_item(Select(options=options, row=0))
-
-    def _generate_buttons(self) -> None:
-        if self.current == "fields":
-            self._add_field_buttons()
-
-        buttons: Dict[str, Any] = {
-            "done": (ButtonStyle.green, self._action_done),
-            "edit": (ButtonStyle.grey, self._action_edit),
-            "preview": (ButtonStyle.grey, self._action_preview),
-            "cancel": (ButtonStyle.red, self._action_cancel),
-        }
-
-        for label, item in buttons.items():
-            self.add_item(muui.Button(label=label.title(), style=item[0], row=4, callback=item[1]))
-
-    def _add_field_buttons(self) -> None:
-        buttons = {
-            "add field": (ButtonStyle.blurple, self._action_add_field),
-            "clear fields": (ButtonStyle.grey, self._action_clear_fields),
-        }
-        for label, item in buttons.items():
-            self.add_item(muui.Button(label=label.title(), style=item[0], row=3, callback=item[1]))
+            self._category_select.append_option(option)
 
     def refresh(self) -> None:
         for child in self.children:
-            if not isinstance(child, muui.Button):
+            if not isinstance(child, ui.Button):
                 continue
             key = child.label.lower()
             if key == "cancel":
@@ -145,13 +131,6 @@ class EmbedBuilderView(muui.View):
             if not self.current:
                 child.disabled = True
                 continue
-            if self.current == "fields":
-                if key == "edit":
-                    child.disabled = True
-                    continue
-                if key == "clear fields":
-                    child.disabled = not self.embed.fields
-                    continue
             if key in ("done", "preview"):
                 child.disabled = len(self.embed) == 0
             else:
@@ -165,14 +144,88 @@ class EmbedBuilderView(muui.View):
             func = self.message.edit
         await func(embed=self.message.embeds[0], view=self)
 
-    async def on_dropdown_select(self, interaction: Interaction, select: Select) -> None:
+    @ui.select(placeholder="Select a category", options=[], row=0)
+    async def _category_select(self, interaction: Interaction, select: ui.Select) -> None:
         self.current = value = select.values[0]
+        for opt in select.options:
+            opt.default = opt.value == value
         embed = self.message.embeds[0]
         embed.description = "\n".join(DESCRIPTIONS[value]) + "\n\n" + "\n".join(DESCRIPTIONS["note"])
-        self.clear_items()
-        self._add_menu()
-        self._generate_buttons()
         await self.update_view(interaction)
+
+    @ui.button(label="Done", style=ButtonStyle.green)
+    async def _action_done(self, *args: Any) -> None:
+        interaction, _ = args
+        self.disable_and_stop()
+        await interaction.response.edit_message(view=self)
+
+    async def _field_session(self, interaction: Interaction) -> None:
+        buttons = {
+            "add field": (ButtonStyle.blurple, self._action_add_field),
+            "clear fields": (ButtonStyle.grey, self._action_clear_fields),
+            "quit": (ButtonStyle.red, self._action_quit_fields),
+        }
+        async with FollowupView(self, interaction, timeout=self.timeout) as view:
+            for label, item in buttons.items():
+                disabled = label == "clear fields" and not self.embed.fields
+                view.add_item(
+                    muui.Button(label=label.capitalize(), style=item[0], callback=item[1], disabled=disabled)
+                )
+            view.message = await interaction.followup.send(view=view)
+            await view.wait()
+
+    @ui.button(label="Edit", style=ButtonStyle.grey)
+    async def _action_edit(self, *args: Any) -> None:
+        interaction, _ = args
+        if self.current == "fields":
+            await self._field_session(interaction)
+        else:
+            modal = muui.Modal(
+                self,
+                self.extras[self.current],
+                callback=self.on_modal_submit,
+                title=self.current.title(),
+            )
+            await interaction.response.send_modal(modal)
+
+    @ui.button(label="Preview", style=ButtonStyle.grey)
+    async def _action_preview(self, *args: Any) -> None:
+        interaction, _ = args
+        try:
+            await interaction.response.send_message(embed=self.embed, ephemeral=True)
+        except discord.HTTPException as exc:
+            error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
+            await interaction.response.send_message(error, ephemeral=True)
+
+    @ui.button(label="Cancel", style=ButtonStyle.red)
+    async def _action_cancel(self, *args: Any) -> None:
+        interaction, _ = args
+        self.disable_and_stop()
+        if self.embed:
+            self.embed = MISSING
+        await interaction.response.edit_message(view=self)
+
+    async def _action_add_field(self, interaction: Interaction, button: ui.Button) -> None:
+        modal = muui.Modal(
+            button.view,
+            self.extras[self.current],
+            callback=self.on_modal_submit,
+            title=self.current.title(),
+        )
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+        button.view.stop()
+
+    async def _action_clear_fields(self, interaction: Interaction, button: ui.Button) -> None:
+        if self.embed.fields:
+            self.embed = self.embed.clear_fields()
+        await self.update_view()
+        await interaction.response.send_message("Cleared all fields.", ephemeral=True)
+        button.view.stop()
+
+    async def _action_quit_fields(self, interaction: Interaction, button: ui.Button) -> None:
+        await interaction.response.defer()
+        button.view.stop()
 
     async def on_modal_submit(self, interaction: Interaction, modal: muui.Modal) -> None:
         modal.stop()
@@ -206,57 +259,15 @@ class EmbedBuilderView(muui.View):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
+            await interaction.response.defer()
             self.embed = self.update_embed(data=resp_data)
-        await self.update_view(interaction)
 
-    async def _action_add_field(self, *args: Any) -> None:
-        await self._action_edit(*args)
-
-    async def _action_clear_fields(self, *args: Any) -> None:
-        interaction, _ = args
-        if self.embed.fields:
-            self.embed = self.embed.clear_fields()
-        await self.update_view(interaction)
-        await interaction.followup.send("Cleared all fields.", ephemeral=True)
-
-    async def _action_done(self, *args: Any) -> None:
-        interaction, _ = args
-        self.disable_and_stop()
-        await interaction.response.edit_message(view=self)
-
-    async def _action_edit(self, *args: Any) -> None:
-        interaction, _ = args
-        modal = muui.Modal(
-            self,
-            self.extras[self.current],
-            callback=self.on_modal_submit,
-            title=self.current.title(),
-        )
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-
-    async def _action_preview(self, *args: Any) -> None:
-        interaction, _ = args
-        try:
-            await interaction.response.send_message(embed=self.embed, ephemeral=True)
-        except discord.HTTPException as exc:
-            error = f"**Error:**\n```py\n{type(exc).__name__}: {str(exc)}\n```"
-            await interaction.response.send_message(error, ephemeral=True)
-
-    async def _action_cancel(self, *args: Any) -> None:
-        interaction, _ = args
-        self.disable_and_stop()
-        if self.embed:
-            self.embed = MISSING
-        await interaction.response.edit_message(view=self)
+        if self.current != "fields":
+            await self.update_view()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
             return True
-        await interaction.response.send_message(
-            "This panel cannot be controlled by you!",
-            ephemeral=True,
-        )
         return False
 
     def update_embed(self, *, data: Dict[str, Any]) -> discord.Embed:
@@ -318,7 +329,6 @@ class EmbedBuilderView(muui.View):
                     except KeyError:
                         continue
 
-        self._add_menu()
-        self._generate_buttons()
+        self._populate_select_options()
         self.refresh()
         return self
