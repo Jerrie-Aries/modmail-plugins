@@ -199,8 +199,10 @@ class EmbedBuilderView(muui.View):
     @ui.button(label="Done", style=ButtonStyle.green)
     async def _action_done(self, *args: Any) -> None:
         interaction, _ = args
+        await interaction.response.defer()
+        await interaction.delete_original_response()
+        self.value = True
         self.disable_and_stop()
-        await interaction.response.edit_message(view=self)
 
     @ui.button(label="New", style=ButtonStyle.blurple)
     async def _action_new(self, *args: Any) -> None:

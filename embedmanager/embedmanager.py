@@ -158,8 +158,9 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         view = EmbedBuilderView(self, ctx.author)
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
-        if view.editor.embeds:
+        if view.value:
             await ctx.send(embeds=view.editor.embeds)
+            await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_group.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -262,9 +263,8 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         )
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
-
-        if view.editor.embeds:
-            await message.edit(embeds=view.editor.embeds)
+        if view.value:
+            await ctx.send(embeds=view.editor.embeds)
             await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
