@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime
 from distutils.util import strtobool
 from typing import Any, Awaitable, Callable, Dict, Optional, List, Union, TYPE_CHECKING
 
@@ -49,6 +50,20 @@ def _url_checker(value: str) -> str:
     return str(url)
 
 
+def _timestamp_converter(value: Optional[str]) -> str:
+    if value is None:
+        return None
+    if value.lower() in ("now", "0"):
+        return discord.utils.utcnow()
+    try:
+        return datetime.fromtimestamp(float(value))
+    except ValueError:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            raise ValueError(f"`{value}` is not a valid format for timestamp.")
+
+
 def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
     if sub_key in ("url", "icon_url", "thumbnail", "image"):
         return _url_checker(value)
@@ -56,6 +71,8 @@ def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
         return _color_converter(value)
     if key == "fields" and sub_key == "inline":
         return _bool_converter(value)
+    if key == "timestamp":
+        return _timestamp_converter(value)
     return value
 
 
@@ -330,7 +347,7 @@ class EmbedBuilderView(muui.View):
         return False
 
     @classmethod
-    def from_embed(
+    def from_embeds(
         cls,
         cog: EmbedManager,
         user: discord.Member,
@@ -338,33 +355,6 @@ class EmbedBuilderView(muui.View):
         embeds: List[discord.Embed],
         index: int = 0,
     ) -> EmbedBuilderView:
-        editor = EmbedEditor(cog, embeds)
-        for i, embed in enumerate(editor.embeds):
-            editor.index = i
-            if embed.type != "rich":
-                continue
-            data = embed.to_dict()
-            title = data.get("title")
-            editor["title"]["title"]["default"] = title
-            url = data.get("url")
-            if url:
-                editor["title"]["url"]["default"] = embed.url
-            editor["body"]["description"]["default"] = data.get("description")
-            editor["color"]["value"]["default"] = data.get("color")
-            images = ["thumbnail", "image"]
-            elems = ["author", "footer"]
-            for elem in images + elems:
-                elem_data = data.get(elem)
-                if elem_data:
-                    for key, val in elem_data.items():
-                        if elem in images:
-                            if key != "url":
-                                continue
-                            key = elem
-                            elem = "body"
-                        try:
-                            editor[elem][key]["default"] = val
-                        except KeyError:
-                            continue
+        editor = EmbedEditor.from_embeds(cog, embeds=embeds)
         editor.index = index
         return cls(cog, user, editor=editor)

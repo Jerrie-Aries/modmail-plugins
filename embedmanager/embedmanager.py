@@ -253,7 +253,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
             raise commands.BadArgument(
                 f"Index `{index}` is out of range. Expected `0` to `{len(message.embeds) - 1}`."
             )
-        view = EmbedBuilderView.from_embed(self, ctx.author, embeds=message.embeds, index=index)
+        view = EmbedBuilderView.from_embeds(self, ctx.author, embeds=message.embeds, index=index)
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
             title="Embed Editor",

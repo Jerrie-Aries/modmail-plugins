@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, List, TYPE_CHECKING
 
 import discord
 
+from discord import Embed
 from discord.utils import MISSING
 
 from .data import INPUT_DATA
@@ -14,9 +15,9 @@ if TYPE_CHECKING:
 
 
 class EmbedEditor:
-    def __init__(self, cog: EmbedManager, embeds: List[discord.Embed] = MISSING):
+    def __init__(self, cog: EmbedManager, embeds: List[Embed] = MISSING):
         self.cog: EmbedManager = cog
-        self.embeds: List[discord.Embed] = embeds if embeds is not MISSING else [discord.Embed()]
+        self.embeds: List[Embed] = embeds if embeds is not MISSING else [Embed()]
         self.index: int = 0
         self._inputs: Dict[str, Any] = {}
 
@@ -34,15 +35,49 @@ class EmbedEditor:
         self._inputs[str(self.index)] = payload
 
     @property
-    def embed(self) -> discord.Embed:
+    def embed(self) -> Embed:
         return self.embeds[self.index]
 
-    def add(self, embed: Optional[discord.Embed] = None) -> None:
+    def add(self, embed: Optional[Embed] = None) -> None:
         if embed is None:
-            embed = discord.Embed()
+            embed = Embed()
         self.embeds.append(embed)
 
-    def update(self, *, data: Dict[str, Any], category: str) -> discord.Embed:
+    @classmethod
+    def from_embeds(cls, cog: EmbedManager, *, embeds: List[Embed]) -> EmbedEditor:
+        editor = cls(cog, embeds)
+        for i, embed in enumerate(editor.embeds):
+            editor.index = i
+            if embed.type != "rich":
+                continue
+            data = embed.to_dict()
+            title = data.get("title")
+            editor["title"]["title"]["default"] = title
+            url = data.get("url")
+            if url:
+                editor["title"]["url"]["default"] = embed.url
+            editor["body"]["description"]["default"] = data.get("description")
+            editor["color"]["value"]["default"] = data.get("color")
+            images = ["thumbnail", "image"]
+            elems = ["author", "footer"]
+            for elem in images + elems:
+                elem_data = data.get(elem)
+                if elem_data:
+                    for key, val in elem_data.items():
+                        if elem in images:
+                            if key != "url":
+                                continue
+                            key = elem
+                            elem = "body"
+                        try:
+                            editor[elem][key]["default"] = val
+                        except KeyError:
+                            continue
+            if embed.timestamp:
+                editor["timestamp"]["timestamp"]["default"] = str(embed.timestamp.timestamp())
+        return editor
+
+    def update(self, *, data: Dict[str, Any], category: str) -> Embed:
         """
         Update embed from the response data.
         """
@@ -71,5 +106,6 @@ class EmbedEditor:
             embed.set_footer(**data)
         if category == "fields":
             embed.add_field(**data)
-        embed.timestamp = discord.utils.utcnow()
+        if category == "timestamp":
+            embed.timestamp = data["timestamp"]
         return embed
