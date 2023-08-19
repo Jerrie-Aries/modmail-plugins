@@ -38,13 +38,17 @@ DESCRIPTIONS = {
         "Use the Epoch Unix Timestamp [converter](https://www.unixtimestamp.com/) to quickly generate a timestamp.\n",
         "If you want the timestamp to be the current date and time, just type `now` or `0` in the text input.",
     ],
+    "field": [
+        "Press `New` to add a new field, `Edit` to edit current field, `Clear` to clear all fields if any.",
+        "After you are done, press `Quit` to save and exit this editor.\n",
+        f"Embed fields can be added up to {Limit.embed_fields}.\n",
+    ],
     "fields": [
         "**Fields:**",
         f"- `Name`: Name of the field. Can be up to {Limit.embed_field_name} characters.",
         f"- `Value`: Value of the field, can be up to {Limit.embed_field_value} characters.",
         "- `Inline`: Whether or not this field should display inline.\n",
-        "Click `Add Field` to add a new field, or `Clear Fields` to clear all fields, if any.",
-        f"Embed fields can be added up to {Limit.embed_fields}.\n",
+        "Press `Edit` to initiate field editor.\n",
     ],
 }
 

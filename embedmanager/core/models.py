@@ -26,12 +26,18 @@ class EmbedEditor:
             self._populate_default_inputs()
         return self._inputs[str(self.index)][key]
 
+    def __setitem__(self, key: str, item: Any) -> None:
+        self._inputs[str(self.index)][key] = item
+
     def _populate_default_inputs(self) -> None:
         payload = {}
         for key, val in list(INPUT_DATA.items()):
+            if key == "fields":
+                payload[key] = []
+                continue
             payload[key] = {}
             for k, _ in list(val.items()):
-                payload[key][k] = {}
+                payload[key][k] = None
         self._inputs[str(self.index)] = payload
 
     @property
@@ -47,7 +53,7 @@ class EmbedEditor:
         now = discord.utils.utcnow()
         for i, data in self._inputs.items():
             try:
-                value = data["timestamp"]["timestamp"]["default"]
+                value = data["timestamp"]["timestamp"]
             except KeyError:
                 continue
             if str(value).lower() in ("now", "0"):
@@ -63,12 +69,12 @@ class EmbedEditor:
                 continue
             data = embed.to_dict()
             title = data.get("title")
-            editor["title"]["title"]["default"] = title
+            editor["title"]["title"] = title
             url = data.get("url")
             if url:
-                editor["title"]["url"]["default"] = embed.url
-            editor["body"]["description"]["default"] = data.get("description")
-            editor["color"]["value"]["default"] = data.get("color")
+                editor["title"]["url"] = embed.url
+            editor["body"]["description"] = data.get("description")
+            editor["color"]["value"] = data.get("color")
             images = ["thumbnail", "image"]
             elems = ["author", "footer"]
             for elem in images + elems:
@@ -81,19 +87,26 @@ class EmbedEditor:
                             key = elem
                             elem = "body"
                         try:
-                            editor[elem][key]["default"] = val
+                            editor[elem][key] = val
                         except KeyError:
                             continue
             if embed.timestamp:
-                editor["timestamp"]["timestamp"]["default"] = str(embed.timestamp.timestamp())
+                editor["timestamp"]["timestamp"] = str(embed.timestamp.timestamp())
+            for field in embed.fields:
+                editor["fields"].append({"name": field.name, "value": field.value, "inline": field.inline})
         return editor
 
-    def update(self, *, data: Dict[str, Any], category: str) -> Embed:
+    def update(self, *, data: Union[Dict[str, Any], List[Dict[str, Any]]], category: str) -> Embed:
         """
         Update embed from the response data.
         """
         embed = self.embed
-        if category == "title":
+        if category == "fields":
+            # this would be List[Dict[str, Any]]
+            embed = embed.clear_fields()
+            for elem in data:
+                embed.add_field(**elem)
+        elif category == "title":
             title = data["title"]
             embed.title = title
             if title:
@@ -101,9 +114,9 @@ class EmbedEditor:
             else:
                 url = None
             embed.url = url
-        if category == "author":
+        elif category == "author":
             embed.set_author(**data)
-        if category == "body":
+        elif category == "body":
             embed.description = data["description"]
             thumbnail_url = data["thumbnail"]
             if thumbnail_url:
@@ -111,12 +124,12 @@ class EmbedEditor:
             image_url = data["image"]
             if image_url:
                 embed.set_image(url=image_url)
-        if category == "color":
+        elif category == "color":
             embed.colour = data["value"]
-        if category == "footer":
+        elif category == "footer":
             embed.set_footer(**data)
-        if category == "fields":
-            embed.add_field(**data)
-        if category == "timestamp":
+        elif category == "timestamp":
             embed.timestamp = data["timestamp"]
+        else:
+            raise TypeError(f"`{category}` is invalid category.")
         return embed

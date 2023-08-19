@@ -76,13 +76,53 @@ def _resolve_conversion(key: str, sub_key: str, value: str) -> Any:
     return value
 
 
-class FollowupView(muui.View):
+class FieldEditorView(muui.View):
+    __default = {"name": None, "value": None, "inline": None}
+
     def __init__(self, handler: EmbedBuilderView, interaction: Interaction, *args: Any, **kwargs: Any):
         self.handler: EmbedBuilderView = handler
         self.original_interaction: Interaction = interaction
+        self.index: int = 0
+        self.raw_fields: List[Dict[str, Any]] = self.handler.editor["fields"]
         super().__init__(*args, **kwargs)
 
-    async def __aenter__(self) -> "FollowupView":
+        self._populate_select_options()
+        self.refresh()
+
+    def _populate_select_options(self) -> None:
+        self._field_select.options.clear()
+        editor = self.handler.editor
+        if not self.raw_fields:
+            # None or empty list, we create a fake element.
+            self.raw_fields = [deepcopy(self.__default)]
+        for i, _ in enumerate(self.raw_fields):
+            self._field_select.append_option(
+                discord.SelectOption(
+                    label=f"Field {i + 1}",
+                    value=str(i),
+                    default=i == self.index,
+                ),
+            )
+
+    def refresh(self) -> None:
+        for child in self.children:
+            if child == self._field_select:
+                child.disabled = len(self.raw_fields) <= 1
+                continue
+            if not isinstance(child, ui.Button):
+                continue
+            key = child.label.lower()
+            if key == "new":
+                child.disabled = (
+                    any((f == self.__default for f in self.raw_fields)) or len(self.raw_fields) >= 25
+                )
+                continue
+            if key == "clear":
+                child.disabled = len(self.raw_fields) <= 1
+                continue
+            child.disabled = False
+
+    async def __aenter__(self) -> "FieldEditorView":
         await self.lock(self.original_interaction)
         return self
 
@@ -104,8 +144,80 @@ class FollowupView(muui.View):
         self.handler.refresh()
         await interaction.edit_original_response(view=self.handler, **kwargs)
 
+    async def update_view(self, interaction: Optional[Interaction] = None) -> None:
+        self.refresh()
+        if interaction and not interaction.response.is_done():
+            func = interaction.response.edit_message
+        else:
+            func = self.message.edit
+        await func(view=self)
+
+    @ui.select(placeholder="Select a field", row=0)
+    async def _field_select(self, interaction: Interaction, select: ui.Select) -> None:
+        value = select.values[0]
+        for opt in select.options:
+            opt.default = opt.value == value
+        self.index = int(value)
+        await self.update_view(interaction)
+
+    @ui.button(label="New", style=ButtonStyle.blurple)
+    async def _action_add_field(self, interaction: Interaction, button: ui.Button) -> None:
+        self.raw_fields.append(deepcopy(self.__default))
+        self.index += 1
+        self._populate_select_options()
+        await self.update_view(interaction)
+
+    @ui.button(label="Edit", style=ButtonStyle.grey)
+    async def _action_edit_field(self, interaction: Interaction, button: ui.Button) -> None:
+        options = self.handler.extras[self.handler.category]
+        for key, value in self.raw_fields[self.index].items():
+            options[key]["default"] = value
+        modal = muui.Modal(
+            self,
+            options,
+            callback=self._parse_inputs,
+            title=self.handler.category.title(),
+        )
+        await interaction.response.send_modal(modal)
+
+    @ui.button(label="Clear", style=ButtonStyle.grey)
+    async def _action_clear_fields(self, interaction: Interaction, button: ui.Button) -> None:
+        self.raw_fields.clear()
+        self.index = 0
+        self._populate_select_options()
+        await self.update_view()
+        await interaction.response.send_message("Cleared all fields.", ephemeral=True)
+
+    @ui.button(label="Quit", style=ButtonStyle.red)
+    async def _action_quit_fields(self, interaction: Interaction, button: ui.Button) -> None:
+        await interaction.response.defer()
+        if len(self.raw_fields) == 1 and self.raw_fields[0] == self.__default:
+            self.raw_fields.clear()
+        self.handler.editor["fields"] = self.raw_fields
+        self.stop()
+
+    async def _parse_inputs(self, interaction: Interaction, modal: muui.Modal) -> None:
+        data = {}
+        for child in modal.children:
+            value = child.value
+            if not value:
+                value = None
+            data[child.name] = value
+        raw_inline = data.pop("inline")
+        try:
+            data["inline"] = _resolve_conversion("fields", "inline", raw_inline)
+        except Exception as exc:
+            embed = discord.Embed(
+                title="__Errors__",
+                color=self.handler.bot.error_color,
+                description=str(exc),
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        self.raw_fields[self.index] = data
+        await self.update_view(interaction)
+
     async def on_timeout(self) -> None:
-        pass
+        self.stop()
 
 
 class EmbedBuilderView(muui.View):
@@ -232,19 +344,14 @@ class EmbedBuilderView(muui.View):
         await self.update_view(interaction)
 
     async def _field_session(self, interaction: Interaction) -> None:
-        buttons = {
-            "add field": (ButtonStyle.blurple, self._action_add_field),
-            "clear fields": (ButtonStyle.grey, self._action_clear_fields),
-            "quit": (ButtonStyle.red, self._action_quit_fields),
-        }
-        async with FollowupView(self, interaction, timeout=self.timeout) as view:
-            for label, item in buttons.items():
-                disabled = label == "clear fields" and not self.editor.embed.fields
-                view.add_item(
-                    muui.Button(label=label.capitalize(), style=item[0], callback=item[1], disabled=disabled)
-                )
-            view.message = await interaction.followup.send(view=view)
+        embed = discord.Embed(
+            description="\n".join(DESCRIPTIONS["field"]),
+            color=self.bot.main_color,
+        )
+        async with FieldEditorView(self, interaction, timeout=self.timeout) as view:
+            view.message = await interaction.followup.send(embed=embed, view=view)
             await view.wait()
+            self.editor.update(data=self.editor[self.category], category=self.category)
 
     @ui.button(label="Edit", style=ButtonStyle.grey)
     async def _action_edit(self, *args: Any) -> None:
@@ -255,7 +362,7 @@ class EmbedBuilderView(muui.View):
             payload = deepcopy(self.extras[self.category])
             for key in list(payload.keys()):
                 try:
-                    payload[key]["default"] = self.editor[self.category][key]["default"]
+                    payload[key]["default"] = self.editor[self.category][key]
                 except KeyError:
                     continue
             modal = muui.Modal(
@@ -283,43 +390,17 @@ class EmbedBuilderView(muui.View):
         self.editor.embeds.clear()
         await interaction.response.edit_message(view=self)
 
-    async def _action_add_field(self, interaction: Interaction, button: ui.Button) -> None:
-        modal = muui.Modal(
-            button.view,
-            self.extras[self.category],
-            callback=self.on_modal_submit,
-            title=self.category.title(),
-        )
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        button.view.stop()
-
-    async def _action_clear_fields(self, interaction: Interaction, button: ui.Button) -> None:
-        if self.editor.embed.fields:
-            self.editor.embed.clear_fields()
-        await self.update_view()
-        await interaction.response.send_message("Cleared all fields.", ephemeral=True)
-        button.view.stop()
-
-    async def _action_quit_fields(self, interaction: Interaction, button: ui.Button) -> None:
-        await interaction.response.defer()
-        button.view.stop()
-
     async def on_modal_submit(self, interaction: Interaction, modal: muui.Modal) -> None:
         for child in modal.children:
             value = child.value
             if not value:
                 value = None
-            self.editor[self.category][child.name]["default"] = value
+            self.editor[self.category][child.name] = value
 
         errors = []
         data = self.editor[self.category]
         resp_data = {}
-        for key, group in data.items():
-            if self.category == "fields":
-                value = group.pop("default")
-            else:
-                value = group.get("default")
+        for key, value in list(data.items()):
             try:
                 value = _resolve_conversion(self.category, key, value)
             except Exception as exc:
@@ -339,8 +420,7 @@ class EmbedBuilderView(muui.View):
             await interaction.response.defer()
             self.editor.update(data=resp_data, category=self.category)
 
-        if self.category != "fields":
-            await self.update_view()
+        await self.update_view()
         modal.stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
