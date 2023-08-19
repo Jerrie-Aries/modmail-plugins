@@ -28,10 +28,15 @@ DESCRIPTIONS = {
     ],
     "color": [
         "**Color:**",
-        "- `Value`: Color code of the embed.",
-        "The following formats are accepted:",
-        "\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`",
+        "- `Value`: Color code of the embed. The following formats are accepted:",
+        "  - `0x<hex>`\n  - `#<hex>`\n  - `0x#<hex>`\n  - `rgb(<number>, <number>, <number>)`",
         "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n",
+    ],
+    "timestamp": [
+        "**Timestamp:**",
+        "The timestamp must be in a format of Unix Timestamp or [ISO 8601](https://www.iso.org/iso-8601-date-and-time-format.html).",
+        "Use the Epoch Unix Timestamp [converter](https://www.unixtimestamp.com/) to quickly generate a timestamp.\n",
+        "If you want the timestamp to be the current date and time, just type `now` or `0` in the text input.",
     ],
     "fields": [
         "**Fields:**",
@@ -41,10 +46,6 @@ DESCRIPTIONS = {
         "Click `Add Field` to add a new field, or `Clear Fields` to clear all fields, if any.",
         f"Embed fields can be added up to {Limit.embed_fields}.\n",
     ],
-    "note": [
-        "__**Notes:**__",
-        f"- The combine sum of characters in embeds in a single message must not exceed {Limit.embed} characters.\n",
-    ],
 }
 
 SHORT_DESCRIPTIONS = {
@@ -53,7 +54,14 @@ SHORT_DESCRIPTIONS = {
     "body": "Description, thumbnail and image URLs.",
     "footer": "The footer text and/or icon of the embed.",
     "color": "Embed's color.",
+    "timestamp": "The timestamp shown at the bottom right of the embed.",
     "fields": "Add or remove fields.",
+}
+
+FOOTER_TEXTS = {
+    "note": [
+        f"Note: The combine sum of characters in embeds in a single message must not exceed {Limit.embed} characters.\n",
+    ]
 }
 
 INPUT_DATA: Dict[str, Any] = {
@@ -115,6 +123,13 @@ INPUT_DATA: Dict[str, Any] = {
         },
         "icon_url": {
             "label": "Icon URL",
+            "max_length": _short_length,
+            "required": False,
+        },
+    },
+    "timestamp": {
+        "timestamp": {
+            "label": "Timestamp",
             "max_length": _short_length,
             "required": False,
         },
