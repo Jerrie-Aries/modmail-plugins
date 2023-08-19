@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class EmbedEditor:
-    def __init__(self, cog: EmbedManager, embeds: List[Embed] = MISSING):
+    def __init__(self, cog: EmbedManager, *, embeds: List[Embed] = MISSING):
         self.cog: EmbedManager = cog
         self.embeds: List[Embed] = embeds if embeds is not MISSING else [Embed()]
         self.index: int = 0
@@ -43,9 +43,20 @@ class EmbedEditor:
             embed = Embed()
         self.embeds.append(embed)
 
+    def resolve(self) -> None:
+        now = discord.utils.utcnow()
+        for i, data in self._inputs.items():
+            try:
+                value = data["timestamp"]["timestamp"]["default"]
+            except KeyError:
+                continue
+            if str(value).lower() in ("now", "0"):
+                embed = self.embeds[int(i)]
+                embed.timestamp = now
+
     @classmethod
     def from_embeds(cls, cog: EmbedManager, *, embeds: List[Embed]) -> EmbedEditor:
-        editor = cls(cog, embeds)
+        editor = cls(cog, embeds=embeds)
         for i, embed in enumerate(editor.embeds):
             editor.index = i
             if embed.type != "rich":

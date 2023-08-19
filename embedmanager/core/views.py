@@ -216,6 +216,7 @@ class EmbedBuilderView(muui.View):
     @ui.button(label="Done", style=ButtonStyle.green)
     async def _action_done(self, *args: Any) -> None:
         interaction, _ = args
+        self.editor.resolve()
         await interaction.response.defer()
         await interaction.delete_original_response()
         self.value = True
@@ -268,6 +269,7 @@ class EmbedBuilderView(muui.View):
     @ui.button(label="Preview", style=ButtonStyle.grey)
     async def _action_preview(self, *args: Any) -> None:
         interaction, _ = args
+        self.editor.resolve()
         try:
             await interaction.response.send_message(embeds=self.editor.embeds, ephemeral=True)
         except discord.HTTPException as exc:
@@ -304,7 +306,6 @@ class EmbedBuilderView(muui.View):
         button.view.stop()
 
     async def on_modal_submit(self, interaction: Interaction, modal: muui.Modal) -> None:
-        modal.stop()
         for child in modal.children:
             value = child.value
             if not value:
@@ -340,6 +341,7 @@ class EmbedBuilderView(muui.View):
 
         if self.category != "fields":
             await self.update_view()
+        modal.stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
