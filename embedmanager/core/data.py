@@ -40,7 +40,7 @@ DESCRIPTIONS = {
     ],
     "field": [
         "Press `New` to add a new field, `Edit` to edit current field, `Clear` to clear all fields if any.",
-        "After you are done, press `Quit` to save and exit this editor.\n",
+        "After you are done, press `Exit` to save and exit this editor.\n",
         f"Embed fields can be added up to {Limit.embed_fields}.\n",
     ],
     "fields": [

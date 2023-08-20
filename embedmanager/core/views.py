@@ -81,28 +81,29 @@ class FieldEditorView(muui.View):
 
     def __init__(self, handler: EmbedBuilderView, interaction: Interaction, *args: Any, **kwargs: Any):
         self.handler: EmbedBuilderView = handler
+        self.editor: EmbedEditor = handler.editor
         self.original_interaction: Interaction = interaction
         self.index: int = 0
-        self.raw_fields: List[Dict[str, Any]] = self.handler.editor["fields"]
         super().__init__(*args, **kwargs)
 
         self._populate_select_options()
         self.refresh()
 
+    @property
+    def raw_fields(self) -> List[Dict[str, Any]]:
+        return self.editor["fields"]
+
     def _populate_select_options(self) -> None:
         self._field_select.options.clear()
-        editor = self.handler.editor
         if not self.raw_fields:
-            # None or empty list, we create a fake element.
-            self.raw_fields = [deepcopy(self.__default)]
+            self.raw_fields.append(deepcopy(self.__default))
         for i, _ in enumerate(self.raw_fields):
-            self._field_select.append_option(
-                discord.SelectOption(
-                    label=f"Field {i + 1}",
-                    value=str(i),
-                    default=i == self.index,
-                ),
+            option = discord.SelectOption(
+                label=f"Field {i + 1}",
+                value=str(i),
+                default=i == self.index,
             )
+            self._field_select.append_option(option)
 
     def refresh(self) -> None:
         for child in self.children:
@@ -114,13 +115,14 @@ class FieldEditorView(muui.View):
             key = child.label.lower()
             if key == "new":
                 child.disabled = (
-                    any((f == self.__default for f in self.raw_fields)) or len(self.raw_fields) >= 25
+                    any((f == self.__default for f in self.raw_fields))
+                    or len(self.raw_fields) >= 25
+                    or len(self.raw_fields) > len(self.editor.embed.fields)
                 )
-                continue
-            if key == "clear":
+            elif key == "clear":
                 child.disabled = len(self.raw_fields) <= 1
-                continue
-            child.disabled = False
+            else:
+                child.disabled = False
 
     async def __aenter__(self) -> "FieldEditorView":
         await self.lock(self.original_interaction)
@@ -138,11 +140,11 @@ class FieldEditorView(muui.View):
             child.disabled = True
         await interaction.response.edit_message(view=self.handler)
 
-    async def unlock(self, interaction: Interaction, **kwargs: Any) -> None:
+    async def unlock(self, interaction: Interaction) -> None:
         for child in self.handler.children:
             child.disabled = False
         self.handler.refresh()
-        await interaction.edit_original_response(view=self.handler, **kwargs)
+        await interaction.edit_original_response(view=self.handler)
 
     async def update_view(self, interaction: Optional[Interaction] = None) -> None:
         self.refresh()
@@ -183,17 +185,19 @@ class FieldEditorView(muui.View):
     @ui.button(label="Clear", style=ButtonStyle.grey)
     async def _action_clear_fields(self, interaction: Interaction, button: ui.Button) -> None:
         self.raw_fields.clear()
+        self.editor.embed.clear_fields()
         self.index = 0
         self._populate_select_options()
-        await self.update_view()
-        await interaction.response.send_message("Cleared all fields.", ephemeral=True)
+        await self.update_view(interaction)
+        await interaction.followup.send("Cleared all fields.", ephemeral=True)
 
-    @ui.button(label="Quit", style=ButtonStyle.red)
-    async def _action_quit_fields(self, interaction: Interaction, button: ui.Button) -> None:
+    @ui.button(label="Exit", style=ButtonStyle.red)
+    async def _action_exit_fields(self, interaction: Interaction, button: ui.Button) -> None:
         await interaction.response.defer()
-        if len(self.raw_fields) == 1 and self.raw_fields[0] == self.__default:
-            self.raw_fields.clear()
-        self.handler.editor["fields"] = self.raw_fields
+        for f in self.raw_fields:
+            # remove any unset element
+            if f == self.__default:
+                self.raw_fields.remove(f)
         self.stop()
 
     async def _parse_inputs(self, interaction: Interaction, modal: muui.Modal) -> None:
@@ -203,17 +207,25 @@ class FieldEditorView(muui.View):
             if not value:
                 value = None
             data[child.name] = value
-        raw_inline = data.pop("inline")
-        try:
-            data["inline"] = _resolve_conversion("fields", "inline", raw_inline)
-        except Exception as exc:
-            embed = discord.Embed(
-                title="__Errors__",
-                color=self.handler.bot.error_color,
-                description=str(exc),
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
         self.raw_fields[self.index] = data
+        resolved = {"index": self.index}
+        for key, value in list(data.items()):
+            if key == "inline":
+                if value is None:
+                    # defaults to True
+                    value = True
+                else:
+                    try:
+                        value = _resolve_conversion("fields", "inline", value)
+                    except Exception as exc:
+                        embed = discord.Embed(
+                            title="__Errors__",
+                            color=self.handler.bot.error_color,
+                            description=str(exc),
+                        )
+                        return await interaction.response.send_message(embed=embed, ephemeral=True)
+            resolved[key] = value
+        self.editor.update(data=resolved, category=self.handler.category)
         await self.update_view(interaction)
 
     async def on_timeout(self) -> None:
@@ -248,7 +260,7 @@ class EmbedBuilderView(muui.View):
 
     def _populate_select_options(self) -> None:
         self._embed_select.options.clear()
-        for i, embed in enumerate(self.editor.embeds):
+        for i, _ in enumerate(self.editor.embeds):
             default = i == self.editor.index and len(self.editor.embeds) > 1
             self._embed_select.append_option(
                 discord.SelectOption(
@@ -275,20 +287,17 @@ class EmbedBuilderView(muui.View):
             if not isinstance(child, ui.Button):
                 continue
             key = child.label.lower()
+            curr_not_ready = len(self.editor.embed) == 0
             if key == "cancel":
                 continue
-            curr_not_ready = len(self.editor.embed) == 0
-            if not self.category and curr_not_ready and len(self.editor.embeds) <= 1:
+            elif not self.category and curr_not_ready and len(self.editor.embeds) <= 1:
                 # first launch
                 child.disabled = True
-                continue
-            if key == "new":
+            elif key == "new":
                 child.disabled = curr_not_ready or len(self.editor.embeds) >= 10
-                continue
-            if key == "edit":
+            elif key == "edit":
                 child.disabled = not self.category
-                continue
-            if key in ("done", "preview"):
+            elif key in ("done", "preview"):
                 child.disabled = curr_not_ready
             else:
                 child.disabled = False
@@ -343,21 +352,17 @@ class EmbedBuilderView(muui.View):
         self._populate_select_options()
         await self.update_view(interaction)
 
-    async def _field_session(self, interaction: Interaction) -> None:
-        embed = discord.Embed(
-            description="\n".join(DESCRIPTIONS["field"]),
-            color=self.bot.main_color,
-        )
-        async with FieldEditorView(self, interaction, timeout=self.timeout) as view:
-            view.message = await interaction.followup.send(embed=embed, view=view)
-            await view.wait()
-            self.editor.update(data=self.editor[self.category], category=self.category)
-
     @ui.button(label="Edit", style=ButtonStyle.grey)
     async def _action_edit(self, *args: Any) -> None:
         interaction, _ = args
         if self.category == "fields":
-            await self._field_session(interaction)
+            embed = discord.Embed(
+                description="\n".join(DESCRIPTIONS["field"]),
+                color=self.bot.main_color,
+            )
+            async with FieldEditorView(self, interaction, timeout=self.timeout) as view:
+                view.message = await interaction.followup.send(embed=embed, view=view)
+                await view.wait()
         else:
             payload = deepcopy(self.extras[self.category])
             for key in list(payload.keys()):

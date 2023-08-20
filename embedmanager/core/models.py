@@ -15,6 +15,10 @@ if TYPE_CHECKING:
 
 
 class EmbedEditor:
+    """
+    Represents embed editor. This instance is used to store and manage the raw input values for embeds.
+    """
+
     def __init__(self, cog: EmbedManager, *, embeds: List[Embed] = MISSING):
         self.cog: EmbedManager = cog
         self.embeds: List[Embed] = embeds if embeds is not MISSING else [Embed()]
@@ -62,50 +66,59 @@ class EmbedEditor:
 
     @classmethod
     def from_embeds(cls, cog: EmbedManager, *, embeds: List[Embed]) -> EmbedEditor:
+        """
+        Instantiate this class from message's embeds with addition of default values
+        were pre-populated from the provided embeds.
+
+        Notes:
+        ------
+        Since our data scheme is little different from the one in discord.py, we cannot use the
+        data from `Embed.to_dict` directly, instead we have to manually pull them out and put in our `._inputs`.
+        """
         editor = cls(cog, embeds=embeds)
         for i, embed in enumerate(editor.embeds):
             editor.index = i
             if embed.type != "rich":
                 continue
             data = embed.to_dict()
-            title = data.get("title")
+            title = data.pop("title", None)
             editor["title"]["title"] = title
-            url = data.get("url")
+            url = data.pop("url", None)
             if url:
                 editor["title"]["url"] = embed.url
-            editor["body"]["description"] = data.get("description")
-            editor["color"]["value"] = data.get("color")
+            editor["body"]["description"] = data.pop("description", None)
+            editor["color"]["value"] = data.pop("color", None)
             images = ["thumbnail", "image"]
             elems = ["author", "footer"]
             for elem in images + elems:
-                elem_data = data.get(elem)
-                if elem_data:
-                    for key, val in elem_data.items():
-                        if elem in images:
-                            if key != "url":
-                                continue
-                            key = elem
-                            elem = "body"
-                        try:
-                            editor[elem][key] = val
-                        except KeyError:
+                elem_data = data.pop(elem, {})
+                for key, val in elem_data.items():
+                    if elem in images:
+                        if key != "url":
                             continue
-            if embed.timestamp:
-                editor["timestamp"]["timestamp"] = str(embed.timestamp.timestamp())
-            for field in embed.fields:
-                editor["fields"].append({"name": field.name, "value": field.value, "inline": field.inline})
+                        key = elem
+                        elem = "body"
+                    try:
+                        editor[elem][key] = val
+                    except KeyError:
+                        continue
+            editor["fields"] = data.pop("fields", [])
+            editor["timestamp"]["timestamp"] = data.pop("timestamp", None)
         return editor
 
-    def update(self, *, data: Union[Dict[str, Any], List[Dict[str, Any]]], category: str) -> Embed:
+    def _set_field_at(self, index: int, *, name: str, value: str, inline: bool) -> None:
+        if index > len(self.embed.fields) - 1:
+            self.embed.add_field(name=name, value=value, inline=inline)
+        else:
+            self.embed.set_field_at(index, name=name, value=value, inline=inline)
+
+    def update(self, *, data: Dict[str, Any], category: str) -> Embed:
         """
         Update embed from the response data.
         """
         embed = self.embed
         if category == "fields":
-            # this would be List[Dict[str, Any]]
-            embed = embed.clear_fields()
-            for elem in data:
-                embed.add_field(**elem)
+            self._set_field_at(data.pop("index"), **data)
         elif category == "title":
             title = data["title"]
             embed.title = title
