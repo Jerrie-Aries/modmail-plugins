@@ -22,6 +22,22 @@ _max_embed_length = 6000
 _short_length = 256
 _long_length = 4000
 
+_embed_input_description = (
+    "Click the `Edit` button below to set/edit the values.\n\n"
+    "__**Available fields:**__\n"
+    "- **Mention** : Mention @User, @Role, @here, or @everyone. "
+    "Multiple mentions is also supported, just separate the values with space. "
+    "For User or Role, you may pass an ID, mention (in the format of `<@id>` for User or `<@&id>` for Role), or name.\n"
+    "- **Description** : The content of the announcement. Must not exceed 4000 characters.\n"
+    "- **Thumbnail URL** : URL of the image shown at the top right of the embed.\n"
+    "- **Image URL** : URL of the large image shown at the bottom of the embed.\n"
+    "- **Color** : The color code of the embed. If not specified, fallbacks to bot main color. "
+    "The following formats are accepted:\n - `0x<hex>`\n - `#<hex>`\n - `0x#<hex>`\n - `rgb(<number>, <number>, <number>)`\n"
+    "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n\n"
+)
+
+_plain_input_description = "Click the `Edit` button below to set/edit the content."
+
 
 class AnnouncementTextInput(TextInput):
     def __init__(self, name: str, **kwargs):
@@ -244,21 +260,9 @@ class AnnouncementView(View):
                 "max_length": _short_length,
             }
             self.inputs.update(content=self.content_data, **self.embed_data)
-            description += (
-                "Click the `Edit` button below to set/edit the values.\n\n"
-                "__**Available fields:**__\n"
-                "- **Mention** : Mention @User, @Role, @here, or @everyone.\n"
-                "Multiple mentions is also supported, just separate the values with space.\n"
-                "For User or Role, you may pass an ID, mention (in the format of `<@id>` for User or `<@&id>` for Role), or name.\n"
-                "- **Description** : The content of the announcement. Must not exceed 4000 characters.\n"
-                "- **Thumbnail URL** : URL of the image shown at the top right of the embed.\n"
-                "- **Image URL** : URL of the large image shown at the bottom of the embed.\n"
-                "- **Color** : The color code of the embed. If not specified, fallbacks to bot main color.\n"
-                "The following formats are accepted:\n\t- `0x<hex>`\n\t- `#<hex>`\n\t- `0x#<hex>`\n\t- `rgb(<number>, <number>, <number>)`\n"
-                "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n\n"
-            )
+            description += _embed_input_description
         else:
-            description += "Click the `Edit` button below to set/edit the content."
+            description += _plain_input_description
         embed = self.message.embeds[0]
         embed.description = description
         await self.update_view()
