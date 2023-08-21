@@ -89,8 +89,8 @@ class EmbedEditor:
             editor["body"]["description"] = data.pop("description", None)
             editor["color"]["value"] = data.pop("color", None)
             images = ["thumbnail", "image"]
-            elems = ["author", "footer"]
-            for elem in images + elems:
+            entities = ["author", "footer"]
+            for elem in images + entities:
                 elem_data = data.pop(elem, {})
                 for key, val in elem_data.items():
                     if elem in images:
@@ -98,6 +98,8 @@ class EmbedEditor:
                             continue
                         key = elem
                         elem = "body"
+                    elif elem in entities and key not in INPUT_DATA[elem]:
+                        continue
                     try:
                         editor[elem][key] = val
                     except KeyError:
