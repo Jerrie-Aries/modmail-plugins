@@ -1,7 +1,7 @@
 import asyncio
 
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import discord
 from discord.utils import MISSING
@@ -21,7 +21,7 @@ def _color_converter(value: str) -> int:
 
 class AnnouncementType(Enum):
     # only two are valid for now. may add more later.
-    NORMAL = "normal"
+    PLAIN = "plain"
     EMBED = "embed"
     INVALID = "invalid"
 
@@ -45,58 +45,42 @@ class AnnouncementType(Enum):
 
 
 class AnnouncementModel:
-    def __init__(self, ctx: commands.Context, channel: discord.TextChannel):
+    def __init__(self, ctx: commands.Context):
         self.ctx: commands.Context = ctx
-        self.channel: discord.TextChannel = channel
+
         self.event: asyncio.Event = asyncio.Event()
         self.ready: bool = False
 
         self.type: AnnouncementType = MISSING
+        self.channel: discord.TextChannel = MISSING
         self.message: discord.Message = MISSING
         self.content: str = MISSING
         self.embed: discord.Embed = MISSING
         self.task: asyncio.Task = MISSING
 
-    @property
-    def posted(self) -> bool:
-        return self.event.is_set()
+    def ready_to_post(self) -> bool:
+        """
+        Returns whether the announcement is ready to be posted.
+        """
+        return self.ready and self.event.is_set()
 
-    @posted.setter
-    def posted(self, flag: bool) -> None:
-        if flag:
-            self.event.set()
-        else:
-            if self.task is not MISSING:
-                self.task.cancel()
-            self.event.clear()
+    def cancel(self) -> None:
+        """Cancel the announcement."""
+        self.ready = False
+        if self.task is not MISSING:
+            self.task.cancel()
+        self.event.clear()
 
     async def wait(self) -> None:
-        self.task = self.ctx.bot.loop.create_task(self.event.wait())
+        """
+        Wait until the announcement is ready to be posted or cancelled.
+        """
+        if self.task is MISSING:
+            self.task = self.ctx.bot.loop.create_task(self.event.wait())
         try:
             await self.task
         except asyncio.CancelledError:
             pass
-
-    async def resolve_mentions(self) -> None:
-        if not self.content:
-            return
-        ret = []
-        argument = self.content.split()
-        for arg in argument:
-            if arg in ("@here", "@everyone"):
-                ret.append(arg)
-                continue
-            user_or_role = None
-            try:
-                user_or_role = await commands.RoleConverter().convert(self.ctx, arg)
-            except commands.BadArgument:
-                try:
-                    user_or_role = await commands.MemberConverter().convert(self.ctx, arg)
-                except commands.BadArgument:
-                    raise commands.BadArgument(f"Unable to convert {arg} to user or role mention.")
-            if user_or_role is not None:
-                ret.append(user_or_role.mention)
-        self.content = ", ".join(ret) if ret else None
 
     def create_embed(
         self,
@@ -106,6 +90,9 @@ class AnnouncementModel:
         thumbnail_url: str = MISSING,
         image_url: str = MISSING,
     ) -> discord.Embed:
+        """
+        Create the announcement embed.
+        """
         if not color:
             color = self.ctx.bot.main_color
         else:
@@ -117,7 +104,7 @@ class AnnouncementModel:
             embed.set_thumbnail(url=thumbnail_url)
         if image_url:
             embed.set_image(url=image_url)
-        embed.set_footer(text="Announcement", icon_url=self.channel.guild.icon)
+        embed.set_footer(text="Announcement", icon_url=self.ctx.guild.icon)
         self.embed = embed
         return embed
 
@@ -127,13 +114,17 @@ class AnnouncementModel:
             params["content"] = self.content
         return params
 
-    async def post(self) -> None:
+    async def send(self) -> None:
+        """
+        Send the announcement message.
+        """
+        if not self.channel:
+            self.channel = self.ctx.channel
         self.message = await self.channel.send(**self.send_params())
-        self.posted = True
 
     async def publish(self) -> None:
         """
-        Publishes the announcement. This will only work if the channel type is a news channel
-        and if the announcement has not been posted yet.
+        Publish the announcement. This will only work if the channel type is a news channel
+        and if the announcement has never been published yet.
         """
         await self.message.publish()

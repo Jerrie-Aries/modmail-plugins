@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import discord
 
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from bot import ModmailBot
 
 
+logger = getLogger(__name__)
+
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
     __plugin_info__ = json.loads(f.read())
@@ -27,7 +29,35 @@ __version__ = __plugin_info__["version"]
 __description__ = "\n".join(__plugin_info__["description"]).format(__version__)
 
 
-logger = getLogger(__name__)
+news_channel_hyperlink = (
+    "[announcement](https://support.discord.com/hc/en-us/articles/360032008192-Announcement-Channels)"
+)
+type_desc = (
+    "Choose a type of announcement.\n\n"
+    "__**Available types:**__\n"
+    "- **Plain** : Plain text announcement.\n"
+    "- **Embed** : Embedded announcement. Image and thumbnail image are also supported.\n"
+)
+embed_desc = (
+    "Click the `Edit` button below to set/edit the embed values.\n\n"
+    "__**Available fields:**__\n"
+    "- **Description** : The content of the announcement. Must not exceed 4000 characters.\n"
+    "- **Thumbnail URL** : URL of the image shown at the top right of the embed.\n"
+    "- **Image URL** : URL of the large image shown at the bottom of the embed.\n"
+    "- **Color** : The color code of the embed. If not specified, fallbacks to bot main color. "
+    "The following formats are accepted:\n - `0x<hex>`\n - `#<hex>`\n - `0x#<hex>`\n - `rgb(<number>, <number>, <number>)`\n"
+    "Like CSS, `<number>` can be either 0-255 or 0-100% and `<hex>` can be either a 6 digit hex number or a 3 digit hex shortcut (e.g. #fff).\n"
+)
+plain_desc = "Click the `Edit` button below to set/edit the content.\n"
+mention_desc = (
+    "If nothing is selected, the announcement will be posted without any mention.\n"
+    "To mention Users or Roles, select `Others` in the first dropdown, then in second dropdown select Users or Roles you want to mention.\n"
+)
+channel_desc = (
+    "The destination channel. If nothing is selected, the announcement will be posted "
+    "in the current channel.\n"
+    f"The announcement can be published if the type of destination channel is {news_channel_hyperlink} channel.\n"
+)
 
 
 class Announcement(commands.Cog):
@@ -40,80 +70,64 @@ class Announcement(commands.Cog):
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def announce(self, ctx: commands.Context):
         """
-        Base command to create announcements.
+        Post an announcement.
+
+        Run this command without argument to initiate a creation panel where you can choose and customise the output of the announcement.
         """
-        await ctx.send_help(ctx.command)
+        announcement = AnnouncementModel(ctx)
+        sessions = [
+            ("type", type_desc),
+            ("embed", embed_desc),
+            ("plain", plain_desc),
+            ("mention", mention_desc),
+            ("channel", channel_desc),
+            ("publish", None),
+        ]
+        view = AnnouncementView(ctx, announcement, input_sessions=sessions)
+        await view.create_base()
 
-    @announce.command(name="create", aliases=["start"])
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def announce_create(self, ctx: commands.Context, *, channel: Optional[discord.TextChannel] = None):
-        """
-        Post an announcement in a channel specified.
+        await view.wait()
+        if not announcement.ready_to_post():
+            # cancelled or timed out
+            return
 
-        This will initiate a creation panel where you can choose and customise the output of the announcement.
+        await announcement.send()
 
-        `channel` if specified may be a channel ID, mention, or name. Otherwise, fallbacks to current channel.
-
-        __**Note:**__
-        - If `channel` is not specified, to ensure cleaner output the creation message will automatically be deleted after the announcement is posted.
-        """
-        delete = False
-        if channel is None:
-            channel = ctx.channel
-            delete = True
+        if announcement.channel == ctx.channel:
+            view.stop()
             try:
                 await ctx.message.delete()
+                await view.message.delete()
             except discord.Forbidden:
-                logger.warning(f"Missing `Manage Messages` permission in {channel} channel.")
-
-        announcement = AnnouncementModel(ctx, channel)
-        view = AnnouncementView(ctx, announcement)
-        embed = discord.Embed(title="Announcement Creation Panel", color=self.bot.main_color)
-        embed.description = (
-            "Choose a type of announcement using the dropdown menu below.\n\n"
-            "__**Available types:**__\n"
-            "- **Normal** : Plain text announcement.\n"
-            "- **Embed** : Embedded announcement. Image and thumbnail image are also supported."
-        )
-        view.message = message = await ctx.send(embed=embed, view=view)
-        await view.wait(input_event=True)
-
-        if not announcement.posted:
+                logger.warning(f"Missing `Manage Messages` permission in {ctx.channel} channel.")
             return
 
-        if delete:
-            view.stop()
-            await message.delete()
-            return
-
-        embed = message.embeds[0]
-        description = f"Announcement has been posted in {channel.mention}.\n\n"
+        embed = view.message.embeds[0]
+        description = f"Announcement has been posted in {announcement.channel.mention}.\n\n"
         if announcement.channel.type == discord.ChannelType.news:
-            description += "Would you like to publish this announcement?\n\n"
-            view.generate_buttons(confirmation=True)
+            description += "Would you like to publish the announcement?\n\n"
+            view.fill_items(confirmation=True)
         else:
             view.stop()
 
         embed.description = description
-        await message.edit(embed=embed, view=view)
+        await view.message.edit(embed=embed, view=view)
         if view.is_finished():
             return
 
         await view.wait()
 
-        hyper_link = f"[announcement]({announcement.message.jump_url})"
-        if view.confirm:
-            await announcement.publish()
-            embed.description = f"Successfully published this {hyper_link} to all subscribed channels.\n\n"
-        if view.confirm is not None:
-            if not view.confirm:
+        if view.confirmed is not None:
+            hyper_link = f"[announcement]({announcement.message.jump_url})"
+            if view.confirmed:
+                await announcement.publish()
+                embed.description = f"Successfully published this {hyper_link} to all following servers.\n\n"
+            else:
                 embed.description = (
                     f"To manually publish this {hyper_link}, use command:\n"
                     f"```\n{ctx.prefix}publish {announcement.channel.id}-{announcement.message.id}\n```"
                 )
-            view = None
-
-        await message.edit(embed=embed, view=view)
+            await view.message.edit(embed=embed, view=None)
 
     @announce.command(name="quick")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -125,17 +139,22 @@ class Announcement(commands.Cog):
         """
         await channel.send(content)
 
-    @commands.command()
+    @commands.command(
+        help=(
+            "Publish a message from announcement channel to all channels in other servers that are "
+            "following the channel.\n\n"
+            "`message` may be a message ID, format of `channel_id`-`message_id` "
+            "(e.g. `1079077919915266210-1079173422967439360`), or message link.\n\n"
+            "__**Notes:**__\n"
+            "- If message ID is provided (without channel ID and not the message link), the bot will only "
+            "look for the message in the current channel.\n"
+            f"- Only messages in {news_channel_hyperlink} channels can be published."
+        ),
+    )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def publish(self, ctx: commands.Context, *, message: discord.Message):
         """
-        Publish a message from announcement channel to all subscribed channels.
-
-        `message` may be a message ID, format of `channel ID-message ID`, or message link.
-
-        __**Notes:**__
-        - If message ID is provided (without channel ID and not the message link), the bot will only look for the message in the current channel.
-        - Only messages in [announcement](https://support.discord.com/hc/en-us/articles/360032008192-Announcement-Channels) channels can be published.
+        Publish a message from announcement channel.
         """
         channel = message.channel
         if not channel.type == discord.ChannelType.news:
@@ -145,7 +164,7 @@ class Announcement(commands.Cog):
 
         await message.publish()
         embed = discord.Embed(
-            description=f"Successfully published this [message]({message.jump_url}) to all subscribed channels.",
+            description=f"Successfully published this [message]({message.jump_url}) to all following servers.",
             color=self.bot.main_color,
         )
         await ctx.reply(embed=embed)
