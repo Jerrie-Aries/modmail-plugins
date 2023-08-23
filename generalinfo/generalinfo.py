@@ -38,22 +38,39 @@ verif = {
     "extreme": "4 - Extreme",
 }
 
+# These are subject to arbitrary change by Discord.
+# Go to: https://discord.com/developers/docs/resources/guild#guild-object-guild-features
 features = {
-    "PARTNERED": "Partnered",
-    "VERIFIED": "Verified",
+    "ANIMATED_BANNER": "Animated Banner",
+    "ANIMATED_ICON": "Animated Icon",
+    "AUTO_MODERATION": "Auto Moderation",
+    "BANNER": "Banner Image",
+    "COMMERCE": "Commerce",
+    "COMMUNITY": "Community",
+    "CREATOR_MONETIZABLE_PROVISIONAL": "Creator Monetization",
+    "CREATOR_STORE_PAGE": "Creator Store Page",
+    "DEVELOPER_SUPPORT_SERVER": "Developer Supoort Server",
     "DISCOVERABLE": "Server Discovery",
     "FEATURABLE": "Featurable",
-    "COMMUNITY": "Community",
-    "PUBLIC_DISABLED": "Public disabled",
+    "INVITES_DISABLED": "Invites Disabled",
     "INVITE_SPLASH": "Splash Invite",
-    "VIP_REGIONS": "VIP Voice Servers",
-    "VANITY_URL": "Vanity URL",
+    "MEMBER_LIST_DISABLED": "Member List Disabled",
+    "MEMBER_VERIFICATION_GATE_ENABLED": "Member Verification Gate",
     "MORE_EMOJI": "More Emojis",
-    "COMMERCE": "Commerce",
+    "MORE_STICKERS": "More Stickers",
     "NEWS": "News Channels",
-    "ANIMATED_ICON": "Animated Icon",
-    "BANNER": "Banner Image",
-    "MEMBER_LIST_DISABLED": "Member list disabled",
+    "PARTNERED": "Partnered",
+    "PREVIEW_ENABLED": "Preview",
+    "PUBLIC_DISABLED": "Public Disabled",
+    "RAID_ALERTS_DISABLED": "Raid Alerts Disabled",
+    "ROLE_ICONS": "Role Icons",
+    "ROLE_SUBSCRIPTIONS_AVAILABLE_FOR_PURCHASE": "Role Subscription Purchase",
+    "ROLE_SUBSCRIPTIONS_ENABLED": "Role Subscription",
+    "TICKETED_EVENTS_ENABLED": "Ticketed Events",
+    "VANITY_URL": "Vanity URL",
+    "VERIFIED": "Verified",
+    "VIP_REGIONS": "VIP Voice Servers",
+    "WELCOME_SCREEN_ENABLED": "Welcome Screen",
 }
 
 
@@ -93,7 +110,7 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         """
         bot_me = ctx.me
 
-        embed = discord.Embed(color=bot_me.color)
+        embed = discord.Embed(title="Bot info", color=bot_me.color)
         embed.set_author(name=f"{bot_me}")
         embed.add_field(name="Prefix:", value=f"`{self.bot.prefix}` or {self.bot.user.mention}")
         embed.add_field(
@@ -137,9 +154,9 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         if member is None:
             member = ctx.author
 
-        embed = discord.Embed(color=member.color)
-        embed.set_author(name=f"{str(member)}'s Avatar")
-        embed.add_field(name="Avatar", value=f"[Link]({member.display_avatar.url})")
+        embed = discord.Embed(title="Avatar", color=member.color)
+        embed.set_author(name=str(member))
+        embed.add_field(name="Avatar URL", value=f"[Link]({member.display_avatar.url})")
         embed.set_image(url=member.display_avatar.url)
 
         await ctx.send(embed=embed)
@@ -155,7 +172,8 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         if user is None:
             user = ctx.author
 
-        embed = discord.Embed(color=user.color)
+        entity = "Member" if isinstance(user, discord.Member) else "User"
+        embed = discord.Embed(title=f"{entity} info", color=user.color)
         embed.set_author(name=str(user))
         embed.add_field(name="Created:", value=discord.utils.format_dt(user.created_at, "F"))
         embed.add_field(name="Avatar URL:", value=f"[Link]({user.display_avatar.url})")
@@ -189,7 +207,7 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         """
 
         rolecolor = str(role.color).upper()
-        embed = discord.Embed(color=role.color)
+        embed = discord.Embed(title="Role info", color=role.color)
         embed.set_author(name=f"{role.name}")
 
         embed.add_field(name="Role Name:", value=f"{role.name}")
@@ -219,11 +237,11 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
 
         def base_embed(continued=False, description=None):
             embed = discord.Embed(
+                title=f"Members in {discord.utils.escape_markdown(role.name).title()}",
                 description=description if description is not None else "",
                 color=role.color,
             )
 
-            embed.title = f"Members in {discord.utils.escape_markdown(role.name).title()}"
             if continued:
                 embed.title += " (Continued)"
 
@@ -262,8 +280,7 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         ]
 
         def base_embed(continued=False, description=None):
-            embed = discord.Embed(color=discord.Color.dark_theme())
-            embed.title = "All roles"
+            embed = discord.Embed(title="All roles", color=self.bot.main_color)
             if continued:
                 embed.title += " (Continued)"
             embed.description = description if description is not None else ""
@@ -300,7 +317,7 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         humans = len([m for m in guild.members if not m.bot])
         online = len([m for m in guild.members if m.status != discord.Status.offline])
 
-        embed = discord.Embed(color=self.bot.main_color)
+        embed = discord.Embed(title="Server info", color=self.bot.main_color)
         embed.set_author(name=f"{guild.name}")
         embed.description = f"Created {discord.utils.format_dt(guild.created_at, 'R')}."
         embed.add_field(
@@ -390,7 +407,7 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         List of custom emojis in this server with their IDs.
         """
         pages = []
-        page = "### Emoji list:\n\n"
+        page = "### Server emojis:\n\n"
         emojis = ctx.guild.emojis
         for i, e in enumerate(emojis):
             elem = f"{e} - `{e}`\n"
