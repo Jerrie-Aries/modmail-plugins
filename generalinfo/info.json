@@ -1,0 +1,11 @@
+{
+    "name": "General Info",
+    "description": [
+        "Get general information about bot, guild member, Discord user, server and many more.",
+        "\n**Version:**\n`{0}`"
+    ],
+    "authors": ["Jerrie-Aries"],
+    "version": "1.0.0",
+    "bot_version": "4.0.0",
+    "cogs_required": []
+}
