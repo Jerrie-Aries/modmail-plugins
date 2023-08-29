@@ -407,7 +407,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         if mode is None:
             embed = discord.Embed(
                 color=self.bot.main_color,
-                description=f"{name.capitalize()} feature is currently " + ("enabled." if enabled else "disabled."),
+                description=f"{name.capitalize()} feature is currently "
+                + ("enabled." if enabled else "disabled."),
             )
             return await ctx.send(embed=embed)
         if mode == enabled:
