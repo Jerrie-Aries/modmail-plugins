@@ -585,13 +585,10 @@ class ThreadMoveManager:
     async def _move_thread_channel(
         self, thread: Thread, category: discord.CategoryChannel, *, event: str
     ) -> None:
-        if event == "responded":
-            reason = "This thread has been responded."
-        elif event == "inactive":
-            reason = "This thread has been inactive."
-        else:
+        if event not in ("responded", "inactive"):
             raise ValueError(f"Invalid type of move event. Got {event}.")
 
+        reason = f"This thread has been {event}."
         old_category = thread.channel.category
         await thread.channel.move(category=category, end=True, sync_permissions=True, reason=reason)
 

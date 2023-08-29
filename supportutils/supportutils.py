@@ -1259,16 +1259,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         await self._set_category_invoker(ctx, "responded", argument)
 
-    @tm_config_responded.command(
-        name="embed",
-        help=(
-            "Customise the embed title, description and footer text for responded thread move message.\n\n"
-            "Leave `argument` empty to set the values.\n"
-            "Set `argument` to `clear` or `reset` to restore the default value."
-        ),
-    )
+    @tm_config_responded.command(name="embed")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def tm_config_responded_embed(self, ctx: commands.Context, *, argument: Optional[str] = None):
+        """
+        Customise the embed title, description and footer text for responded thread move message.
+
+        Leave `argument` empty to set the values.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
         await self._set_embed_invoker(
             ctx,
             "responded thread move",
@@ -1344,16 +1343,15 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         await self._set_category_invoker(ctx, "inactive", argument)
 
-    @tm_config_inactive.command(
-        name="embed",
-        help=(
-            "Customise the embed title, description and footer text for inactive thread move message.\n\n"
-            "Leave `argument` empty to set the values.\n"
-            "Set `argument` to `clear` or `reset` to restore the default value."
-        ),
-    )
+    @tm_config_inactive.command(name="embed")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def tm_config_inactive_embed(self, ctx: commands.Context, *, argument: Optional[str] = None):
+        """
+        Customise the embed title, description and footer text for inactive thread move message.
+
+        Leave `argument` empty to set the values.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
         await self._set_embed_invoker(
             ctx,
             "inactive thread move",
@@ -1407,8 +1405,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Dispatched when the thread is closed.
         """
         tasks = [
-            self.bot.loop.create_task(self.feedback_manager.handle_prompt(thread, *args)),
             self.bot.loop.create_task(self.move_manager.cancel_inactivity_task(thread.channel.id, True)),
+            self.bot.loop.create_task(self.feedback_manager.handle_prompt(thread, *args)),
         ]
         await asyncio.gather(*tasks)
 
@@ -1417,8 +1415,8 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         manager = self.move_manager
         _, message, *_ = args
         tasks = [
-            self.bot.loop.create_task(manager.schedule_inactive_timer(thread, message.created_at)),
             self.bot.loop.create_task(manager.handle_responded(thread)),
+            self.bot.loop.create_task(manager.schedule_inactive_timer(thread, message.created_at)),
         ]
         await asyncio.gather(*tasks)
 
