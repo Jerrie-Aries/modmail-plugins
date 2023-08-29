@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Dict, Optional, Set, Tuple, Union, TYPE_CHECKING
 
 import discord
+from discord.ext import tasks
 from discord.utils import MISSING
 
 from core.models import getLogger
@@ -12,14 +13,14 @@ from core.thread import Thread
 from .views import ContactView, FeedbackView
 
 
-logger = getLogger(__name__)
-
-
 if TYPE_CHECKING:
+    from datetime import datetime
     from bot import ModmailBot
     from ..supportutils import SupportUtility
     from .views import Modal
 
+
+logger = getLogger(__name__)
 
 ends_seconds: int = 60 * 60 * 24
 
@@ -375,6 +376,9 @@ class FeedbackManager:
         """
         return self.cog.config.feedback
 
+    def is_enabled(self) -> bool:
+        return self.config.get("enable")
+
     async def populate(self) -> None:
         """
         Populate active feedback sessions from database.
@@ -435,6 +439,39 @@ class FeedbackManager:
     def find_session(self, user: discord.Member) -> Optional[Feedback]:
         return next((fb for fb in self.active if fb.user == user), None)
 
+    async def handle_prompt(self, thread: Thread, *args: Any) -> None:
+        _, silent, *_ = args
+        if silent:
+            return
+
+        if not self.is_enabled():
+            return
+
+        for user in thread.recipients:
+            if user is None:
+                continue
+            if not isinstance(user, discord.Member):
+                entity = self.bot.guild.get_member(user.id)
+                if not entity:
+                    continue
+                user = entity
+            try:
+                await self.send(user, thread)
+            except RuntimeError:
+                pass
+
+    def clear_for(self, thread: Thread) -> None:
+        if not self.is_enabled():
+            return
+
+        for user in thread.recipients:
+            if user is None:
+                continue
+            feedback = self.find_session(user)
+            if feedback:
+                logger.debug(f"Stopping active feedback session for {user}.")
+                feedback.stop()
+
     async def send(self, user: discord.Member, thread: Optional[Thread] = None) -> None:
         """
         Sends the feedback prompt message to user and initiate the session.
@@ -463,3 +500,170 @@ class FeedbackManager:
         self.add(feedback)
         await self.cog.config.update()
         self.bot.loop.create_task(feedback.run())
+
+
+class ThreadMoveManager:
+    """
+    Represents an instance that handles moving responded and inactive threads to
+    designated category.
+    """
+
+    def __init__(self, cog: SupportUtility):
+        self.cog: SupportUtility = cog
+        self.bot: ModmailBot = cog.bot
+        self.inactivity_tasks: Dict[str, asyncio.Task] = {}
+        self._schedule_update: bool = False
+
+    async def initialize(self) -> None:
+        tasks = self.config["inactive"]["tasks"]
+        now = discord.utils.utcnow().timestamp()
+        for channel_id, ends_at in list(tasks.items()):
+            channel = self.bot.modmail_guild.get_channel(int(channel_id))
+            if channel is None or ends_at < now:
+                tasks.pop(channel_id)
+                self._schedule_update = True
+                continue
+            thread = await self.bot.threads.find(channel=channel)
+            if not thread:
+                tasks.pop(channel_id)
+                self._schedule_update = True
+                continue
+            timeout = ends_at - now
+            task = self.bot.loop.create_task(self.set_to_inactive_after(timeout, thread))
+            self.inactivity_tasks[channel_id] = task
+
+        self.update_loop.start()
+
+    def teardown(self) -> None:
+        self.update_loop.cancel()
+        for task in self.inactivity_tasks.values():
+            task.cancel()
+        self.inactivity_tasks.clear()
+
+    @property
+    def config(self) -> Dict[str, Any]:
+        return self.cog.config.thread_move
+
+    def is_enabled(self) -> bool:
+        return self.config.get("enable")
+
+    def _get_category(self, key: str) -> Optional[discord.CategoryChannel]:
+        category_id = self.config[key]["category"]
+        if category_id is None:
+            return None
+
+        category = self.bot.modmail_guild.get_channel(int(category_id))
+        if not isinstance(category, discord.CategoryChannel):
+            logger.error(
+                f"Invalid type of category. Expected CategoryChannel, got {type(category).__name__} instead."
+            )
+            category = None
+        return category
+
+    @property
+    def responded_category(self) -> Optional[discord.CategoryChannel]:
+        """
+        Category where the responded threads will be moved to.
+        """
+        return self._get_category("responded")
+
+    @property
+    def inactive_category(self) -> Optional[discord.CategoryChannel]:
+        """
+        Category where the inactive threads will be moved to.
+        """
+        return self._get_category("inactive")
+
+    async def handle_responded(self, thread: Thread) -> None:
+        if not self.is_enabled():
+            return
+        category = self.responded_category
+        if category is None or category == thread.channel.category:
+            return
+        await self._move_thread_channel(thread, category, event="responded")
+
+    async def _move_thread_channel(
+        self, thread: Thread, category: discord.CategoryChannel, *, event: str
+    ) -> None:
+        if event not in ("responded", "inactive"):
+            raise ValueError(f"Invalid type of move event. Got {event}.")
+
+        reason = f"This thread has been {event}."
+        old_category = thread.channel.category
+        await thread.channel.move(category=category, end=True, sync_permissions=True, reason=reason)
+
+        description = self.bot.formatter.format(
+            self.config[event]["embed"]["description"],
+            old_category=old_category.mention if old_category else "unknown category",
+            new_category=category.mention,
+        )
+        embed = discord.Embed(
+            title=self.config[event]["embed"]["title"],
+            description=description,
+            color=self.bot.main_color,
+        )
+        footer_text = self.config[event]["embed"]["footer"]
+        if footer_text:
+            embed.set_footer(text=footer_text)
+        await thread.channel.send(embed=embed)
+
+    async def schedule_inactive_timer(self, thread: Thread, start_time: datetime) -> None:
+        channel_id = str(thread.channel.id)
+        # cancel existing task
+        await self.cancel_inactivity_task(channel_id)
+
+        if not self.is_enabled() or not self.inactive_category:
+            return
+        timeout = self.config["inactive"]["timeout"]
+        if not timeout:
+            return
+
+        task = self.bot.loop.create_task(self.set_to_inactive_after(timeout, thread))
+        self.inactivity_tasks[channel_id] = task
+
+        after_timestamp = start_time.timestamp() + timeout
+        self.config["inactive"]["tasks"][channel_id] = after_timestamp
+        self._schedule_update = True
+
+    async def set_to_inactive_after(self, after: float, thread: Thread) -> None:
+        """
+        Set the thread to inactive. The thread will be moved to inactive category.
+
+        Note: This method should be created as a task with `bot.loop.create_task` and stored
+        in cache, so the task can be cancelled if the thread is responded.
+        """
+        await asyncio.sleep(after)
+        category = self.inactive_category
+        if category and category != thread.channel.category:
+            await self._move_thread_channel(thread, category, event="inactive")
+        await self.cancel_inactivity_task(thread.channel.id)
+
+    async def cancel_inactivity_task(self, channel_id: Union[int, str], force_update: bool = False) -> None:
+        """
+        Cancel or stop the inactivity task for thread specified.
+        """
+        channel_id = str(channel_id)
+        task = self.inactivity_tasks.pop(channel_id, None)
+        if task and not task.done():
+            task.cancel()
+        ends_at = self.config["inactive"]["tasks"].pop(channel_id, None)
+        # if this was in config, we need to resolve updating the config in db
+        if ends_at:
+            if force_update:
+                await self._update_inactive_tasks()
+            else:
+                self._schedule_update = True
+
+    # updating config everytime a message is sent in thread channel is quite expensive
+    # to prevent unnecessary API calls to database, we just do tasks.loop to handle it.
+    @tasks.loop(seconds=60)
+    async def update_loop(self) -> None:
+        if not self._schedule_update:
+            return
+        await self._update_inactive_tasks()
+
+    async def _update_inactive_tasks(self) -> None:
+        # we do manual insertion here so it won't touch other keys in the document
+        data = {"thread_move.inactive.tasks": self.config["inactive"]["tasks"]}
+        await self.cog.config.update(data=data)
+        self._schedule_update = False
