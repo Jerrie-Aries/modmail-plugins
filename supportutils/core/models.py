@@ -615,7 +615,7 @@ class ThreadMoveManager:
         # cancel existing task
         await self.cancel_inactivity_task(channel_id)
 
-        if self.is_enabled() or not self.inactive_category:
+        if not self.is_enabled() or not self.inactive_category:
             return
         timeout = self.config["inactive"]["timeout"]
         if not timeout:
