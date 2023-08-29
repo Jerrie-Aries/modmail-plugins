@@ -580,7 +580,6 @@ class Invites(commands.Cog):
         if webhook:
             kwargs["username"] = self.bot.user.name
             kwargs["avatar_url"] = self.bot.user.display_avatar.url
-            kwargs["wait"] = True
             send_func = webhook.send
         else:
             send_func = channel.send
