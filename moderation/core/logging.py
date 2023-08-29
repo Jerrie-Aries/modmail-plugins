@@ -112,7 +112,6 @@ class ModerationLogging:
                 self.config.webhook = webhook
             send_params["username"] = self.bot.user.name
             send_params["avatar_url"] = str(self.bot.user.display_avatar)
-            send_params["wait"] = True
             send_method = webhook.send
         else:
             send_method = channel.send
