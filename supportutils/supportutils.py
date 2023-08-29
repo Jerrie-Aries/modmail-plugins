@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -12,7 +13,8 @@ from discord.utils import MISSING
 from core import checks
 from core.models import getLogger, PermissionLevel
 from core.paginator import EmbedPaginatorSession
-from core.utils import human_join, truncate
+from core.time import UserFriendlyTime
+from core.utils import truncate
 
 
 if TYPE_CHECKING:
@@ -45,7 +47,7 @@ except ImportError as exc:
     ) from exc
 
 from .core.config import SupportUtilityConfig
-from .core.models import ContactManager, FeedbackManager
+from .core.models import ContactManager, FeedbackManager, ThreadMoveManager
 from .core.views import Button, ContactView, Modal, SupportUtilityView
 
 
@@ -61,6 +63,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         self.config: SupportUtilityConfig = SupportUtilityConfig(self, self.db)
         self.contact_manager: ContactManager = ContactManager(self)
         self.feedback_manager: FeedbackManager = FeedbackManager(self)
+        self.move_manager: ThreadMoveManager = ThreadMoveManager(self)
 
     async def cog_load(self) -> None:
         self.bot.loop.create_task(self.initialize())
@@ -71,12 +74,14 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             view.stop()
         for feedback in self.feedback_manager.active:
             feedback.task.cancel()
+        self.move_manager.teardown()
 
     async def initialize(self) -> None:
         await self.bot.wait_for_connected()
         await self.config.fetch()
         await self.contact_manager.initialize()
         await self.feedback_manager.populate()
+        await self.move_manager.initialize()
 
     def _resolve_modal_payload(self, item: Button) -> Dict[str, Any]:
         """
@@ -93,19 +98,19 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             prefix, key, subkey = keys
 
         # confusing part
-        # valid_prefixes = ("contact", "feedback")  # these two were root config
-        # valid_keys = ("button", "confirmation", "select", "embed", "rating", "response")
+        # valid_prefixes = ("contact", "feedback", "thread_move")  # these three were root config
+        # valid_keys = ("button", "confirmation", "select", "embed", "rating", "response", "inactive", "responded")
         # valid_subkeys = ("embed", "placeholder", "options")
         options = {}
+        current = view.extras.get("current")
         if key == "button":
             elements = [("emoji", 256), ("label", Limit.button_label), ("style", 32)]
-            button_config = getattr(self.config, prefix, {}).get(key)
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
+            for name, length in elements:
+                options[name] = {
+                    "label": name.title(),
+                    "max_length": length,
                     "required": False,
-                    "default": view.inputs.get(elem[0]) or button_config.get(elem[0]),
+                    "default": view.inputs.get(name) or current.get(name),
                 }
         elif key in ("select", "rating"):
             if subkey == "placeholder":
@@ -113,7 +118,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     "label": subkey.title(),
                     "max_length": Limit.select_placeholder,
                     "required": True,
-                    "default": view.inputs.get(subkey) or getattr(self.config, prefix, {})[key].get(subkey),
+                    "default": view.inputs.get(subkey) or current,
                 }
             else:
                 # select options
@@ -123,12 +128,12 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                     ("description", Limit.select_description),
                     ("category", 256),
                 ]
-                for elem in elements:
-                    options[elem[0]] = {
-                        "label": elem[0].title(),
-                        "max_length": elem[1],
-                        "required": elem[0] in ("label", "category"),
-                        "default": view.inputs.get(elem[0]),
+                for name, length in elements:
+                    options[name] = {
+                        "label": name.title(),
+                        "max_length": length,
+                        "required": name in ("label", "category"),
+                        "default": view.inputs.get(name),
                     }
         elif "embed" in (key, subkey):
             elements = [
@@ -136,17 +141,13 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 ("description", Limit.text_input_max),
                 ("footer", Limit.embed_footer),
             ]
-            if key == "confirmation":
-                embed_config = self.config[prefix][key].get(subkey)
-            else:
-                embed_config = self.config[prefix].get(key)
-            for elem in elements:
-                options[elem[0]] = {
-                    "label": elem[0].title(),
-                    "max_length": elem[1],
-                    "style": discord.TextStyle.long if elem[0] == "description" else discord.TextStyle.short,
-                    "required": elem[0] == "description",
-                    "default": view.inputs.get(elem[0]) or embed_config.get(elem[0]),
+            for name, length in elements:
+                options[name] = {
+                    "label": name.title(),
+                    "max_length": length,
+                    "style": discord.TextStyle.long if name == "description" else discord.TextStyle.short,
+                    "required": name == "description",
+                    "default": view.inputs.get(name) or current.get(name),
                 }
         elif key == "response":
             options[key] = {
@@ -154,7 +155,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
                 "max_length": Limit.text_input_max,
                 "style": discord.TextStyle.long,
                 "required": True,
-                "default": view.inputs.get(key) or getattr(self.config, prefix, {})[key],
+                "default": view.inputs.get(key) or current,
             }
         else:
             raise ValueError(f"Invalid view input session. Got `{prefix}.{key}.{subkey}` keys.")
@@ -264,15 +265,192 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
             (set_label, discord.ButtonStyle.grey, self._button_callback),
             ("cancel", discord.ButtonStyle.red, view._action_cancel),
         ]
-        for elem in buttons:
-            key = elem[0]
+        for label, style, callback in buttons:
             button = Button(
-                label=key.title(),
-                style=elem[1],
-                callback=elem[2],
+                label=label.title(),
+                style=style,
+                callback=callback,
             )
             view.add_item(button)
         return view
+
+    async def _set_button_invoker(
+        self,
+        ctx: commands.Context,
+        name: str,
+        keys: List[str],
+        button_config: Dict[str, Any],
+        defaults: Dict[str, Any],
+        argument: Optional[str],
+    ) -> None:
+        if argument and argument.lower() in ("clear", "reset"):
+            button_config.clear()
+            for key, value in defaults.items():
+                button_config[key] = value
+            await self.config.update()
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description=f"{name.capitalize()} configurations are now reset to defaults.",
+            )
+            await ctx.send(embed=embed)
+        elif argument is None:
+            description = ctx.command.help.split("\n\n")[:-1]
+            description = "\n\n".join(description) + "\n\n"
+            description += (
+                "__**Available fields:**__\n"
+                "- **Emoji** : Emoji shown on the button. May be a unicode emoji, "
+                "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
+                f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
+                "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
+                " - `Blurple`\n"
+                " - `Green`\n"
+                " - `Red`\n"
+                " - `Grey`\n\n"
+            )
+            embed = discord.Embed(
+                title=name.capitalize(),
+                color=self.bot.main_color,
+                description=description,
+            )
+            embed.set_footer(text="Press Set to set/edit the values")
+            embed.description += "### Current values"
+            for key in ("emoji", "label", "style"):
+                embed.add_field(name=key.title(), value=f"`{button_config.get(key)}`")
+            view = self.get_config_view(ctx, title=embed.title, keys=keys, current=button_config)
+            view.message = message = await ctx.send(embed=embed, view=view)
+
+            await view.wait()
+            await message.edit(view=view)
+
+            if view.value:
+                payload = view.outputs
+                embed = discord.Embed(
+                    description=f"Successfully set the new configurations for {name}.\n\n",
+                    color=self.bot.main_color,
+                )
+                embed.description += "### New values"
+                for key in list(payload):
+                    embed.add_field(name=key.title(), value=f"`{payload[key]}`")
+                    button_config[key] = payload.pop(key)
+                await self.config.update()
+                await view.interaction.followup.send(embed=embed)
+        else:
+            raise commands.BadArgument(f"{argument} is not a valid argument.")
+
+    async def _set_embed_invoker(
+        self,
+        ctx: commands.Context,
+        name: str,
+        keys: List[str],
+        embed_config: Dict[str, Any],
+        defaults: Dict[str, Any],
+        argument: Optional[str],
+    ) -> None:
+        if argument and argument.lower() in ("clear", "reset"):
+            embed_config.clear()
+            for key, value in defaults.items():
+                embed_config[key] = value
+            await self.config.update()
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description=f"{name.capitalize()} embed configurations are now reset to defaults.",
+            )
+            await ctx.send(embed=embed)
+        elif argument is None:
+            # remove the last part where it shows the argument usage bit
+            description = ctx.command.help.format(prefix=self.bot.prefix).split("\n\n")[:-1]
+            description = "\n\n".join(description) + "\n\n"
+            description += (
+                "__**Available fields:**__\n"
+                f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
+                f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
+                f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n\n"
+            )
+            embed = discord.Embed(
+                title=name.capitalize(),
+                color=self.bot.main_color,
+                description=description,
+            )
+            embed.set_footer(text="Press Set to set/edit the values")
+            embed.description += "### Current values"
+            for key in ("title", "description", "footer"):
+                embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
+            view = self.get_config_view(ctx, title=embed.title, keys=keys, current=embed_config)
+            view.message = message = await ctx.send(embed=embed, view=view)
+
+            await view.wait()
+            await message.edit(view=view)
+
+            if view.value:
+                payload = view.outputs
+                embed = discord.Embed(
+                    description=f"Successfully set the new configurations for {name} embed.\n\n",
+                    color=self.bot.main_color,
+                )
+                embed.description += "### New values"
+                for key in list(payload):
+                    embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
+                    embed_config[key] = payload.pop(key)
+                await self.config.update()
+                await view.interaction.followup.send(embed=embed)
+        else:
+            raise commands.BadArgument(f"{argument} is not a valid argument.")
+
+    async def _set_enable_invoker(
+        self,
+        ctx: commands.Context,
+        name: str,
+        parent_config: Dict[str, Any],
+        mode: Optional[bool],
+    ) -> None:
+        enabled = parent_config.get("enable", False)
+        if mode is None:
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description=f"{name.capitalize()} feature is currently " + ("enabled." if enabled else "disabled."),
+            )
+            return await ctx.send(embed=embed)
+        if mode == enabled:
+            raise commands.BadArgument(
+                f"{name.capitalize()} feature is already " + ("enabled." if enabled else "disabled.")
+            )
+
+        parent_config["enable"] = mode
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description=f"{name.capitalize()} feature is now " + ("enabled." if mode else "disabled."),
+        )
+        await ctx.send(embed=embed)
+
+    async def _set_category_invoker(
+        self,
+        ctx: commands.Context,
+        key: str,
+        entity: Optional[Union[discord.CategoryChannel, str]],
+    ) -> None:
+        embed = discord.Embed(color=self.bot.main_color)
+        if entity is None:
+            category = getattr(self.move_manager, f"{key}_category")
+            embed.description = f"{key.capitalize()} category is currently set to {category}."
+            await ctx.send(embed=embed)
+        elif isinstance(entity, discord.CategoryChannel):
+            if ctx.guild != self.bot.modmail_guild:
+                raise commands.BadArgument(
+                    f"{key.capitalize()} category can only be set in modmail guild: {self.bot.modmail_guild}."
+                )
+            self.move_manager.config[key]["category"] = str(entity.id)
+            await self.config.update()
+            embed.description = f"{key.capitalize()} category is now set to {entity}."
+            await ctx.send(embed=embed)
+        elif entity in ("reset", "clear"):
+            default = self.config.copy(self.config.defaults["thread_move"][key]["category"])
+            self.move_manager.config[key]["category"] = default
+            await self.config.update()
+            embed.description = f"{key.capitalize()} category is now reset to default."
+            await ctx.send(embed=embed)
+        else:
+            raise commands.BadArgument(f"Category {entity} not found.")
 
     @commands.group(aliases=["conmenu"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -280,7 +458,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         Base command for contact menu.
 
-        Create and customize button, dropdown, and embed content for contact menu.
+        Create and customise button, dropdown, and embed content for contact menu.
         """
         await ctx.send_help(ctx.command)
 
@@ -293,7 +471,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         - `{prefix}contactmenu config [option] [value]`
         Otherwise default settings will be used.
 
-        Or you can customize the settings later, then apply the new settings with command:
+        Or you can customise the settings later, then apply the new settings with command:
         - `{prefix}contactmenu refresh`
 
         `channel` if specified, may be a channel ID, mention, or name.
@@ -413,139 +591,52 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         """
         Contact menu configurations. Retrieve, set or update the values.
 
-        __**Customizable options:**__
+        __**Customisable options:**__
         - Button
         - Dropdown
         - Embed (title, description, footer)
+        - Confirmation embed (title, description, footer)
         """
         await ctx.send_help(ctx.command)
 
-    @cm_config.group(
+    @cm_config.command(
         name="embed",
         help=(
-            "Customize the embed title, description and footer text for contact menu message.\n"
+            "Customise the embed title, description and footer text for contact menu message.\n"
             "Please note that this embed will only be posted if the contact menu is initiated from "
             "`{prefix}contactmenu create` command.\n\n"
-            "__**Available fields:**__\n"
-            f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
-            f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
-            f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n"
+            "Leave `argument` empty to set the values.\n"
+            "Set `argument` to `clear` or `reset` to restore the default value."
         ),
-        invoke_without_command=True,
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_embed(self, ctx: commands.Context):
-        """
-        Customize the embed title, description and footer text for contact menu message.
-        """
-        embed = discord.Embed(
-            title="Contact embed",
-            color=self.bot.main_color,
-            description=ctx.command.help.format(prefix=self.bot.prefix) + "\n\n",
+    async def cm_config_embed(self, ctx: commands.Context, *, argument: Optional[str] = None):
+        await self._set_embed_invoker(
+            ctx,
+            "contact menu",
+            ["contact", "embed"],
+            self.config.contact["embed"],
+            self.config.deepcopy(self.config.defaults["contact"]["embed"]),
+            argument,
         )
-        embed.set_footer(text="Press Set to set/edit the values")
-        embed_config = self.config.contact.get("embed")
-        embed.description += "### Current values"
-        for key in ("title", "description", "footer"):
-            embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
-        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "embed"])
-        view.message = message = await ctx.send(embed=embed, view=view)
 
-        await view.wait()
-        await message.edit(view=view)
-
-        if view.value:
-            payload = view.outputs
-            embed = discord.Embed(
-                description="Successfully set the new configurations for contact menu embed.\n\n",
-                color=self.bot.main_color,
-            )
-            embed.description += "### New values"
-            for key in list(payload):
-                embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
-                self.config.contact["embed"][key] = payload.pop(key)
-            await self.config.update()
-            await view.interaction.followup.send(embed=embed)
-
-    @cm_config_embed.command(name="clear")
+    @cm_config.command(name="button")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_embed_clear(self, ctx: commands.Context):
+    async def cm_config_button(self, ctx: commands.Context, *, argument: Optional[str] = None):
         """
-        Clear the contact menu embed configurations and reset to default values.
-        """
-        default = self.config.defaults["contact"].get("embed", {})
+        Customise the contact button using buttons and text input.
 
-        self.config.contact["embed"] = self.config.deepcopy(default)
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description="Contact menu embed configurations are now reset to defaults.",
+        Leave `argument` empty to set the values.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
+        await self._set_button_invoker(
+            ctx,
+            "contact button",
+            ["contact", "button"],
+            self.config.contact["button"],
+            self.config.deepcopy(self.config.defaults["contact"]["button"]),
+            argument,
         )
-        await ctx.send(embed=embed)
-
-    @cm_config.group(
-        name="button",
-        help=(
-            "Customize the contact button using buttons and text input.\n\n"
-            "__**Available fields:**__\n"
-            "- **Emoji** : Emoji shown on the button. May be a unicode emoji, "
-            "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
-            f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
-            "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
-            " - `Blurple`\n"
-            " - `Green`\n"
-            " - `Red`\n"
-            " - `Grey`\n"
-        ),
-        invoke_without_command=True,
-    )
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_button(self, ctx: commands.Context):
-        """
-        Customize the contact button using buttons and text input.
-        """
-        description = ctx.command.help
-        embed = discord.Embed(
-            title="Contact button",
-            color=self.bot.main_color,
-            description=description + "\n\n",
-        )
-        embed.set_footer(text="Press Set to set/edit the values")
-        button_config = self.config.contact.get("button")
-        embed.description += "### Current values"
-        for key in ("emoji", "label", "style"):
-            embed.add_field(name=key.title(), value=f"`{button_config.get(key)}`")
-        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "button"])
-        view.message = message = await ctx.send(embed=embed, view=view)
-
-        await view.wait()
-        await message.edit(view=view)
-
-        if view.value:
-            payload = view.outputs
-            embed = discord.Embed(
-                description="Successfully set the new configurations for contact button.\n\n",
-                color=self.bot.main_color,
-            )
-            embed.description += "### New values"
-            for key in list(payload):
-                embed.add_field(name=key.title(), value=f"`{payload[key]}`")
-                self.config.contact["button"][key] = payload.pop(key)
-            await self.config.update()
-            await view.interaction.followup.send(embed=embed)
-
-    @cm_config_button.command(name="clear")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_button_clear(self, ctx: commands.Context):
-        """
-        Clear the contact button configurations and reset to default values.
-        """
-        self.config.contact["button"].clear()
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color, description="Contact button configurations are now reset to defaults."
-        )
-        await ctx.send(embed=embed)
 
     @cm_config.group(name="dropdown", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -564,9 +655,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_dropdown_placeholder(self, ctx: commands.Context):
-        """
-        Placeholder text shown on the dropdown menu if nothing is selected.
-        """
         embed = discord.Embed(
             title="Contact dropdown placeholder",
             color=self.bot.main_color,
@@ -575,7 +663,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.contact["select"]["placeholder"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
-        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "select", "placeholder"])
+        view = self.get_config_view(
+            ctx, title=embed.title, keys=["contact", "select", "placeholder"], current=current
+        )
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -596,7 +686,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     @cm_config_dropdown.command(
         name="add",
         help=(
-            "Add and customize the dropdown for contact menu.\n\n"
+            "Add and customise the dropdown for contact menu.\n\n"
             "A select option can be linked to a custom category where the thread will be created.\n\n"
             "__**Available fields:**__\n"
             "- **Emoji** : Emoji for select option. May be a unicode emoji, format of `:name:`, `<:name:id>` "
@@ -610,9 +700,6 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
     )
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
     async def cm_config_dropdown_add(self, ctx: commands.Context):
-        """
-        Add and customize the dropdown for contact menu.
-        """
         embed = discord.Embed(
             title="Contact dropdown",
             color=self.bot.main_color,
@@ -698,67 +785,24 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
-    @cm_config.group(
-        name="confirmembed",
-        help=(
-            "Customize the embed title, description and footer text for thread creation confirmation embed.\n"
-            "This embed will be sent as ephemeral after a user presses the Contact button.\n\n"
-            "__**Available fields:**__\n"
-            f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
-            f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
-            f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n"
-        ),
-        invoke_without_command=True,
-    )
+    @cm_config.command(name="confirmembed")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_confirmembed(self, ctx: commands.Context):
+    async def cm_config_confirmembed(self, ctx: commands.Context, *, argument: Optional[str] = None):
         """
-        Customize the embed title, description and footer text for thread creation confirmation embed.
+        Customise the embed title, description and footer text for thread creation confirmation embed.
+        This embed will be sent as ephemeral after a user presses the Contact button.
+
+        Leave `argument` empty to set the values.
+        Set `argument` to `clear` or `reset` to restore the default value.
         """
-        embed = discord.Embed(
-            title="Confirmation embed",
-            color=self.bot.main_color,
-            description=ctx.command.help.format(prefix=self.bot.prefix) + "\n\n",
+        await self._set_embed_invoker(
+            ctx,
+            "thread creation confirmation",
+            ["contact", "confirmation", "embed"],
+            self.config.contact["confirmation"]["embed"],
+            self.config.deepcopy(self.config.defaults["contact"]["confirmation"]["embed"]),
+            argument,
         )
-        embed.set_footer(text="Press Set to set/edit the values")
-        embed_config = self.config.contact["confirmation"]["embed"]
-        embed.description += "### Current values"
-        for key in ("title", "description", "footer"):
-            embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
-        view = self.get_config_view(ctx, title=embed.title, keys=["contact", "confirmation", "embed"])
-        view.message = message = await ctx.send(embed=embed, view=view)
-
-        await view.wait()
-        await message.edit(view=view)
-
-        if view.value:
-            payload = view.outputs
-            embed = discord.Embed(
-                description="Successfully set the new configurations for thread creation confirmation embed.\n\n",
-                color=self.bot.main_color,
-            )
-            embed.description += "### New values"
-            for key in list(payload):
-                embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
-                self.config.contact["confirmation"]["embed"][key] = payload.pop(key)
-            await self.config.update()
-            await view.interaction.followup.send(embed=embed)
-
-    @cm_config_confirmembed.command(name="clear")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def cm_config_confirmembed_clear(self, ctx: commands.Context):
-        """
-        Clear the thread creation confirmation embed configurations and reset to default values.
-        """
-        default = self.config.defaults["contact"].get("confirmation", {})
-
-        self.config.contact["confirmation"] = self.config.deepcopy(default)
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description="Thread creation confirmation embed configurations are now reset to defaults.",
-        )
-        await ctx.send(embed=embed)
 
     @cm_config.command(name="override_dmdisabled", aliases=["ignore_dmdisabled"])
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -832,7 +876,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         This feature is disabled by default. To enable, use command:
         `{prefix}feedback config enable true`
 
-        To see more customizable options, see:
+        To see more customisable options, see:
         `{prefix}feedback config`
 
         __**Notes:**__
@@ -958,9 +1002,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `channel` if specified, may be a channel ID, mention, or name.
         Leave `channel` empty to get current set feedback log channel.
         """
-        embed = discord.Embed(
-            color=self.bot.main_color,
-        )
+        embed = discord.Embed(color=self.bot.main_color)
         if channel is None:
             embed.description = (
                 f"Feedback log channel is currently set to: {self.feedback_manager.channel.mention}."
@@ -981,151 +1023,48 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `mode` may be `True` or `False` (case insensitive).
         Leave `mode` empty to retrieve the current set value.
         """
-        feedback_config = self.config.feedback
-        enabled = feedback_config.get("enable", False)
-        if mode is None:
-            embed = discord.Embed(
-                color=self.bot.main_color,
-                description="Feedback feature is currently " + ("enabled." if enabled else "disabled."),
-            )
-            return await ctx.send(embed=embed)
-        if mode == enabled:
-            raise commands.BadArgument(
-                "Feedback feature is already " + ("enabled." if enabled else "disabled.")
-            )
-
-        feedback_config["enable"] = mode
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description="Feedback feature is now " + ("enabled." if mode else "disabled."),
+        await self._set_enable_invoker(
+            ctx,
+            "feedback",
+            self.config.feedback,
+            mode,
         )
-        await ctx.send(embed=embed)
 
-    @fb_config.group(
-        name="embed",
-        help=(
-            "Customize the feedback embed.\n\n"
-            "__**Available fields:**__\n"
-            f"- **Title** : Embed title. Max {Limit.embed_title} characters.\n"
-            f"- **Description** : Embed description. Max {Limit.text_input_max} characters.\n"
-            f"- **Footer** : Embed footer text. Max {Limit.embed_footer} characters.\n"
-        ),
-        invoke_without_command=True,
-    )
+    @fb_config.command(name="embed")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_config_embed(self, ctx: commands.Context):
+    async def fb_config_embed(self, ctx: commands.Context, *, argument: Optional[str] = None):
         """
-        Customize the feedback embed.
+        Customise the feedback embed.
+
+        Leave `argument` empty to set the values.
+        Set `argument` to `clear` or `reset` to restore the default value.
         """
-        embed = discord.Embed(
-            title="Feedback embed",
-            color=self.bot.main_color,
-            description=ctx.command.help + "\n\n",
+        await self._set_embed_invoker(
+            ctx,
+            "feedback prompt",
+            ["feedback", "embed"],
+            self.config.feedback["embed"],
+            self.config.deepcopy(self.config.defaults["feedback"]["embed"]),
+            argument,
         )
-        embed.set_footer(text="Press Set to set/edit the values")
-        embed_config = self.config.feedback.get("embed")
-        embed.description += "### Current values"
-        for key in ("title", "description", "footer"):
-            embed.add_field(name=key.title(), value=f"`{truncate(str(embed_config.get(key)), max=256)}`")
-        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "embed"])
-        view.message = message = await ctx.send(embed=embed, view=view)
 
-        await view.wait()
-        await message.edit(view=view)
-
-        if view.value:
-            payload = view.outputs
-            embed = discord.Embed(
-                description="Successfully set the new configurations for feedback embed.\n\n",
-                color=self.bot.main_color,
-            )
-            embed.description += "### New values"
-            for key in list(payload):
-                embed.add_field(name=key.title(), value=f"`{truncate(str(payload[key]), max=1024)}`")
-                self.config.feedback["embed"][key] = payload.pop(key)
-            await self.config.update()
-            await view.interaction.followup.send(embed=embed)
-
-    @fb_config_embed.command(name="clear")
+    @fb_config.command(name="button")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_config_embed_clear(self, ctx: commands.Context):
+    async def fb_config_button(self, ctx: commands.Context, *, argument: Optional[str] = None):
         """
-        Clear the feedback embed configurations and reset to default values.
-        """
-        default = self.config.defaults["feedback"].get("embed", {})
+        Customise the feedback button using buttons and text input.
 
-        self.config.feedback["embed"] = self.config.deepcopy(default)
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description="Feedback embed configurations are now reset to defaults.",
+        Leave `argument` empty to set the values.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
+        await self._set_button_invoker(
+            ctx,
+            "feedback button",
+            ["feedback", "button"],
+            self.config.feedback["button"],
+            self.config.deepcopy(self.config.defaults["feedback"]["button"]),
+            argument,
         )
-        await ctx.send(embed=embed)
-
-    @fb_config.group(
-        name="button",
-        help=(
-            "Customize the feedback button using buttons and text input.\n\n"
-            "__**Available fields:**__\n"
-            "- **Emoji** : Emoji shown on the button. May be a unicode emoji, "
-            "format of `:name:`, `<:name:id>` or `<a:name:id>` (animated emoji).\n"
-            f"- **Label** : Button label. Must not exceed {Limit.button_label} characters.\n"
-            "- **Style** : The color style for the button. Must be one of these (case insensitive):\n"
-            " - `Blurple`\n"
-            " - `Green`\n"
-            " - `Red`\n"
-            " - `Grey`\n"
-        ),
-        invoke_without_command=True,
-    )
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_config_button(self, ctx: commands.Context):
-        """
-        Customize the feedback button using buttons and text input.
-        """
-        description = ctx.command.help
-        embed = discord.Embed(
-            title="Feedback button",
-            color=self.bot.main_color,
-            description=description + "\n\n",
-        )
-        embed.set_footer(text="Press Set to set/edit the values")
-        feedback_config = self.config.feedback.get("button")
-        embed.description += "### Current values"
-        for key in ("emoji", "label", "style"):
-            embed.add_field(name=key.title(), value=f"`{feedback_config.get(key)}`")
-        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "button"])
-        view.message = message = await ctx.send(embed=embed, view=view)
-
-        await view.wait()
-        await message.edit(view=view)
-
-        if view.value:
-            payload = view.outputs
-            embed = discord.Embed(
-                description="Successfully set the new configurations for feedback button.\n\n",
-                color=self.bot.main_color,
-            )
-            embed.description += "### New values"
-            for key in list(payload):
-                embed.add_field(name=key.title(), value=f"`{payload[key]}`")
-                self.config.feedback["button"][key] = payload.pop(key)
-            await self.config.update()
-            await view.interaction.followup.send(embed=embed)
-
-    @fb_config_button.command(name="clear")
-    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
-    async def fb_config_button_clear(self, ctx: commands.Context):
-        """
-        Clear the feedback button configurations and reset to default values.
-        """
-        self.config.feedback["button"].clear()
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color, description="Feedback button configurations are now reset to defaults."
-        )
-        await ctx.send(embed=embed)
 
     @fb_config.command(name="response")
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
@@ -1141,7 +1080,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.feedback["response"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the feedback response")
-        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "response"])
+        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "response"], current=current)
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -1179,26 +1118,12 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         `mode` may be `True` or `False` (case insensitive).
         Leave `mode` empty to retrieve the current set value.
         """
-        rating_config = self.config.feedback["rating"]
-        enabled = rating_config.get("enable", False)
-        if mode is None:
-            embed = discord.Embed(
-                color=self.bot.main_color,
-                description="Rating feature is currently " + ("enabled." if enabled else "disabled."),
-            )
-            return await ctx.send(embed=embed)
-        if mode == enabled:
-            raise commands.BadArgument(
-                "Rating feature is already " + ("enabled." if enabled else "disabled.")
-            )
-
-        rating_config["enable"] = mode
-        await self.config.update()
-        embed = discord.Embed(
-            color=self.bot.main_color,
-            description="Rating feature is now " + ("enabled." if mode else "disabled."),
+        await self._set_enable_invoker(
+            ctx,
+            "rating",
+            self.config.feedback["rating"],
+            mode,
         )
-        await ctx.send(embed=embed)
 
     @fb_config_rating.command(
         name="placeholder",
@@ -1220,7 +1145,9 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         current = self.config.feedback["rating"]["placeholder"]
         embed.add_field(name="Current value", value=f"`{current}`")
         embed.set_footer(text="Press Set to set/edit the dropdown placeholder")
-        view = self.get_config_view(ctx, title=embed.title, keys=["feedback", "rating", "placeholder"])
+        view = self.get_config_view(
+            ctx, title=embed.title, keys=["feedback", "rating", "placeholder"], current=current
+        )
         view.message = message = await ctx.send(embed=embed, view=view)
 
         await view.wait()
@@ -1269,49 +1196,230 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         )
         await ctx.send(embed=embed)
 
+    @commands.group(invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def threadmove(self, ctx: commands.Context):
+        """
+        Thread move automation manager.
+
+        This feature supports moving responded or inactive threads to designated category.
+        To enable this feature, just simply set a category for the ones you want to enable.
+
+        See `{prefix}threadmove config <subcommand>`
+        """
+        await ctx.send_help(ctx.command)
+
+    @threadmove.group(name="config", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config(self, ctx: commands.Context):
+        """
+        Thread move automation configurations.
+        """
+        await ctx.send_help(ctx.command)
+
+    @tm_config.command(name="enable")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_enable(self, ctx: commands.Context, *, mode: Optional[bool] = None):
+        """
+        Enable or disable the move feature for responded and inactive threads.
+
+        `mode` may be `True` or `False` (case insensitive).
+        Leave `mode` empty to retrieve the current set value.
+        """
+        await self._set_enable_invoker(
+            ctx,
+            "thread move",
+            self.config.thread_move,
+            mode,
+        )
+
+    @tm_config.group(name="responded", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_responded(self, ctx: commands.Context):
+        """
+        Responded thread move configurations.
+        """
+        await ctx.send_help(ctx.command)
+
+    @tm_config_responded.command(name="category")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_responded_category(
+        self,
+        ctx: commands.Context,
+        *,
+        argument: Optional[Union[discord.CategoryChannel, str]] = None,
+    ):
+        """
+        Category where the thread will be moved to if a respond has been made.
+
+        `argument` may be a category ID, mention or name.
+        Leave `argument` empty to see the current set category.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
+        await self._set_category_invoker(ctx, "responded", argument)
+
+    @tm_config_responded.command(
+        name="embed",
+        help=(
+            "Customise the embed title, description and footer text for responded thread move message.\n\n"
+            "Leave `argument` empty to set the values.\n"
+            "Set `argument` to `clear` or `reset` to restore the default value."
+        ),
+    )
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_responded_embed(self, ctx: commands.Context, *, argument: Optional[str] = None):
+        await self._set_embed_invoker(
+            ctx,
+            "responded thread move",
+            ["thread_move", "responded", "embed"],
+            self.config.thread_move["responded"]["embed"],
+            self.config.deepcopy(self.config.defaults["thread_move"]["responded"]["embed"]),
+            argument,
+        )
+
+    @tm_config.group(name="inactive", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_inactive(self, ctx: commands.Context):
+        """
+        Inactive thread move configurations.
+        """
+        await ctx.send_help(ctx.command)
+
+    @tm_config_inactive.command(name="timeout")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_inactive_timeout(
+        self, ctx: commands.Context, *, argument: Optional[UserFriendlyTime] = None
+    ):
+        """
+        Timeout before the thread channel will be moved to inactive category.
+
+        `argument` for timeout must be in one of the formats shown below:
+        - `30m` or `30 minutes` = 30 minutes
+        - `2d` or `2days` or `2day` = 2 days
+        - `1mo` or `1 month` = 1 month
+        - `7 days 12 hours` or `7days12hours` (with/without spaces)
+        - `6d12h` (this syntax must be without spaces)
+
+        Leave `argument` empty to see the current set value.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
+        embed = discord.Embed(color=self.bot.main_color)
+        if argument is None:
+            timeout = self.config.thread_move["inactive"]["timeout"]
+            suffix = " seconds" if timeout else ""
+            embed.description = f"Inactive timeout is currently set to {timeout}{suffix}."
+            await ctx.send(embed=embed)
+        elif argument.arg in ("reset", "clear"):
+            default = self.config.copy(self.config.defaults["thread_move"]["inactive"]["timeout"])
+            self.config.thread_move["inactive"]["timeout"] = default
+            await self.config.update()
+            embed.description = "Inactive timeout is now reset to default."
+            await ctx.send(embed=embed)
+        else:
+            if argument.dt == argument.now:
+                raise commands.BadArgument(f"{argument.arg} is unrecognized time syntax.")
+            timeout = (argument.dt - argument.now).total_seconds()
+            if timeout < 600:
+                raise commands.BadArgument("Timeout cannot be lower than 10 minutes.")
+            self.config.thread_move["inactive"]["timeout"] = timeout
+            await self.config.update()
+            embed.description = f"Inactive timeout is now set to {timeout} seconds."
+            await ctx.send(embed=embed)
+
+    @tm_config_inactive.command(name="category")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_inactive_category(
+        self,
+        ctx: commands.Context,
+        *,
+        argument: Optional[Union[discord.CategoryChannel, str]] = None,
+    ):
+        """
+        Category where the thread will be moved to if inactive timeout has passed.
+
+        `argument` may be a category ID, mention or name.
+        Leave `argument` empty to see the current set category.
+        Set `argument` to `clear` or `reset` to restore the default value.
+        """
+        await self._set_category_invoker(ctx, "inactive", argument)
+
+    @tm_config_inactive.command(
+        name="embed",
+        help=(
+            "Customise the embed title, description and footer text for inactive thread move message.\n\n"
+            "Leave `argument` empty to set the values.\n"
+            "Set `argument` to `clear` or `reset` to restore the default value."
+        ),
+    )
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_inactive_embed(self, ctx: commands.Context, *, argument: Optional[str] = None):
+        await self._set_embed_invoker(
+            ctx,
+            "inactive thread move",
+            ["thread_move", "inactive", "embed"],
+            self.config.thread_move["inactive"]["embed"],
+            self.config.deepcopy(self.config.defaults["thread_move"]["inactive"]["embed"]),
+            argument,
+        )
+
+    @tm_config.command(name="clear")
+    @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
+    async def tm_config_clear(self, ctx: commands.Context):
+        """
+        Clear all the thread move feature configurations.
+        This will reset all the settings to defaults.
+
+        __**Note:**__
+        - This operation cannot be undone.
+        """
+        view = ConfirmView(self.bot, ctx.author)
+        embed = discord.Embed(
+            color=self.bot.main_color, description="Are you sure you want to clear all thread move settings?"
+        )
+        view.message = await ctx.send(embed=embed, view=view)
+
+        await view.wait()
+
+        if not view.value:
+            return
+        del embed
+
+        self.config.remove("thread_move", restore_default=True)
+        await self.config.update()
+        embed = discord.Embed(
+            color=self.bot.main_color,
+            description="All thread move configurations have been reset to defaults.",
+        )
+        await ctx.send(embed=embed)
+
     @commands.Cog.listener()
-    async def on_thread_ready(self, thread: Thread, *args) -> None:
+    async def on_thread_ready(self, thread: Thread, *args: Any) -> None:
         """
         Dispatched when the thread is ready.
-
-        Here we're going to close active feedback session for the recipients if any and
-        if the auto send feedback on thread close feature is enabled.
         """
-        if not self.config.feedback.get("enable", False):
-            return
-
-        for user in thread.recipients:
-            if user is None:
-                continue
-            feedback = self.feedback_manager.find_session(user)
-            if feedback:
-                logger.debug(f"Stopping active feedback session for {user}.")
-                feedback.stop()
+        self.feedback_manager.clear_for(thread)
+        await self.move_manager.schedule_inactive_timer(thread, thread.channel.created_at)
 
     @commands.Cog.listener()
-    async def on_thread_close(self, thread: Thread, *args) -> None:
+    async def on_thread_close(self, thread: Thread, *args: Any) -> None:
         """
         Dispatched when the thread is closed.
         """
-        _, silent, *_ = args
-        if silent:
-            return
+        tasks = [
+            self.bot.loop.create_task(self.feedback_manager.handle_prompt(thread, *args)),
+            self.bot.loop.create_task(self.move_manager.cancel_inactivity_task(thread.channel.id, True)),
+        ]
+        await asyncio.gather(*tasks)
 
-        if not self.config.feedback.get("enable", False):
-            return
-
-        for user in thread.recipients:
-            if user is None:
-                continue
-            if not isinstance(user, discord.Member):
-                entity = self.bot.guild.get_member(user.id)
-                if not entity:
-                    continue
-                user = entity
-            try:
-                await self.feedback_manager.send(user, thread)
-            except RuntimeError:
-                pass
+    @commands.Cog.listener()
+    async def on_thread_reply(self, thread: Thread, *args: Any) -> None:
+        manager = self.move_manager
+        _, message, *_ = args
+        tasks = [
+            self.bot.loop.create_task(manager.schedule_inactive_timer(thread, message.created_at)),
+            self.bot.loop.create_task(manager.handle_responded(thread)),
+        ]
+        await asyncio.gather(*tasks)
 
 
 async def setup(bot: ModmailBot) -> None:

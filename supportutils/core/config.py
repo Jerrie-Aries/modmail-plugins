@@ -48,6 +48,27 @@ _default_config: Dict[str, Any] = {
         "active_sessions": [],
         "rating": {"enable": False, "placeholder": "Choose a rating"},
     },
+    "thread_move": {
+        "enable": False,
+        "responded": {
+            "category": None,
+            "embed": {
+                "title": None,
+                "description": "This thread has been moved from {old_category} to {new_category}.",
+                "footer": None,
+            },
+        },
+        "inactive": {
+            "timeout": None,
+            "category": None,
+            "embed": {
+                "title": None,
+                "description": "This thread has been moved from {old_category} to {new_category} due to inactivity.",
+                "footer": None,
+            },
+            "tasks": {},
+        },
+    },
 }
 
 
@@ -62,3 +83,7 @@ class SupportUtilityConfig(Config):
     @property
     def feedback(self) -> Dict[str, Any]:
         return self["feedback"]
+
+    @property
+    def thread_move(self) -> Dict[str, Any]:
+        return self["thread_move"]
