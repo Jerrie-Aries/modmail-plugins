@@ -1204,7 +1204,7 @@ class SupportUtility(commands.Cog, name=__plugin_name__):
         Thread move automation manager.
 
         This feature supports moving responded or inactive threads to designated category.
-        To enable this feature, just simply set a category for the ones you want to enable.
+        To enable this feature, just simply enable with command and set a category for the ones you want to enable.
 
         See `{prefix}threadmove config <subcommand>`
         """

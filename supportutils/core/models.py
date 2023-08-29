@@ -666,11 +666,7 @@ class ThreadMoveManager:
         await self._update_inactive_tasks()
 
     async def _update_inactive_tasks(self) -> None:
-        data = self.config["inactive"]["tasks"]
         # we do manual insertion here so it won't touch other keys in the document
-        await self.cog.db.find_one_and_update(
-            {"_id": self.cog.config._id},
-            {"$set": {"thread_move.inactive.tasks": data}},
-            upsert=True,
-        )
+        data = {"thread_move.inactive.tasks": self.config["inactive"]["tasks"]}
+        await self.cog.config.update(data=data)
         self._schedule_update = False
