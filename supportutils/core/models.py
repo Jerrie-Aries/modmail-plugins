@@ -508,6 +508,11 @@ class ThreadMoveManager:
     designated category.
     """
 
+    __underlying_objects: Dict[str, discord.CategoryChannel] = {
+        "inactive_category": None,
+        "responded_category": None,
+    }
+
     def __init__(self, cog: SupportUtility):
         self.cog: SupportUtility = cog
         self.bot: ModmailBot = cog.bot
@@ -548,16 +553,25 @@ class ThreadMoveManager:
         return self.config.get("enable")
 
     def _get_category(self, key: str) -> Optional[discord.CategoryChannel]:
-        category_id = self.config[key]["category"]
-        if category_id is None:
-            return None
+        try:
+            category_id = int(self.config[key]["category"])
+        except ValueError:
+            self.__underlying_objects[f"{key}_category"] = category = None
+            return category
 
-        category = self.bot.modmail_guild.get_channel(int(category_id))
+        category = self.__underlying_objects[f"{key}_category"]
+        if category:
+            if category.id == category_id:
+                return category
+            self.__underlying_objects[f"{key}_category"] = None
+
+        category = self.bot.modmail_guild.get_channel(category_id)
         if not isinstance(category, discord.CategoryChannel):
             logger.error(
                 f"Invalid type of category. Expected CategoryChannel, got {type(category).__name__} instead."
             )
             category = None
+        self.__underlying_objects[f"{key}_category"] = category
         return category
 
     @property
@@ -578,7 +592,7 @@ class ThreadMoveManager:
         if not self.is_enabled():
             return
         category = self.responded_category
-        if category is None or category == thread.channel.category:
+        if not category or category == thread.channel.category:
             return
         await self._move_thread_channel(thread, category, event="responded")
 
