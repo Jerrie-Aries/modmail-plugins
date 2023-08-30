@@ -3,14 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 import discord
-from discord.utils import MISSING
 
 from discord.ext.modmail_utils import BaseConfig, Config
 
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
-
     from ..moderation import Moderation
 
 
@@ -40,7 +38,6 @@ _protected_config = {
     },
 }
 
-
 _default_config = {**_public_config, **_protected_config}
 
 
@@ -55,7 +52,6 @@ class GuildConfig(BaseConfig):
     def __init__(self, cog: Moderation, guild: discord.Guild, data: Dict[str, Any]):
         super().__init__(cog, defaults=_default_config)
         self.guild: discord.Guild = guild
-        self.webhook: discord.Webhook = MISSING
         self._cache: Dict[str, Any] = data
 
     def __hash__(self):
@@ -76,14 +72,15 @@ class GuildConfig(BaseConfig):
         await self.cog.config.update(data={str(self.guild.id): self._cache})
 
     @property
-    def log_channel(self) -> Optional[discord.TextChannel]:
+    def log_channel_id(self) -> int:
         """
-        Returns the log channel.
+        Returns the log channel ID.
         """
-        channel_id = int(self.get("log_channel"))
-        if not channel_id:
-            return None
-        return self.guild.get_channel(int(channel_id))
+        return int(self["log_channel"])
+
+    @property
+    def webhook_url(self) -> Optional[str]:
+        return self["webhook"]
 
     def remove(self, key: str) -> Any:
         if key not in _default_config:

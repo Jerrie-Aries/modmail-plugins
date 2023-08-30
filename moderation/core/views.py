@@ -87,7 +87,7 @@ class LoggingPanelView(muui.View):
         self._resolve_components()
 
     def _resolve_components(self) -> None:
-        enabled = self.logger.config["logging"]
+        enabled = self.logger.is_enabled()
         self.enable_button.label = "Disable" if enabled else "Enable"
         self.quit_button.label = "Done" if self.value else "Quit"
         self.quit_button.style = ButtonStyle.green if self.value else ButtonStyle.red
@@ -120,12 +120,11 @@ class LoggingPanelView(muui.View):
         embed.set_thumbnail(url=self.guild.icon)
         embed.set_author(name=self.bot.user.name, url=self.bot.user.display_avatar)
 
-        config = self.logger.config
-        embed.add_field(name="Enabled", value=f"`{config['logging']}`")
-        log_channel = config.log_channel
+        embed.add_field(name="Enabled", value=f"`{self.logger.is_enabled()}`")
+        log_channel = self.logger.channel
         embed.add_field(name="Log channel", value=log_channel.mention if log_channel else "`None`")
-        webhook = config["webhook"]
-        embed.add_field(name="Webhook", value=f"[Webhook URL]({webhook })" if webhook else "`None`")
+        wh_url = self.logger.config.webhook_url
+        embed.add_field(name="Webhook", value=f"[Webhook URL]({wh_url})" if wh_url else "`None`")
         wl_channels = self.wl_channels_fmt_string
         embed.add_field(name="Whitelist channels", value=wl_channels if wl_channels else "`None`")
         embed.add_field(name="Events", value=self.log_events_fmt_string, inline=False)

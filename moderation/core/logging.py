@@ -41,6 +41,8 @@ class ModerationLogging:
         self.cog: Moderation = cog
         self.bot: ModmailBot = cog.bot
         self._config: GuildConfig = MISSING
+        self._channel: discord.TextChannel = MISSING
+        self._webhook: discord.Webhook = MISSING
 
     @property
     def config(self) -> GuildConfig:
@@ -49,8 +51,27 @@ class ModerationLogging:
         return self._config
 
     @property
-    def log_channel(self) -> Optional[discord.TextChannel]:
-        return self.config.log_channel
+    def channel(self) -> discord.TextChannel:
+        channel_id = self.config.log_channel_id
+        if not channel_id:
+            if self._channel:
+                self._channel = MISSING
+            return self._channel
+        if not self._channel or (self._channel and self._channel.id != channel_id):
+            channel = self.guild.get_channel(channel_id)
+            self._channel = channel if channel else MISSING
+        return self._channel
+
+    @property
+    def webhook(self) -> discord.Webhook:
+        wh = self._webhook
+        if wh and wh.url != self.config.webhook_url:
+            self._webhook = wh = MISSING
+        return wh
+
+    @webhook.setter
+    def webhook(self, item: discord.Webhook) -> None:
+        self._webhook = item
 
     def is_enabled(self) -> bool:
         """
@@ -100,16 +121,15 @@ class ModerationLogging:
         send_params: Optional[Dict[str, Any]]
             Additional parameter to use when sending the log message.
         """
-        channel = self.config.log_channel
-        if channel is None:
+        channel = self.channel
+        if not channel:
             return
 
-        webhook = self.config.webhook or await self._get_or_create_webhook(channel)
         if send_params is None:
             send_params = {}
+
+        webhook = self.webhook or await self._get_or_create_webhook(channel)
         if webhook:
-            if not self.config.webhook:
-                self.config.webhook = webhook
             send_params["username"] = self.bot.user.name
             send_params["avatar_url"] = str(self.bot.user.display_avatar)
             send_method = webhook.send
@@ -172,7 +192,8 @@ class ModerationLogging:
         channel : discord.TextChannel
             The channel to get or create the webhook from.
         """
-        wh_url = self.config.get("webhook")
+        wh_url = self.config.webhook_url
+        update = False
         if wh_url:
             wh = discord.Webhook.from_url(
                 wh_url,
@@ -180,7 +201,11 @@ class ModerationLogging:
                 bot_token=self.bot.token,
             )
             wh = await wh.fetch()
-            return wh
+            if wh.channel == channel:
+                self.webhook = wh
+                return wh
+            self.config.remove("webhook")
+            update = True
 
         # check bot permissions first
         bot_me = channel.guild.me
@@ -207,6 +232,9 @@ class ModerationLogging:
 
         if wh:
             self.config.set("webhook", wh.url)
+            update = True
+            self.webhook = wh
+        if update:
             await self.config.update()
 
         return wh

@@ -208,7 +208,6 @@ class Moderation(commands.Cog):
         config = self.config.get_config(ctx.guild)
         for key in config.keys():
             config.remove(key)
-        config.webhook = MISSING
         await config.update()
 
         embed = discord.Embed(
