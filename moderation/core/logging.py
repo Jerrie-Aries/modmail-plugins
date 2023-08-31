@@ -56,11 +56,23 @@ class ModerationLogging:
         if not channel_id:
             if self._channel:
                 self._channel = MISSING
-            return self._channel
-        if not self._channel or (self._channel and self._channel.id != channel_id):
+        elif not self._channel or self._channel.id != channel_id:
             channel = self.guild.get_channel(channel_id)
             self._channel = channel if channel else MISSING
         return self._channel
+
+    @channel.setter
+    def channel(self, item: discord.TextChannel) -> None:
+        if item is MISSING:
+            self.config.remove("log_channel")
+        elif isinstance(item, discord.TextChannel):
+            self.config["log_channel"] = str(item.id)
+        else:
+            raise TypeError(
+                f"Invalid type of item. Expected TextChannel or MISSING, got {type(item).__name__} instead."
+            )
+        self.config.remove("webhook")
+        self._channel = item
 
     @property
     def webhook(self) -> discord.Webhook:

@@ -191,7 +191,7 @@ class Moderation(commands.Cog):
         Moderation logging config panel with interactive buttons.
         """
         config = self.config.get_config(ctx.guild)
-        view = LoggingPanelView(ctx.author, self, self.get_logger(ctx.guild))
+        view = LoggingPanelView(ctx, self.get_logger(ctx.guild))
         embed = view.embed
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()

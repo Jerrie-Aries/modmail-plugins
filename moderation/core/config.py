@@ -24,7 +24,7 @@ _public_config = {
     "channel_whitelist": [],
 }
 
-_protected_config = {
+_private_config = {
     "log_events": {
         "member_update": True,
         "member_remove": True,  # kick
@@ -38,7 +38,7 @@ _protected_config = {
     },
 }
 
-_default_config = {**_public_config, **_protected_config}
+_default_config = {**_public_config, **_private_config}
 
 
 class GuildConfig(BaseConfig):
@@ -47,7 +47,7 @@ class GuildConfig(BaseConfig):
     """
 
     public_keys = _public_config.keys()
-    protected_keys = _protected_config.keys()
+    private_keys = _private_config.keys()
 
     def __init__(self, cog: Moderation, guild: discord.Guild, data: Dict[str, Any]):
         super().__init__(cog, defaults=_default_config)

@@ -10,6 +10,7 @@ from discord.utils import MISSING
 
 
 if TYPE_CHECKING:
+    from discord.ext import commands
     from bot import ModmailBot
     from ..moderation import Moderation
     from .logging import ModerationLogging
@@ -77,10 +78,15 @@ class FollowupView(muui.View):
 
 
 class LoggingPanelView(muui.View):
-    def __init__(self, user: discord.Member, cog: Moderation, logger: ModerationLogging):
-        self.user: discord.Member = user
-        self.cog: Moderation = cog
-        self.bot: ModmailBot = cog.bot
+    """
+    Control panel view to configure logging settings.
+    """
+
+    def __init__(self, ctx: commands.Context, logger: ModerationLogging):
+        self.ctx: commands.Context = ctx
+        self.user: discord.Member = ctx.author
+        self.cog: Moderation = ctx.cog
+        self.bot: ModmailBot = ctx.bot
         self.logger: ModerationLogging = logger
         self.guild: discord.Guild = logger.guild
         super().__init__(timeout=300)
@@ -111,9 +117,9 @@ class LoggingPanelView(muui.View):
                 "Moderation logging configuration. Use the buttons below to change the configurations.\n\n"
                 "__**Button info**__\n"
                 "- **Enable/Disable:** Enable or disable the logging. Disabling this will override the **Events** config.\n"
-                "- **Log channel:** Set the channel where the events will be logged.\n"
+                "- **Log channel:** Channel where the events will be logged.\n"
                 "- **Log events:** Enable or disable certain type of events.\n"
-                "- **Whitelist:** Set whitelist channel where the message updates will be ignored.\n"
+                "- **Whitelist:** Channels where the message updates will be ignored.\n"
             ),
             color=self.bot.main_color,
         )
@@ -227,7 +233,12 @@ class LoggingPanelView(muui.View):
         for child in self.children:
             child.disabled = True
         self.stop()
-        await interaction.response.edit_message(view=self)
+        if self.value:
+            await interaction.response.edit_message(view=self)
+        else:
+            await interaction.response.defer()
+            await interaction.delete_original_response()
+            await self.ctx.message.add_reaction(_check_mark)
 
     async def _add_whitelist(self, interaction: Interaction, button: muui.Button) -> None:
         payload = {
@@ -285,8 +296,9 @@ class LoggingPanelView(muui.View):
             err_embed.description = f"Channel `{value}` not found."
             return await interaction.response.send_message(embed=err_embed, ephemeral=True)
         if child.name == "log_channel":
-            self.logger.config[child.name] = str(channel.id)
-            embed = self.update_embed_field(modal.title, f"<#{channel.id}>")
+            self.logger.channel = channel
+            self.update_embed_field(modal.title, f"<#{channel.id}>")
+            self.update_embed_field("Webhook", "`None`")
         elif child.name == "channel_whitelist":
             # whitelist channel
             wl_channels = self.logger.config["channel_whitelist"]
@@ -294,9 +306,9 @@ class LoggingPanelView(muui.View):
                 err_embed.description = f"Channel {channel.mention} is already whitelisted."
                 return await interaction.response.send_message(embed=err_embed, ephemeral=True)
             wl_channels.append(str(channel.id))
-            embed = self.update_embed_field(modal.title, self.wl_channels_fmt_string)
+            self.update_embed_field(modal.title, self.wl_channels_fmt_string)
         else:
             raise TypeError(f"Invalid modal input session, `{child.name}`.")
         self.value = True
         await interaction.response.defer()
-        await self.edit_message(embed=embed)
+        await self.edit_message(embed=self.embed)
