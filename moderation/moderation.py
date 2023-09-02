@@ -392,10 +392,10 @@ class Moderation(commands.Cog):
         `amount` must be an integer between `1` to `100`.
         Max `amount` is `100`.
 
-        In order for this to work, the bot must have `Manage Messages` and `Read Message History` permissions.
+        In order for this to work, the bot must have `Manage Messages`, `Read Message History` and `Send Messages` permissions in the channel.
         These commands cannot be used in a private message.
 
-        When the command is done doing its work, you will get a message detailing which users got removed and how many messages got removed.
+        When the command is done doing its work, you will get a message detailing which user's and how many messages got removed.
 
         **Notes:**
         - Pinned messages will be ignored. However, if you purge using any of this command's sub-commands pinned messages also will be purged.
@@ -418,8 +418,11 @@ class Moderation(commands.Cog):
         """
         error_embed = discord.Embed(color=discord.Color.red(), description="")
         perms = ctx.channel.permissions_for(ctx.me)
-        if not perms.manage_messages or not perms.read_message_history:
-            error_embed.description = "Need `MANAGE_MESSAGES` and `READ_MESSAGE_HISTORY` permissions."
+        required_perms = (perms.manage_messages, perms.read_message_history, perms.send_messages)
+        if not all(required_perms):
+            error_embed.description = (
+                "Need `MANAGE_MESSAGES`, `READ_MESSAGE_HISTORY` and `SEND_MESSAGES` permissions."
+            )
             return await ctx.send(embed=error_embed)
 
         min_amount, max_amount = 1, 100
@@ -439,15 +442,16 @@ class Moderation(commands.Cog):
             after = discord.Object(id=after)
 
         # Start deleting.
-        await ctx.message.delete()
-        try:
-            deleted = await ctx.channel.purge(limit=limit, before=before, after=after, check=predicate)
-        except discord.Forbidden:
-            error_embed.description = "I do not have the required permissions to delete messages."
-            return await ctx.send(embed=error_embed)
-        except discord.HTTPException as e:
-            error_embed.description = f"Error: {e} (try a smaller search?)"
-            return await ctx.send(embed=error_embed)
+        async with ctx.typing():
+            await ctx.message.delete()
+            try:
+                deleted = await ctx.channel.purge(limit=limit, before=before, after=after, check=predicate)
+            except discord.Forbidden:
+                error_embed.description = "I do not have the required permissions to delete messages."
+                return await ctx.send(embed=error_embed)
+            except discord.HTTPException as e:
+                error_embed.description = f"Error: {e} (try a smaller search?)"
+                return await ctx.send(embed=error_embed)
 
         spammers = Counter(m.author.display_name for m in deleted)
         deleted = len(deleted)
@@ -461,10 +465,10 @@ class Moderation(commands.Cog):
         done_embed = discord.Embed(title="Purge", color=discord.Color.blurple())
         if len(to_send) > 2000:
             done_embed.description = f"Successfully removed {deleted} messages."
-            await ctx.send(ctx.author.mention, embed=done_embed, delete_after=10)
         else:
             done_embed.description = to_send
-            await ctx.send(ctx.author.mention, embed=done_embed, delete_after=10)
+
+        await ctx.send(embed=done_embed, delete_after=10)
 
     @purge.command(name="all")
     @checks.has_permissions(PermissionLevel.MODERATOR)
