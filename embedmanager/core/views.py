@@ -146,7 +146,7 @@ class FieldEditorView(muui.View):
         self.handler.refresh()
         await interaction.edit_original_response(view=self.handler)
 
-    async def update_view(self, interaction: Optional[Interaction] = None) -> None:
+    async def update(self, interaction: Optional[Interaction] = None) -> None:
         self.refresh()
         if interaction and not interaction.response.is_done():
             func = interaction.response.edit_message
@@ -160,14 +160,14 @@ class FieldEditorView(muui.View):
         for opt in select.options:
             opt.default = opt.value == value
         self.index = int(value)
-        await self.update_view(interaction)
+        await self.update(interaction)
 
     @ui.button(label="New", style=ButtonStyle.blurple)
     async def _action_add_field(self, interaction: Interaction, button: ui.Button) -> None:
         self.raw_fields.append(deepcopy(self.__default))
         self.index += 1
         self._populate_select_options()
-        await self.update_view(interaction)
+        await self.update(interaction)
 
     @ui.button(label="Edit", style=ButtonStyle.grey)
     async def _action_edit_field(self, interaction: Interaction, button: ui.Button) -> None:
@@ -188,7 +188,7 @@ class FieldEditorView(muui.View):
         self.editor.embed.clear_fields()
         self.index = 0
         self._populate_select_options()
-        await self.update_view(interaction)
+        await self.update(interaction)
         await interaction.followup.send("Cleared all fields.", ephemeral=True)
 
     @ui.button(label="Exit", style=ButtonStyle.red)
@@ -226,7 +226,7 @@ class FieldEditorView(muui.View):
                         return await interaction.response.send_message(embed=embed, ephemeral=True)
             resolved[key] = value
         self.editor.update(data=resolved, category=self.handler.category)
-        await self.update_view(interaction)
+        await self.update(interaction)
 
     async def on_timeout(self) -> None:
         self.stop()
@@ -302,13 +302,16 @@ class EmbedBuilderView(muui.View):
             else:
                 child.disabled = False
 
-    async def update_view(self, interaction: Optional[Interaction] = None) -> None:
+    async def update(self, interaction: Optional[Interaction] = None) -> None:
         self.refresh()
         if interaction and not interaction.response.is_done():
             func = interaction.response.edit_message
         else:
             func = self.message.edit
-        await func(embed=self.message.embeds[0], view=self)
+        embed = self.message.embeds[0]
+        if self.category is None:
+            embed.description = self.__base_description
+        await func(embed=embed, view=self)
 
     @ui.select(placeholder="Select an embed", row=0)
     async def _embed_select(self, interaction: Interaction, select: ui.Select) -> None:
@@ -316,10 +319,7 @@ class EmbedBuilderView(muui.View):
         self.editor.index = int(value)
         self.category = None
         self._populate_select_options()
-        if self.__base_description:
-            embed = self.message.embeds[0]
-            embed.description = self.__base_description
-        await self.update_view(interaction)
+        await self.update(interaction)
 
     @ui.select(placeholder="Select a category", row=1)
     async def _category_select(self, interaction: Interaction, select: ui.Select) -> None:
@@ -327,12 +327,10 @@ class EmbedBuilderView(muui.View):
         for opt in select.options:
             opt.default = opt.value == value
         embed = self.message.embeds[0]
-        if self.__base_description is None:
-            self.__base_description = embed.description
         embed.description = "\n".join(DESCRIPTIONS[value])
         if not embed.footer:
             embed.set_footer(text="\n".join(FOOTER_TEXTS["note"]))
-        await self.update_view(interaction)
+        await self.update(interaction)
 
     @ui.button(label="Done", style=ButtonStyle.green)
     async def _action_done(self, *args: Any) -> None:
@@ -350,7 +348,7 @@ class EmbedBuilderView(muui.View):
         self.editor.index = len(self.editor.embeds) - 1
         self.category = None
         self._populate_select_options()
-        await self.update_view(interaction)
+        await self.update(interaction)
 
     @ui.button(label="Edit", style=ButtonStyle.grey)
     async def _action_edit(self, *args: Any) -> None:
@@ -425,13 +423,18 @@ class EmbedBuilderView(muui.View):
             await interaction.response.defer()
             self.editor.update(data=resp_data, category=self.category)
 
-        await self.update_view()
+        await self.update()
         modal.stop()
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         if self.user.id == interaction.user.id:
             return True
         return False
+
+    async def wait(self) -> None:
+        if self.__base_description is None:
+            self.__base_description = self.message.embeds[0].description
+        await super().wait()
 
     @classmethod
     def from_embeds(
