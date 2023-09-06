@@ -209,15 +209,6 @@ class Feedback:
         user = bot.guild.get_member(user_id)
         if user is None:
             raise ValueError(f"User with ID `{user_id}` not found.")
-        ends = data["ends"]
-        now = discord.utils.utcnow().timestamp()
-        timeout = ends - now
-        if timeout < 0:
-            # these could happen if the bot was down or this plugin was not loaded when the timer ended.
-            # so in case there are dozens (or more for large servers) data were not removed like this one
-            # we have to hard return here without disabling the feedback components to prevent possible rate limits
-            # because doing to much API calls on startup could cause issues.
-            raise ValueError(f"Feedback session for user with ID {user_id} has ended.")
 
         if not user.dm_channel:
             await user.create_dm()
@@ -226,6 +217,9 @@ class Feedback:
         if channel is None:
             channel = user.dm_channel
         message = discord.PartialMessage(channel=channel, id=int(data["message"]))
+        ends = data["ends"]
+        now = discord.utils.utcnow().timestamp()
+        timeout = ends - now
         instance = cls(
             manager,
             user,
@@ -236,7 +230,11 @@ class Feedback:
         )
         view = FeedbackView(user, manager.cog, feedback=instance, message=message)
         bot.add_view(view, message_id=message.id)
-        bot.loop.create_task(instance.run())
+        if timeout > 0:
+            bot.loop.create_task(instance.run())
+        else:
+            # will be resolved in FeedbackManager._resolve_timed_outs
+            instance.timed_out = True
         return instance
 
     @property
@@ -253,19 +251,7 @@ class Feedback:
 
     async def run(self) -> None:
         await self.wait()
-        self.view.disable_and_stop()
-
-        if self.cancelled:
-            # graceful stop on cog_unload
-            return
-
-        try:
-            await self.message.edit(view=self.view)
-        except discord.HTTPException:
-            pass
-
-        self.manager.remove(self)
-        await self.cog.config.update()
+        await self.conclude()
 
     async def wait(self) -> None:
         """
@@ -288,6 +274,24 @@ class Feedback:
         Stops the session.
         """
         self.event.set()
+
+    async def conclude(self, *, update: bool = True) -> None:
+        """
+        Finishing coroutine that is called when session is complete or timed out.
+        """
+        self.view.disable_and_stop()
+
+        if self.cancelled:
+            # graceful stop on cog_unload
+            return
+        try:
+            await self.message.edit(view=self.view)
+        except discord.HTTPException:
+            pass
+
+        self.manager.remove(self)
+        if update:
+            await self.cog.config.update()
 
     def get_log_url(self, log_data: Dict[str, Any]) -> str:
         """
@@ -396,6 +400,17 @@ class FeedbackManager:
         if to_remove:
             for data in to_remove:
                 active.remove(data)
+            await self.cog.config.update()
+        self.bot.loop.create_task(self._resolve_timed_outs())
+
+    async def _resolve_timed_outs(self) -> None:
+        update_after = False
+        for feedback in list(self.active):
+            if feedback.timed_out:
+                await feedback.conclude(update=False)
+                update_after = True
+                await asyncio.sleep(1.0)
+        if update_after:
             await self.cog.config.update()
 
     def add(self, feedback: Feedback) -> None:
