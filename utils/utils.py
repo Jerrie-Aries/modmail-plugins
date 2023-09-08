@@ -415,7 +415,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             return
 
         checks = [
-            message.type == discord.MessageType.default,
+            message.type in (discord.MessageType.default, discord.MessageType.reply),
             message.author.id in self.bot.bot_owner_ids,
             str(message.channel.id) == channel_id,
         ]
