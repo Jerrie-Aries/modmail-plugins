@@ -87,7 +87,7 @@ class EmbedEditor:
             if url:
                 editor["title"]["url"] = embed.url
             editor["body"]["description"] = data.pop("description", None)
-            editor["color"]["value"] = data.pop("color", None)
+            editor["color"]["value"] = str(embed.color) if embed.color else None
             images = ["thumbnail", "image"]
             entities = ["author", "footer"]
             for elem in images + entities:
