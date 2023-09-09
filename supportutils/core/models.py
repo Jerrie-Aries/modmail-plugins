@@ -22,8 +22,6 @@ if TYPE_CHECKING:
 
 logger = getLogger(__name__)
 
-ends_seconds: int = 60 * 60 * 24
-
 
 class ContactManager:
     """
@@ -170,10 +168,18 @@ class Feedback:
         self.task: asyncio.Task = MISSING
 
     def __hash__(self):
-        return hash((self.message.id, self.message.channel.id))
+        return hash((self.user.id, self.message.id))
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} message_id={self.message.id}>"
+        attrs = (
+            ("user", self.user),
+            ("thread_channel_id", self.thread_channel_id),
+            ("message", self.message),
+            ("started", self.started),
+            ("ends", self.ends),
+        )
+        inner = " ".join("%s=%r" % attr for attr in attrs)
+        return f"<{self.__class__.__name__} {inner}>"
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Feedback):
@@ -197,7 +203,7 @@ class Feedback:
             )
         self._message = item
         self.started = item.created_at.timestamp()
-        self.ends = self.started + ends_seconds
+        self.ends = self.started + self.manager.session_timeout
 
     @classmethod
     async def from_data(cls, manager: FeedbackManager, *, data: Dict[str, Any]) -> Feedback:
@@ -217,24 +223,17 @@ class Feedback:
         if channel is None:
             channel = user.dm_channel
         message = discord.PartialMessage(channel=channel, id=int(data["message"]))
-        ends = data["ends"]
-        now = discord.utils.utcnow().timestamp()
-        timeout = ends - now
         instance = cls(
             manager,
             user,
             thread_channel_id=data.get("thread_channel"),
             message=message,
             started=data["started"],
-            ends=ends,
+            ends=data["ends"],
         )
         view = FeedbackView(user, manager.cog, feedback=instance, message=message)
         bot.add_view(view, message_id=message.id)
-        if timeout > 0:
-            bot.loop.create_task(instance.run())
-        else:
-            # will be resolved in FeedbackManager._resolve_timed_outs
-            instance.timed_out = True
+        bot.loop.create_task(instance.run())
         return instance
 
     @property
@@ -251,6 +250,9 @@ class Feedback:
 
     async def run(self) -> None:
         await self.wait()
+        if not self.task and self.timed_out:
+            # will be resolved in FeedbackManager.populate
+            return
         await self.conclude()
 
     async def wait(self) -> None:
@@ -260,6 +262,7 @@ class Feedback:
         now = discord.utils.utcnow().timestamp()
         sleep_time = self.ends - now
         if sleep_time < 0:
+            self.timed_out = True
             return
         self.task = self.bot.loop.create_task(asyncio.wait_for(self.event.wait(), sleep_time))
         try:
@@ -368,6 +371,8 @@ class FeedbackManager:
     Handles feedback or review on `thread_close` event.
     """
 
+    session_timeout: int = 60 * 60 * 24  # in seconds, hardcoded to 24 hours
+
     def __init__(self, cog: SupportUtility):
         self.cog: SupportUtility = cog
         self.bot: ModmailBot = cog.bot
@@ -397,21 +402,29 @@ class FeedbackManager:
                 to_remove.append(data)
             else:
                 self.active.add(instance)
-        if to_remove:
-            for data in to_remove:
-                active.remove(data)
-            await self.cog.config.update()
-        self.bot.loop.create_task(self._resolve_timed_outs())
 
-    async def _resolve_timed_outs(self) -> None:
-        update_after = False
-        for feedback in list(self.active):
-            if feedback.timed_out:
-                await feedback.conclude(update=False)
-                update_after = True
-                await asyncio.sleep(1.0)
-        if update_after:
-            await self.cog.config.update()
+        async def resolve_broken_and_timeouts() -> None:
+            resolved = 0
+            if to_remove:
+                for data in to_remove:
+                    active.remove(data)
+                resolved += len(to_remove)
+            for feedback in list(self.active):
+                if not feedback.task and feedback.timed_out:
+                    await feedback.conclude(update=False)
+                    resolved += 1
+                    await asyncio.sleep(1.0)
+            if resolved:
+                await self.cog.config.update()
+                if resolved == 1:
+                    links = ("was", " has")
+                else:
+                    links = ("were", "s have")
+                logger.debug(
+                    f"There {links[0]} {resolved} broken and/or timed out feedback session{links[1]} been resolved."
+                )
+
+        self.bot.loop.create_task(resolve_broken_and_timeouts())
 
     def add(self, feedback: Feedback) -> None:
         self.active.add(feedback)
