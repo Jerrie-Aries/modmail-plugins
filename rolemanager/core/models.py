@@ -18,12 +18,12 @@ if TYPE_CHECKING:
     from .types import AutoRoleConfigPayload, ReactRolePayload, ReactRoleConfigPayload
 
 
-__all__ = [
+__all__ = (
     "AutoRoleManager",
     "Bind",
     "ReactionRole",
     "ReactionRoleManager",
-]
+)
 
 
 logger = getLogger(__name__)
@@ -116,6 +116,15 @@ class Bind:
         self.emoji: Optional[Union[discord.Emoji, discord.PartialEmoji]] = emoji
         self.button: Optional[Button] = button
 
+    def __repr__(self) -> str:
+        attrs = (
+            ("role", self.role),
+            ("button", self.button),
+            ("emoji", self.emoji),
+        )
+        inner = " ".join("%s=%r" % attr for attr in attrs)
+        return f"<{self.__class__.__name__} {inner}>"
+
     @property
     def trigger_type(self) -> TriggerType:
         return self.model.trigger_type
@@ -188,11 +197,11 @@ class ReactionRole:
         The reaction role manager.
     message : Union[discord.PartialMessage, discord.Message]
         The message where the reactions are attached to.
+    binds : List[Bind]
+        List of bind data attached to the message.
     trigger_type: TriggerType
         The type of trigger that this reaction roles response to.
         Should be TriggerType.REACTION or TriggerType.INTERACTION.
-    binds : List[Bind]
-        List of bind data attached to the message.
     rules : str
         The rules applied for the reactions.
     """
@@ -218,7 +227,14 @@ class ReactionRole:
         return hash((self.message.id, self.channel.id))
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} message_id={self.message.id} binds={self.binds}>"
+        attrs = (
+            ("message", self.message),
+            ("binds", self.binds),
+            ("trigger_type", self.trigger_type),
+            ("rules", self.rules),
+        )
+        inner = " ".join("%s=%r" % attr for attr in attrs)
+        return f"<{self.__class__.__name__} {inner}>"
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, ReactionRole):
