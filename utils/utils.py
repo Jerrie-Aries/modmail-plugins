@@ -10,10 +10,11 @@ import sys
 from pathlib import Path
 from site import USER_SITE
 from subprocess import PIPE
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
+from discord.ext.commands.view import StringView
 
 try:
     from discord.ext import modmail_utils
@@ -24,6 +25,7 @@ except ImportError:
 from core import checks
 from core.models import getLogger, PermissionLevel, UnseenFormatter
 from core.paginator import EmbedPaginatorSession
+from core.utils import normalize_alias
 
 from .core.config import UtilsConfig
 
@@ -146,7 +148,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         Get latest version string from the source directory.
         """
         file_path = self.package_path / "discord/ext/modmail_utils/__init__.py"
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             text = f.read()
         return re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', text, re.MULTILINE).group(1)
 
@@ -406,6 +408,46 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         paginator.current = index
         await paginator.run()
 
+    async def get_contexts(
+        self, message: discord.Message, *, cls: commands.Context = commands.Context
+    ) -> List[commands.Context]:
+        """
+        Manually construct the context.
+
+        Instances constructed from this will be partial and just to invoke the commands or aliases if any.
+        Some attributes may not available (e.g. `.thread`). Snippets also will not be resolved.
+        """
+        view = StringView(message.content)
+        ctx = cls(view=view, bot=self.bot, message=message)
+        ctx.thread = None
+
+        if message.author.id == self.bot.user.id:
+            return [ctx]
+
+        invoker = view.get_word().lower()
+
+        # Check if there is any aliases being called.
+        alias = self.bot.aliases.get(invoker)
+        if alias is not None:
+            aliases = normalize_alias(alias, message.content[len(f"{invoker}") :])
+            if not aliases:
+                logger.warning("Alias %s is invalid.", invoker)
+                return [ctx]
+
+            ctxs = []
+            for alias in aliases:
+                view = StringView(alias)
+                ctx = cls(view=view, bot=self.bot, message=message)
+                ctx.thread = None
+                ctx.invoked_with = view.get_word().lower()
+                ctx.command = self.bot.all_commands.get(ctx.invoked_with)
+                ctxs += [ctx]
+            return ctxs
+
+        ctx.command = self.bot.all_commands.get(invoker)
+        ctx.invoked_with = invoker
+        return [ctx]
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot:
@@ -423,8 +465,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             return
         if message.content.startswith(tuple(await self.bot.get_prefix())):
             return
-        message.content = self.bot.prefix + message.content
-        ctxs = await self.bot.get_contexts(message)
+        ctxs = await self.get_contexts(message)
         for ctx in ctxs:
             if ctx.command:
                 await self.bot.invoke(ctx)
