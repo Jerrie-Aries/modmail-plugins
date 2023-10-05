@@ -33,6 +33,9 @@ class EmbedEditor:
     def __setitem__(self, key: str, item: Any) -> None:
         self._inputs[str(self.index)][key] = item
 
+    def __len__(self) -> int:
+        return sum([len(e) for e in self.embeds])
+
     def _populate_default_inputs(self) -> None:
         payload = {}
         for key, val in list(INPUT_DATA.items()):

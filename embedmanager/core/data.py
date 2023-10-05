@@ -62,11 +62,7 @@ SHORT_DESCRIPTIONS = {
     "fields": "Add or remove fields.",
 }
 
-FOOTER_TEXTS = {
-    "note": [
-        f"Note: The combine sum of characters in embeds in a single message must not exceed {Limit.embed} characters.\n",
-    ]
-}
+FOOTER_TEXTS = {"length": "Total characters: {}/" + f"{Limit.embed}"}
 
 INPUT_DATA: Dict[str, Any] = {
     "title": {

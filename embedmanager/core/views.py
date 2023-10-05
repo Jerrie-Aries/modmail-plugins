@@ -143,8 +143,7 @@ class FieldEditorView(muui.View):
     async def unlock(self, interaction: Interaction) -> None:
         for child in self.handler.children:
             child.disabled = False
-        self.handler.refresh()
-        await interaction.edit_original_response(view=self.handler)
+        await self.handler.update(interaction)
 
     async def update(self, interaction: Optional[Interaction] = None) -> None:
         self.refresh()
@@ -237,8 +236,6 @@ class EmbedBuilderView(muui.View):
     Main class to handle the view components and responses from interactions.
     """
 
-    children: List[muui.Button]
-
     def __init__(
         self,
         cog: EmbedManager,
@@ -304,13 +301,17 @@ class EmbedBuilderView(muui.View):
 
     async def update(self, interaction: Optional[Interaction] = None) -> None:
         self.refresh()
-        if interaction and not interaction.response.is_done():
-            func = interaction.response.edit_message
+        if interaction is not None:
+            if not interaction.response.is_done():
+                func = interaction.response.edit_message
+            else:
+                func = interaction.edit_original_response
         else:
             func = self.message.edit
         embed = self.message.embeds[0]
         if self.category is None:
             embed.description = self.__base_description
+        embed.set_footer(text=FOOTER_TEXTS["length"].format(len(self.editor)))
         await func(embed=embed, view=self)
 
     @ui.select(placeholder="Select an embed", row=0)
@@ -328,8 +329,6 @@ class EmbedBuilderView(muui.View):
             opt.default = opt.value == value
         embed = self.message.embeds[0]
         embed.description = "\n".join(DESCRIPTIONS[value])
-        if not embed.footer:
-            embed.set_footer(text="\n".join(FOOTER_TEXTS["note"]))
         await self.update(interaction)
 
     @ui.button(label="Done", style=ButtonStyle.green)
@@ -354,12 +353,14 @@ class EmbedBuilderView(muui.View):
     async def _action_edit(self, *args: Any) -> None:
         interaction, _ = args
         if self.category == "fields":
-            embed = discord.Embed(
-                description="\n".join(DESCRIPTIONS["field"]),
-                color=self.bot.main_color,
-            )
+            embeds = [
+                discord.Embed(
+                    description="\n".join(DESCRIPTIONS["field"]),
+                    color=self.bot.main_color,
+                )
+            ]
             async with FieldEditorView(self, interaction, timeout=self.timeout) as view:
-                view.message = await interaction.followup.send(embed=embed, view=view)
+                view.message = await interaction.followup.send(embeds=embeds, view=view)
                 await view.wait()
         else:
             payload = deepcopy(self.extras[self.category])
