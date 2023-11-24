@@ -398,7 +398,7 @@ class GeneralInfo(commands.Cog, name=__plugin_name__):
         msg = "\n\n".join(map(to_string, characters))
         if len(msg) > 2000:
             return await ctx.send("Output too long to display.")
-        await ctx.send(msg)
+        await ctx.send(msg, suppress_embeds=True)
 
     @commands.command()
     @checks.has_permissions(PermissionLevel.MODERATOR)
