@@ -53,13 +53,15 @@ class Giveaway(commands.Cog):
         self.active_giveaways: List["GiveawaySession"] = []
 
     async def cog_load(self) -> None:
-        await self.populate_from_db()
+        self.bot.loop.create_task(self.populate_from_db())
 
     async def cog_unload(self) -> None:
         for session in self.active_giveaways:
             session.force_stop()
 
     async def populate_from_db(self) -> None:
+        await self.bot.wait_for_connected()
+
         config = await self.db.find_one({"_id": "config"})
         if config is None:
             config = await self.db.find_one_and_update(

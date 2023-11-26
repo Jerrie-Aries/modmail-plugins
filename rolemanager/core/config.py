@@ -31,13 +31,13 @@ class RoleManagerConfig(Config):
     """
 
     def __init__(self, cog: RoleManager, db: AsyncIOMotorCollection):
-        super().__init__(cog, db, use_cache=False)
+        super().__init__(cog, db, defaults=_default_config, use_cache=False)
 
-    async def fetch(self) -> ConfigPayload:
-        data = await super().fetch()
-        if not data:
-            # empty dict returned from .fetch()
-            data = self.deepcopy(_default_config)
+    async def fetch(self, *args, **kwargs) -> ConfigPayload:
+        if not self.defaults:
+            self.defaults = self.deepcopy(_default_config)
+        data = await super().fetch(*args, **kwargs)
+        self.defaults.clear()
         return data
 
     async def update(self, *, data: Dict[str, Any] = None) -> None:

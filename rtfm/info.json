@@ -1,0 +1,12 @@
+{
+    "name": "RTFM",
+    "description": [
+        "Python and discord.py documentation exclusive things.",
+        "\n**Version:**\n`{0}`"
+    ],
+    "authors": ["Rapptz", "Jerrie-Aries"],
+    "version": "1.0.1",
+    "bot_version": "4.0.0",
+    "dpy_version": "2.0.0",
+    "cogs_required": []
+}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from discord.ext.modmail_utils import Config
 
@@ -25,6 +25,15 @@ _default_config: Dict[str, Any] = {
             "options": [],
             "placeholder": "Choose a category",
         },
+        "override_dmdisabled": False,
+        "confirmation": {
+            "enable": True,  # not used for now
+            "embed": {
+                "title": "Confirm thread creation",
+                "description": "Use the button below to confirm thread creation which will directly contact the moderators.",
+                "footer": None,
+            },
+        },
     },
     "feedback": {
         "enable": False,
@@ -38,6 +47,27 @@ _default_config: Dict[str, Any] = {
         "response": "Thanks for your time. Your feedback has been submitted to our staff team.",
         "active_sessions": [],
         "rating": {"enable": False, "placeholder": "Choose a rating"},
+    },
+    "thread_move": {
+        "enable": False,
+        "responded": {
+            "category": None,
+            "embed": {
+                "title": None,
+                "description": "This thread has been moved from {old_category} to {new_category}.",
+                "footer": None,
+            },
+        },
+        "inactive": {
+            "timeout": None,
+            "category": None,
+            "embed": {
+                "title": None,
+                "description": "This thread has been moved from {old_category} to {new_category} due to inactivity.",
+                "footer": None,
+            },
+            "tasks": {},
+        },
     },
 }
 
@@ -53,3 +83,7 @@ class SupportUtilityConfig(Config):
     @property
     def feedback(self) -> Dict[str, Any]:
         return self["feedback"]
+
+    @property
+    def thread_move(self) -> Dict[str, Any]:
+        return self["thread_move"]

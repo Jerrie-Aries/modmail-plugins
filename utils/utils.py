@@ -10,10 +10,11 @@ import sys
 from pathlib import Path
 from site import USER_SITE
 from subprocess import PIPE
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import discord
 from discord.ext import commands
+from discord.ext.commands.view import StringView
 
 try:
     from discord.ext import modmail_utils
@@ -22,10 +23,15 @@ except ImportError:
     modmail_utils = None
 
 from core import checks
-from core.models import getLogger, PermissionLevel
+from core.models import getLogger, PermissionLevel, UnseenFormatter
+from core.paginator import EmbedPaginatorSession
+from core.utils import normalize_alias
+
+from .core.config import UtilsConfig
 
 
 if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
     from bot import ModmailBot
 
 
@@ -55,16 +61,28 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
     def __init__(self, bot: ModmailBot):
         self.bot: ModmailBot = bot
+        self.db: AsyncIOMotorCollection = bot.api.get_plugin_partition(self)
+        self.config: UtilsConfig = UtilsConfig(self, self.db)
+
         self.package_path: Path = current_dir
         self.package_name: str = "modmail-utils"
 
     async def cog_load(self) -> None:
+        await self._resolve_package()
+        self.bot.loop.create_task(self.initialize())
+
+    async def _resolve_package(self) -> None:
+        """
+        Update `modmail_utils` package from this plugin's directory.
+        """
         global modmail_utils
 
-        mode = os.environ.get("UTILS_PACKAGE_MODE", "production")
-        if mode.lower() == "development":
+        valids = ("production", "development")
+        mode = os.environ.get("UTILS_PACKAGE_MODE", valids[0]).lower()
+        if mode == valids[1]:
             # for developers usage
             # make sure the package was installed before running the script
+            # install command: pip install -e path
             return
 
         if modmail_utils is None or not self._is_latest():
@@ -81,6 +99,10 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
             _additional_tasks()
 
+    async def initialize(self) -> None:
+        await self.bot.wait_for_connected()
+        await self.config.fetch()
+
     def _is_latest(self) -> bool:
         current = version_tuple(modmail_utils.__version__)
         latest = version_tuple(self.version_from_source_dir())
@@ -90,7 +112,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
 
     async def install_packages(self) -> None:
         """
-        Install additional packages. Currently we only use `modmail-utils` custom package.
+        Currently we only use `modmail-utils` custom package.
         This method was adapted from cogs/plugins.py.
         """
         req = self.package_path
@@ -126,19 +148,19 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         Get latest version string from the source directory.
         """
         file_path = self.package_path / "discord/ext/modmail_utils/__init__.py"
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             text = f.read()
         return re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', text, re.MULTILINE).group(1)
 
-    @commands.group(name="ext-utils", invoke_without_command=True)
+    @commands.group(aliases=["extutils"], invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def ext_utils(self, ctx: commands.Context):
+    async def eutils(self, ctx: commands.Context):
         """
         Extended Utils base command.
         """
         await ctx.send_help(ctx.command)
 
-    @ext_utils.command(name="info")
+    @eutils.command(name="info")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_info(self, ctx: commands.Context):
         """
@@ -159,7 +181,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed.set_footer(text=f"{__plugin_name__}: v{__version__}")
         await ctx.send(embed=embed)
 
-    @ext_utils.command(name="update")
+    @eutils.command(name="update")
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_update(self, ctx: commands.Context):
         """
@@ -190,18 +212,23 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed.description = description
         await msg.edit(embed=embed)
 
-    @ext_utils.command(name="reorder", hidden=True)
+    @eutils.command(name="reorder", hidden=True)
     @checks.has_permissions(PermissionLevel.OWNER)
     async def utils_reorder(self, ctx: commands.Context):
         """
         Reorder the plugins loading order.
-        Generally no need to run this command, but put here just in case.
+        Generally there is no need to run this command, but it is put here just in case.
         This is just to make sure the plugins that require this plugin will load last or after this plugin is loaded.
         """
         plugins_cog = self.bot.get_cog("Plugins")
         ordered = []
+        utils_pos = False
         for plugin in plugins_cog.loaded_plugins:
+            if plugin.name == "utils":
+                utils_pos = True
+                continue
             try:
+
                 extension = self.bot.extensions[plugin.ext_string]
                 if not hasattr(extension, "__plugin_info__"):
                     continue
@@ -215,7 +242,7 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
             if self.qualified_name not in cogs_required:
                 continue
 
-            if str(plugin) in self.bot.config["plugins"]:
+            if not utils_pos and str(plugin) in self.bot.config["plugins"]:
                 # just remove and append it back
                 self.bot.config["plugins"].remove(str(plugin))
                 self.bot.config["plugins"].append(str(plugin))
@@ -224,14 +251,225 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
         embed = discord.Embed(color=self.bot.main_color)
         if ordered:
             await self.bot.config.update()
-            description = "Reordered the plugins.\n"
-            description += "```\n"
-            description += "\n".join(ordered)
-            description += "\n```"
+            description = "__**Reordered:**__\n"
+            description += "```\n" + "\n".join(ordered) + "\n```"
+            description += (
+                "\n\n__**Note:**__\nYou may need to restart the bot to reload the reordered plugins."
+            )
         else:
-            description = "Nothing changed."
+            embed.color = self.bot.error_color
+            description = "The plugins are already properly ordered."
         embed.description = description
         await ctx.send(embed=embed)
+
+    # these were adapted from cogs/utility.py
+    @eutils.group(name="config", usage="[subcommand]", invoke_without_command=True)
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def utils_config(self, ctx: commands.Context):
+        """
+        Modify changeable configuration.
+
+        To set a configuration:
+        - `{prefix}eutils config set config-name value`
+
+        To get a configuration value:
+        - `{prefix}eutils config get config-name`
+
+        To remove a configuration:
+        - `{prefix}eutils config remove config-name`
+
+        To show all configurations and their informations:
+        - `{prefix}eutils config help`
+        """
+        await ctx.send_help(ctx.command)
+
+    @utils_config.command(name="set", aliases=["add"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_set(self, ctx: commands.Context, key: str.lower, *, value: str):
+        """
+        Set a configuration variable and its value.
+        """
+        if key in self.config.defaults:
+            try:
+                value = await self.config.resolve_conversion(ctx, key, value)
+                self.config.set(key, value)
+                await self.config.update()
+                embed = discord.Embed(
+                    title="Success",
+                    color=self.bot.main_color,
+                    description=f"Set `{key}` to `{self.config[key]}`.",
+                )
+            except commands.BadArgument as exc:
+                raise commands.BadArgument(str(exc))
+        else:
+            embed = discord.Embed(
+                title="Error",
+                color=self.bot.error_color,
+                description=f"`{key}` is an invalid key.",
+            )
+        return await ctx.send(embed=embed)
+
+    @utils_config.command(name="get")
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_get(self, ctx: commands.Context, *, key: str.lower = None):
+        """
+        Show the configuration variables that are currently set.
+
+        Leave `key` empty to show all currently set configuration variables.
+        """
+        if key:
+            if key in self.config.defaults:
+                desc = f"`{key}` is set to `{self.config[key]}`"
+                embed = discord.Embed(color=self.bot.main_color, description=desc)
+                embed.set_author(name="Config variable", icon_url=self.bot.user.display_avatar.url)
+
+            else:
+                embed = discord.Embed(
+                    title="Error",
+                    color=self.bot.error_color,
+                    description=f"`{key}` is an invalid key.",
+                )
+        else:
+            embed = discord.Embed(
+                color=self.bot.main_color,
+                description="Here is a list of currently set configurations.",
+            )
+            embed.set_author(name="Current config:", icon_url=self.bot.user.display_avatar.url)
+
+            for name, value in self.config.items():
+                embed.add_field(name=name, value=f"`{value}`", inline=False)
+
+        return await ctx.send(embed=embed)
+
+    @utils_config.command(name="remove", aliases=["del", "delete"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_remove(self, ctx: commands.Context, *, key: str.lower):
+        """
+        Delete a set configuration variable.
+        """
+        if key in self.config.defaults:
+            self.config.remove(key, restore_default=True)
+            await self.config.update()
+            embed = discord.Embed(
+                title="Success",
+                color=self.bot.main_color,
+                description=f"`{key}` is now reset to default.",
+            )
+        else:
+            embed = discord.Embed(
+                title="Error",
+                color=self.bot.error_color,
+                description=f"`{key}` is an invalid key.",
+            )
+        return await ctx.send(embed=embed)
+
+    @utils_config.command(name="help", aliases=["info"])
+    @checks.has_permissions(PermissionLevel.OWNER)
+    async def config_help(self, ctx: commands.Context, key: str.lower = None):
+        """
+        Show information on a specified configuration.
+
+        Leave `key` unspecified to show all available config options and informations.
+        """
+        if key is not None and key not in self.config.defaults:
+            raise commands.BadArgument(f"`{key}` is an invalid key.")
+
+        config_info = self.config.config_info
+        if key is not None and key not in config_info:
+            raise commands.BadArgument(f"No help details found for `{key}`.")
+
+        index = 0
+        embeds = []
+
+        def fmt(val: str) -> str:
+            return UnseenFormatter().format(
+                val,
+                prefix=self.bot.prefix,
+                config_set=f"{ctx.command.parent.qualified_name} set",
+                ctx=ctx,
+                key=current_key,
+            )
+
+        for i, (current_key, info) in enumerate(config_info.items()):
+            if current_key == key:
+                index = i
+            embed = discord.Embed(title=f"{current_key}", color=self.bot.main_color)
+            embed.add_field(name="Information:", value=info["description"], inline=False)
+            if info.get("examples", []):
+                example_text = ""
+                for example in info["examples"]:
+                    example_text += f"- {fmt(example)}\n"
+                embed.add_field(name="Examples:", value=example_text, inline=False)
+            # use .__get__ to retrieve raw value
+            embed.add_field(name="Current value", value=f"{self.config[current_key]}")
+            embeds += [embed]
+
+        paginator = EmbedPaginatorSession(ctx, *embeds)
+        paginator.current = index
+        await paginator.run()
+
+    async def get_contexts(
+        self, message: discord.Message, *, cls: commands.Context = commands.Context
+    ) -> List[commands.Context]:
+        """
+        Manually construct the context.
+
+        Instances constructed from this will be partial and just to invoke the commands or aliases if any.
+        Some attributes may not available (e.g. `.thread`). Snippets also will not be resolved.
+        """
+        view = StringView(message.content)
+        ctx = cls(view=view, bot=self.bot, message=message)
+        ctx.thread = None
+
+        if message.author.id == self.bot.user.id:
+            return [ctx]
+
+        invoker = view.get_word().lower()
+
+        # Check if there is any aliases being called.
+        alias = self.bot.aliases.get(invoker)
+        if alias is not None:
+            aliases = normalize_alias(alias, message.content[len(f"{invoker}") :])
+            if not aliases:
+                logger.warning("Alias %s is invalid.", invoker)
+                return [ctx]
+
+            ctxs = []
+            for alias in aliases:
+                view = StringView(alias)
+                ctx = cls(view=view, bot=self.bot, message=message)
+                ctx.thread = None
+                ctx.invoked_with = view.get_word().lower()
+                ctx.command = self.bot.all_commands.get(ctx.invoked_with)
+                ctxs += [ctx]
+            return ctxs
+
+        ctx.command = self.bot.all_commands.get(invoker)
+        ctx.invoked_with = invoker
+        return [ctx]
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        if message.author.bot:
+            return
+        channel_id = self.config.get("developer_channel")
+        if not channel_id:
+            return
+
+        checks = [
+            message.type in (discord.MessageType.default, discord.MessageType.reply),
+            message.author.id in self.bot.bot_owner_ids,
+            str(message.channel.id) == channel_id,
+        ]
+        if not all(checks):
+            return
+        if message.content.startswith(tuple(await self.bot.get_prefix())):
+            return
+        ctxs = await self.get_contexts(message)
+        for ctx in ctxs:
+            if ctx.command:
+                await self.bot.invoke(ctx)
+                continue
 
 
 async def setup(bot: ModmailBot) -> None:

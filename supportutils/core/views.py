@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 import discord
 from discord import ButtonStyle, Interaction, ui
 from discord.ext import commands
-from discord.ext.modmail_utils import Limit
+from discord.ext.modmail_utils import ConfirmView, Limit
 from discord.ext.modmail_utils.ui import Button, Modal as uiModal, TextInput, View
 from discord.utils import MISSING
 
@@ -71,20 +71,28 @@ class BaseView(View):
     Base view class.
     """
 
-    children: List[Button]
-
-    def __init__(self, cog: SupportUtility, *, message: discord.Message = MISSING, timeout: float = 300.0):
-        super().__init__(message=message, timeout=timeout)
+    def __init__(
+        self,
+        cog: SupportUtility,
+        *,
+        message: discord.Message = MISSING,
+        timeout: float = 300.0,
+        **kwargs: Any,
+    ):
+        super().__init__(message=message, timeout=timeout, **kwargs)
         self.cog: SupportUtility = cog
         self.bot: ModmailBot = cog.bot
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        raise NotImplementedError
+
 
 class SupportUtilityView(BaseView):
-    def __init__(self, ctx: commands.Context, *, input_session: str = MISSING):
+    def __init__(self, ctx: commands.Context, *, extras: Dict[str, Any] = MISSING):
         self.ctx: commands.Context = ctx
         self.user: discord.Member = ctx.author
-        super().__init__(ctx.cog)
-        self.input_session: str = input_session
+        super().__init__(ctx.cog, extras=extras)
+        self.outputs: Dict[str, Any] = {}
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user != self.user:
@@ -131,6 +139,7 @@ class ContactView(BaseView):
             raise RuntimeError("Another view is already attached to ContactManager instance.")
         self.manager.view = self
         self.select_options = self.manager.config["select"]["options"]
+        self._temp_cached_users: Dict[str, float] = {}
 
         button_config = self.manager.config["button"]
         emoji = button_config.get("emoji")
@@ -155,20 +164,30 @@ class ContactView(BaseView):
         Entry point when a user made interaction on this view's components.
         """
         user = interaction.user
+        if str(user.id) in self._temp_cached_users:
+            # this is to handle in case something went wrong that causes the removal
+            # isn't beeing done after the user id was added in cache.
+            started_time = self._temp_cached_users[str(user.id)]
+            if discord.utils.utcnow().timestamp() - started_time > 30:
+                self._temp_cached_users.pop(str(user.id), None)
+            else:
+                return False
         if self.bot.guild.get_member(user.id) is None:
-            await interaction.response.defer()
             return False
-        exists = await self.bot.threads.find(recipient=user)
+        thread = self.manager.find_thread(user)
         embed = discord.Embed(color=self.bot.error_color)
-        if exists:
+        if thread:
             content = "A thread for you already exists"
-            if exists.channel:
-                content += f" in {exists.channel.mention}"
+            if thread.channel:
+                content += f" in {thread.channel.mention}"
             content += "."
             embed.description = content
         elif await self.bot.is_blocked(user):
             embed.description = f"You are currently blocked from contacting {self.bot.user.name}."
-        elif self.bot.config["dm_disabled"] in (DMDisabled.NEW_THREADS, DMDisabled.ALL_THREADS):
+        elif (
+            self.bot.config["dm_disabled"] == DMDisabled.NEW_THREADS
+            and not self.manager.config.get("override_dmdisabled")
+        ) or self.bot.config["dm_disabled"] == DMDisabled.ALL_THREADS:
             embed.description = self.bot.config["disabled_new_thread_response"]
             logger.info(
                 "A new thread using contact menu was blocked from %s due to disabled Modmail.",
@@ -180,48 +199,64 @@ class ContactView(BaseView):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return False
 
-    async def _dropdown_callback(
+    async def _category_select_callback(
         self,
         interaction: discord.Interaction,
         select: DropdownMenu,
         option: discord.SelectOption,
     ) -> None:
-        await interaction.response.defer()
         view = select.view
-        view.inputs["contact_dropdown"] = option
-        view.stop()
-        await view.message.delete()
+        view.inputs["contact_option"] = option
+        await interaction.response.defer()
 
     async def handle_interaction(self, interaction: Interaction, button: Button) -> None:
         """
-        Entry point for interactions on this view after all check has passed.
+        Entry point for interactions on this view after all checks have passed.
         Thread creation and sending response will be done from here.
         """
-        await interaction.response.defer()
         user = interaction.user
-
+        self._temp_cached_users[str(user.id)] = discord.utils.utcnow().timestamp()
         category = None
+        view = ConfirmView(bot=self.bot, user=user, timeout=30.0)
         if self.select_options:
-            view = BaseView(self.cog)
+            view.clear_items()
             options = []
             for data in self.select_options:
-                options.append(
-                    discord.SelectOption(
-                        emoji=data.get("emoji"), label=data["label"], description=data.get("description")
-                    )
+                option = discord.SelectOption(
+                    emoji=data.get("emoji"), label=data["label"], description=data.get("description")
                 )
-            view.add_item(
-                DropdownMenu(
-                    options=options,
-                    placeholder=self.manager.config["select"].get("placeholder"),
-                    callback=self._dropdown_callback,
-                )
+                options.append(option)
+            dropdown = DropdownMenu(
+                options=options,
+                placeholder=self.manager.config["select"].get("placeholder"),
+                callback=self._category_select_callback,
             )
-            view.message = await interaction.followup.send(view=view, ephemeral=True)
-            await view.wait()
-            if not view.inputs:
-                return
-            option = view.inputs["contact_dropdown"]
+            view.add_item(dropdown)
+            view.add_item(view.accept_button)
+            view.add_item(view.deny_button)
+
+        embed_config = self.manager.config["confirmation"]["embed"]
+        embed = discord.Embed(
+            title=embed_config["title"],
+            description=embed_config["description"],
+            color=self.bot.main_color,
+        )
+        footer = embed_config["footer"]
+        if footer:
+            embed.set_footer(text=footer)
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True,
+        )
+        view.message = await interaction.original_response()
+        await view.wait()
+
+        if not view.value:
+            self._temp_cached_users.pop(str(user.id), None)
+            return
+        if view.inputs:
+            option = view.inputs["contact_option"]
             category_id = None
             for data in self.select_options:
                 if data.get("label") == option.label:
@@ -234,22 +269,8 @@ class ContactView(BaseView):
                 # just log, the thread will be created in main category
                 logger.error(f"Category with ID {category_id} not found.")
 
-        thread = await self.manager.create(
-            recipient=user,
-            category=category,
-            interaction=interaction,
-        )
-
-        if thread.cancelled:
-            return
-
-        await thread.wait_until_ready()
-        embed = discord.Embed(
-            title="Created Thread",
-            description=f"Thread started by {user.mention}.",
-            color=self.bot.main_color,
-        )
-        await thread.channel.send(embed=embed)
+        await self.manager.create_thread(user, category=category, interaction=view.interaction)
+        self._temp_cached_users.pop(str(user.id), None)
 
     async def force_stop(self) -> None:
         """
@@ -308,7 +329,7 @@ class FeedbackView(BaseView):
                 DropdownMenu(
                     options=options,
                     placeholder=rating_config.get("placeholder"),
-                    callback=self._dropdown_callback,
+                    callback=self._rating_select_callback,
                     custom_id=f"feedback_dropdown",
                     row=0,
                 )
@@ -342,7 +363,7 @@ class FeedbackView(BaseView):
         await interaction.response.defer()
         return False
 
-    async def _dropdown_callback(
+    async def _rating_select_callback(
         self,
         interaction: discord.Interaction,
         select: DropdownMenu,

@@ -13,19 +13,6 @@ from core.models import PermissionLevel
 from core.paginator import EmbedPaginatorSession
 from core.utils import human_join
 
-from .core.builder import EmbedBuilderView
-from .core.converters import (
-    MessageableChannel,
-    BotMessage,
-    StoredEmbedConverter,
-    StringToEmbed,
-)
-from .core.data import JSON_EXAMPLE
-
-
-if TYPE_CHECKING:
-    from .motor.motor_asyncio import AsyncIOMotorCollection
-    from bot import ModmailBot
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -46,8 +33,22 @@ except ImportError as exc:
         f"Install {required} plugin to resolve this issue."
     ) from exc
 
+from .core.converters import (
+    MessageableChannel,
+    BotMessage,
+    StoredEmbedConverter,
+    StringToEmbed,
+)
+from .core.data import JSON_EXAMPLE
+from .core.views import EmbedBuilderView
+
 
 # <!-- ----- -->
+
+
+if TYPE_CHECKING:
+    from .motor.motor_asyncio import AsyncIOMotorCollection
+    from bot import ModmailBot
 
 
 JSON_CONVERTER = StringToEmbed()
@@ -94,7 +95,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         embeds = message.embeds
         if not embeds:
             raise commands.BadArgument("That message has no embeds.")
-        index = max(min(index, len(embeds)), 0)
+        index = max(min(index, len(embeds) - 1), 0)
         embed = message.embeds[index]
         if embed.type == "rich":
             return embed
@@ -145,7 +146,7 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_build(self, ctx: commands.Context):
         """
-        Build embeds in an interactive mode using buttons and modal view.
+        Build embeds in an interactive mode using buttons and text input view.
         """
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
@@ -154,12 +155,12 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
             color=self.bot.main_color,
             timestamp=discord.utils.utcnow(),
         )
-        embed.set_footer(text="This panel will time out after 10 minutes.")
         view = EmbedBuilderView(self, ctx.author)
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
-        if view.embed:
-            await ctx.send(embed=view.embed)
+        if view.value:
+            await ctx.send(embeds=view.editor.embeds)
+            await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_group.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)
@@ -234,48 +235,11 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         fp = io.BytesIO(bytes(data, "utf-8"))
         await ctx.send(file=discord.File(fp, "embed.json"))
 
-    @embed_group.command(name="post", aliases=["view", "drop", "show"], invoke_without_command=True)
-    @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_post(
-        self,
-        ctx: commands.Context,
-        name: StoredEmbedConverter,
-        channel: MessageableChannel = None,
-    ):
-        """
-        Post a stored embed.
-
-        `name` must be a name that was used when storing the embed.
-        `channel` may be a channel name, ID, or mention.
-
-        Use command `{prefix}embed store list` to get the list of stored embeds.
-        """
-        channel = channel or ctx.channel
-        await channel.send(embed=discord.Embed.from_dict(name["embed"]))
-
-    @embed_group.command(name="info")
-    @checks.has_permissions(PermissionLevel.MODERATOR)
-    async def embed_info(self, ctx: commands.Context, name: StoredEmbedConverter):
-        """
-        Get info about an embed that is stored.
-
-        `name` must be a name that was used when storing the embed.
-
-        Use command `{prefix}embed store list` to get the list of stored embeds.
-        """
-        embed = discord.Embed(
-            title=f"`{name['name']}` Info",
-            description=(
-                f"Author: <@!{name['author']}>\n" f"Length: {len(discord.Embed.from_dict(name['embed']))}"
-            ),
-        )
-        await ctx.send(embed=embed)
-
     @embed_group.group(name="edit", invoke_without_command=True)
     @checks.has_permissions(PermissionLevel.MODERATOR)
     async def embed_edit(self, ctx: commands.Context, message: BotMessage, index: int = 0):
         """
-        Edit a message's embed sent by the bot.
+        Edit message's embeds sent by the bot.
         This will initiate the Embed Editor panel with interactive buttons and text inputs session.
         The values for the input fields are pre-defined based on the source embed.
 
@@ -284,8 +248,12 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         __**Note:**__
         If the message has multiple embeds, you can pass a number to `index` to specify which embed.
         """
-        source_embed = await self.get_embed_from_message(message, index)
-        view = EmbedBuilderView.from_embed(self, ctx.author, embed=source_embed)
+        await self.get_embed_from_message(message, index)
+        if not 0 <= index < len(message.embeds):
+            raise commands.BadArgument(
+                f"Index `{index}` is out of range. Expected `0` to `{len(message.embeds) - 1}`."
+            )
+        view = EmbedBuilderView.from_embeds(self, ctx.author, embeds=message.embeds, index=index)
         description = "Select the category and press the button below respectively to start creating/editing your embed."
         embed = discord.Embed(
             title="Embed Editor",
@@ -293,12 +261,10 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
             color=self.bot.main_color,
             timestamp=discord.utils.utcnow(),
         )
-        embed.set_footer(text="This panel will time out after 10 minutes.")
         view.message = await ctx.send(embed=embed, view=view)
         await view.wait()
-
-        if view.embed:
-            await message.edit(embed=view.embed)
+        if view.value:
+            await message.edit(embeds=view.editor.embeds)
             await ctx.message.add_reaction(YES_EMOJI)
 
     @embed_edit.command(name="json", aliases=["fromjson", "fromdata"])
@@ -354,6 +320,43 @@ class EmbedManager(commands.Cog, name=__plugin_name__):
         Store commands to store embeds for later use.
         """
         await ctx.send_help(ctx.command)
+
+    @embed_store.command(name="post", aliases=["view", "drop", "show"])
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def embed_store_post(
+        self,
+        ctx: commands.Context,
+        name: StoredEmbedConverter,
+        channel: MessageableChannel = None,
+    ):
+        """
+        Post a stored embed.
+
+        `name` must be a name that was used when storing the embed.
+        `channel` may be a channel name, ID, or mention.
+
+        Use command `{prefix}embed store list` to get the list of stored embeds.
+        """
+        channel = channel or ctx.channel
+        await channel.send(embed=discord.Embed.from_dict(name["embed"]))
+
+    @embed_store.command(name="info")
+    @checks.has_permissions(PermissionLevel.MODERATOR)
+    async def embed_store_info(self, ctx: commands.Context, name: StoredEmbedConverter):
+        """
+        Get info about an embed that is stored.
+
+        `name` must be a name that was used when storing the embed.
+
+        Use command `{prefix}embed store list` to get the list of stored embeds.
+        """
+        embed = discord.Embed(
+            title=f"`{name['name']}` Info",
+            description=(
+                f"Author: <@!{name['author']}>\n" f"Length: {len(discord.Embed.from_dict(name['embed']))}"
+            ),
+        )
+        await ctx.send(embed=embed)
 
     @embed_store.command(name="simple")
     @checks.has_permissions(PermissionLevel.MODERATOR)

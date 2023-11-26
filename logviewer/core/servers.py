@@ -55,7 +55,7 @@ class Config:
 
 class LogviewerServer:
     """
-    Main class to handle the log viewer server.
+    Main class to handle the logviewer server.
     """
 
     def __init__(self, bot: ModmailBot):
@@ -89,24 +89,56 @@ class LogviewerServer:
         for path in ("/", prefix + "/{key}", prefix + "/raw/{key}"):
             self.app.router.add_route("GET", path, AIOHTTPMethodHandler)
 
+    @property
+    def favicon(self) -> str:
+        """
+        Returns the favicon file path, if exists. Otherwise, link of bot's display avatar.
+        """
+        file = self.get_favicon()
+        if file is not None:
+            return f"/{file.parent.name}/{file.name}"
+        return self.bot.user.display_avatar.replace(size=32, format="webp")
+
+    async def set_favicon(self, asset: Optional[discord.Attachment] = None) -> None:
+        """
+        Useful to set and/or reset the favicon.
+
+        Exception is not handled from here. Make sure to take care of it wherever
+        this method is called from.
+
+        Raises
+        ------
+        discord.NotFound
+            The bot does not have avatar set.
+        """
+        favicon_path = static_path / "favicon.webp"
+        if asset is None:
+            asset = self.bot.user.display_avatar.replace(size=32, format="webp")
+        await asset.save(favicon_path)
+
+    def get_favicon(self) -> Optional[Path]:
+        favicon_path = static_path / "favicon.webp"
+        if not favicon_path.exists():
+            return None
+        return favicon_path
+
     async def start(self) -> None:
         """
-        Starts the log viewer server.
+        Starts the logviewer server.
         """
         if self._running:
-            raise RuntimeError("Log viewer server is already running.")
+            raise RuntimeError("Logviewer server is already running.")
         if not self._hooked:
             self.init_hook()
-        logger.info("Starting log viewer server.")
+        logger.info("Starting logviewer server.")
         self.runner = web.AppRunner(self.app, handle_signals=True)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.config.host, self.config.port)
         await self.site.start()
         favicon_path = static_path / "favicon.webp"
         if not favicon_path.exists():
-            asset = self.bot.user.display_avatar.replace(size=32, format="webp")
             try:
-                await asset.save(favicon_path)
+                await self.set_favicon()
             except discord.NotFound as exc:
                 logger.error("Unable to set 'favicon.webp' due to download failure.")
                 logger.error(f"{type(exc).__name__}: {str(exc)}")
@@ -114,7 +146,7 @@ class LogviewerServer:
 
     async def stop(self) -> None:
         """
-        Stops the log viewer server.
+        Stops the logviewer server.
         """
         logger.warning(" - Shutting down web server. - ")
         if self.site:
@@ -209,6 +241,7 @@ class LogviewerServer:
 
         kwargs["app"] = request.app
         kwargs["config"] = self.config
+        kwargs["favicon"] = self.favicon
 
         template = jinja_env.get_template(name + ".html")
         template = await template.render_async(*args, **kwargs)
