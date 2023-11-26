@@ -47,9 +47,6 @@ class Modal(ui.Modal):
 
         await self.followup_callback(interaction, self)
 
-    async def on_error(self, interaction: Interaction, error: Exception) -> None:
-        logger.error("Ignoring exception in modal %r:", self, exc_info=error)
-
 
 class Select(ui.Select):
     def __init__(self, category: str, *, options: List[discord.SelectOption], callback: Callback, **kwargs):
@@ -101,9 +98,6 @@ class RoleManagerView(ui.View):
         self.message: Union[discord.Message, discord.PartialMessage] = message
         self.cog: RoleManager = cog
         super().__init__(timeout=timeout)
-
-    async def on_error(self, interaction: Interaction, error: Exception, item: Any) -> None:
-        logger.error("Ignoring exception in view %r for item %r", self, item, exc_info=error)
 
     def refresh(self) -> None:
         pass
