@@ -5,7 +5,7 @@
         "\n**Version:**\n`{0}`"
     ],
     "author": "Jerrie-Aries",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "bot_version": "4.0.0",
     "dpy_version": "2.0.0",
     "cogs_required": ["Extended Utils"],
