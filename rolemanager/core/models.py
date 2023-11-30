@@ -414,7 +414,6 @@ class ReactionRoleManager:
         self._populate_entries_from_data(data=data.pop("data"))
 
     def _populate_entries_from_data(self, *, data: List[ReactRolePayload]) -> None:
-
         for entry in data:
             try:
                 reactrole = ReactionRole.from_data(self, data=entry)

@@ -27,7 +27,6 @@ _short_length = 256
 
 
 class Modal(ui.Modal):
-
     children: List[ui.TextInput]
 
     def __init__(self, view: ui.View, options: List[Dict[str, Any]], callback: Callback, **kwargs):

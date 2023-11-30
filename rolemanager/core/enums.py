@@ -2,7 +2,6 @@ from enum import Enum
 
 
 class ReactRules(Enum):
-
     NORMAL = "NORMAL"  # Allow multiple.
     UNIQUE = "UNIQUE"  # Remove existing role when assigning another role in group.
     VERIFY = "VERIFY"  # Not Implemented yet.

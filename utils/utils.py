@@ -228,7 +228,6 @@ class ExtendedUtils(commands.Cog, name=__plugin_name__):
                 utils_pos = True
                 continue
             try:
-
                 extension = self.bot.extensions[plugin.ext_string]
                 if not hasattr(extension, "__plugin_info__"):
                     continue

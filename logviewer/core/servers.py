@@ -238,7 +238,6 @@ class LogviewerServer:
         *args: Any,
         **kwargs: Any,
     ) -> Response:
-
         kwargs["app"] = request.app
         kwargs["config"] = self.config
         kwargs["favicon"] = self.favicon

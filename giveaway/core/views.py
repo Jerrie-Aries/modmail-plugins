@@ -33,7 +33,6 @@ class GiveawayTextInput(TextInput):
 
 
 class GiveawayModal(Modal):
-
     children: List[GiveawayTextInput]
 
     def __init__(self, view: GiveawayView):
@@ -69,7 +68,6 @@ class GiveawayViewButton(Button["GiveawayView"]):
 
 
 class GiveawayView(View):
-
     children: List[GiveawayViewButton]
 
     def __init__(self, ctx: commands.Context, *, timeout: float = 600.0):

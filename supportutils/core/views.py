@@ -24,7 +24,6 @@ logger = getLogger(__name__)
 
 
 class Modal(uiModal):
-
     children: List[TextInput]
 
     async def on_submit(self, interaction: Interaction) -> None:

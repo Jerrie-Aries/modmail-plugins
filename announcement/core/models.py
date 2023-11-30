@@ -20,7 +20,6 @@ def _color_converter(value: str) -> int:
 
 
 class AnnouncementType(Enum):
-
     # only two are valid for now. may add more later.
     NORMAL = "normal"
     EMBED = "embed"

@@ -46,7 +46,6 @@ class AnnouncementTextInput(TextInput):
 
 
 class AnnouncementModal(Modal):
-
     children: List[AnnouncementTextInput]
 
     def __init__(self, view: AnnouncementView, options: Dict[str, Any]):
@@ -99,7 +98,6 @@ class AnnouncementViewButton(Button["AnnouncementView"]):
 
 
 class AnnouncementView(View):
-
     children: List[AnnouncementViewButton]
 
     def __init__(self, ctx: commands.Context, announcement: AnnouncementModel, *, timeout: float = 600.0):

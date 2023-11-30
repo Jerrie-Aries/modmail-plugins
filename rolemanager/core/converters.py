@@ -149,7 +149,6 @@ if TYPE_CHECKING:
 
 
 class Args(commands.Converter):
-
     __slots__ = "vals"
 
     @classmethod
