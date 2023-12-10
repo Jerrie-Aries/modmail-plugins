@@ -16,8 +16,6 @@ from core.paginator import EmbedPaginatorSession
 
 from .core.models import InviteTracker, PartialInvite
 
-# temp for migration
-from .core.migration import db_migration
 
 info_json = Path(__file__).parent.resolve() / "info.json"
 with open(info_json, encoding="utf-8") as f:
@@ -86,10 +84,6 @@ class Invites(commands.Cog):
         await self.bot.wait_for_connected()
         await self.populate_config()
         await self.tracker.populate_invites()
-
-        # temp for migration
-        if not self.config.get("migrated", False):
-            await db_migration(self)
 
     async def populate_config(self) -> None:
         """
