@@ -11,7 +11,7 @@ from discord.ext import commands
 from core import checks
 from core.models import getLogger, PermissionLevel
 
-from .core.models import AnnouncementModel
+from .core.models import AnnouncementModel, AnnouncementType
 from .core.views import AnnouncementView
 
 
@@ -87,7 +87,7 @@ class Announcement(commands.Cog):
         await view.create_base()
 
         await view.wait()
-        if not announcement.ready_to_post():
+        if not announcement.is_ready():
             # cancelled or timed out
             return
 
@@ -137,7 +137,8 @@ class Announcement(commands.Cog):
 
         `channel` may be a channel ID, mention, or name.
         """
-        await channel.send(content)
+        announcement = AnnouncementModel(ctx, type=AnnouncementType.PLAIN, channel=channel, content=content)
+        await announcement.send()
 
     @commands.command(
         help=(

@@ -8,6 +8,9 @@ from discord.utils import MISSING
 from discord.ext import commands
 
 
+__all__ = ("AnnouncementType", "AnnouncementModel")
+
+
 def _color_converter(value: str) -> int:
     try:
         return int(value)
@@ -45,20 +48,31 @@ class AnnouncementType(Enum):
 
 
 class AnnouncementModel:
-    def __init__(self, ctx: commands.Context):
-        self.ctx: commands.Context = ctx
+    """
+    Represents an instance to manage announcement creation.
+    """
 
+    def __init__(
+        self,
+        ctx: commands.Context,
+        *,
+        type: AnnouncementType = MISSING,
+        channel: discord.TextChannel = MISSING,
+        content: str = MISSING,
+        embed: discord.Embed = MISSING,
+    ):
+        self.ctx: commands.Context = ctx
+        self.type: AnnouncementType = type
+        self.channel: discord.TextChannel = channel
+        self.content: str = content
+        self.embed: discord.Embed = embed
+
+        self.message: discord.Message = MISSING
         self.event: asyncio.Event = asyncio.Event()
         self.ready: bool = False
-
-        self.type: AnnouncementType = MISSING
-        self.channel: discord.TextChannel = MISSING
-        self.message: discord.Message = MISSING
-        self.content: str = MISSING
-        self.embed: discord.Embed = MISSING
         self.task: asyncio.Task = MISSING
 
-    def ready_to_post(self) -> bool:
+    def is_ready(self) -> bool:
         """
         Returns whether the announcement is ready to be posted.
         """

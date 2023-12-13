@@ -368,7 +368,7 @@ class AnnouncementView(ui.View):
         await self.update_view(interaction)
 
     async def wait(self) -> None:
-        if not self.announcement.ready_to_post():
+        if not self.announcement.is_ready():
             await self.announcement.wait()
         else:
             await super().wait()
